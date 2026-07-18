@@ -40,7 +40,7 @@ public class PlayerController : MonoBehaviour
     private void Start()
     {
         // 隐藏鼠标
-        Cursor.lockState = CursorLockMode.Locked;
+        // Cursor.lockState = CursorLockMode.Locked;
     }
 
     private void Update()

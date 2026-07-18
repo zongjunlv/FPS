@@ -20,6 +20,7 @@ public class PlayerInputReader : MonoBehaviour
     public bool SprintHeld => sprintAction.action.IsPressed();
     public bool InteractPressed => interactAction.action.WasPressedThisFrame();
     public bool AttackPressed => attackAction.action.WasPressedThisFrame();
+    public bool AttackHeld => attackAction.action.IsPressed();
     public bool AimingPressed => aimingAction.action.WasPressedThisFrame();
 
 
