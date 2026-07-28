@@ -8547,23 +8547,6 @@ Transform:
   - {fileID: 2043625820}
   m_Father: {fileID: 1107167724}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!1 &765694175 stripped
-GameObject:
-  m_CorrespondingSourceObject: {fileID: 9144016917351435942, guid: 19eadcf8fbed56b4da77ca94c1b4145f, type: 3}
-  m_PrefabInstance: {fileID: 1899783996}
-  m_PrefabAsset: {fileID: 0}
---- !u!114 &765694177
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 765694175}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 412f62b2485a142179296bd7b67e83d8, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::ThirdPersonCameraController
 --- !u!95 &765694179 stripped
 Animator:
   m_CorrespondingSourceObject: {fileID: 3320314160785962872, guid: 19eadcf8fbed56b4da77ca94c1b4145f, type: 3}
@@ -11166,18 +11149,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 4af610dd9423f44ca877fa40bf8b82cf, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::PlayerAnimationEvents
---- !u!114 &1073853148
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1073853136}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 412f62b2485a142179296bd7b67e83d8, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::ThirdPersonCameraController
 --- !u!114 &1073853149
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -21149,9 +21120,6 @@ PrefabInstance:
       addedObject: {fileID: 1073853149}
     - targetCorrespondingSourceObject: {fileID: 2751027687307977091, guid: 19eadcf8fbed56b4da77ca94c1b4145f, type: 3}
       insertIndex: -1
-      addedObject: {fileID: 1073853148}
-    - targetCorrespondingSourceObject: {fileID: 2751027687307977091, guid: 19eadcf8fbed56b4da77ca94c1b4145f, type: 3}
-      insertIndex: -1
       addedObject: {fileID: 1073853154}
     - targetCorrespondingSourceObject: {fileID: 2751027687307977091, guid: 19eadcf8fbed56b4da77ca94c1b4145f, type: 3}
       insertIndex: -1
@@ -21165,9 +21133,6 @@ PrefabInstance:
     - targetCorrespondingSourceObject: {fileID: 2751027687307977091, guid: 19eadcf8fbed56b4da77ca94c1b4145f, type: 3}
       insertIndex: -1
       addedObject: {fileID: 1073853155}
-    - targetCorrespondingSourceObject: {fileID: 9144016917351435942, guid: 19eadcf8fbed56b4da77ca94c1b4145f, type: 3}
-      insertIndex: -1
-      addedObject: {fileID: 765694177}
     - targetCorrespondingSourceObject: {fileID: 4775947768125699116, guid: 19eadcf8fbed56b4da77ca94c1b4145f, type: 3}
       insertIndex: -1
       addedObject: {fileID: 1914029595}

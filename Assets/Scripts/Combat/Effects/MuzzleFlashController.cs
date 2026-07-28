@@ -1,5 +1,3 @@
-using Unity.Hierarchy.Editor;
-using Unity.VisualScripting;
 using UnityEngine;
 
 public class MuzzleFlashController : MonoBehaviour
