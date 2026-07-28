@@ -3,7 +3,7 @@ using UnityEngine;
 public class WeaponController : MonoBehaviour
 {
     [SerializeField] private WeaponDefinition weapon;
-    [SerializeField]private MuzzleFlashController muzzleFlash;
+    [SerializeField] private MuzzleFlashController muzzleFlash;
 
     [SerializeField] private GameObject Bullet;
     [SerializeField] private GameObject FirePoint;
