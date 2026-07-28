@@ -1,7 +1,10 @@
 {
   "name": "FPS.PlayModeTests",
   "rootNamespace": "FPS.Tests.PlayMode",
-  "references": [],
+  "references": [
+    "Unity.InputSystem",
+    "Unity.InputSystem.TestFramework"
+  ],
   "includePlatforms": [],
   "excludePlatforms": [],
   "allowUnsafeCode": false,

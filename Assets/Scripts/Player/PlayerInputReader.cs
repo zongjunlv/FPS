@@ -14,6 +14,7 @@ public class PlayerInputReader : MonoBehaviour
 
     private InputAction crouchAction;
     private InputAction pauseAction;
+    private bool aimingPressed;
 
     // 其他脚本只能读取输入结果，不需要直接管理 Input Action。
     public Vector2 Move => moveAction.action.ReadValue<Vector2>();
@@ -23,13 +24,21 @@ public class PlayerInputReader : MonoBehaviour
     public bool InteractPressed => interactAction.action.WasPressedThisFrame();
     public bool AttackPressed => attackAction.action.WasPressedThisFrame();
     public bool AttackHeld => attackAction.action.IsPressed();
-    public bool AimingPressed => aimingAction.action.WasPressedThisFrame();
+    public bool AimingPressed => aimingPressed;
+    public bool AimingHeld => aimingAction.action.IsPressed();
     public bool CrouchPressed =>
         crouchAction != null && crouchAction.WasPressedThisFrame();
     public bool PausePressed =>
         pauseAction != null && pauseAction.WasPressedThisFrame();
     public bool LookUsesPointerDelta =>
         lookAction.action.activeControl?.device is Pointer;
+
+    public bool ConsumeAimingPressed()
+    {
+        bool wasPressed = aimingPressed;
+        aimingPressed = false;
+        return wasPressed;
+    }
 
     private void Awake()
     {
@@ -43,6 +52,7 @@ public class PlayerInputReader : MonoBehaviour
 
     private void OnEnable()
     {
+        aimingAction.action.performed += OnAimingPerformed;
         moveAction.action.Enable();
         jumpAction.action.Enable();
         lookAction.action.Enable();
@@ -56,6 +66,8 @@ public class PlayerInputReader : MonoBehaviour
 
     private void OnDisable()
     {
+        aimingAction.action.performed -= OnAimingPerformed;
+        aimingPressed = false;
         moveAction.action.Disable();
         jumpAction.action.Disable();
         lookAction.action.Disable();
@@ -65,5 +77,10 @@ public class PlayerInputReader : MonoBehaviour
         aimingAction.action.Disable();
         crouchAction?.Disable();
         pauseAction?.Disable();
+    }
+
+    private void OnAimingPerformed(InputAction.CallbackContext context)
+    {
+        aimingPressed = true;
     }
 }

@@ -1,5 +1,11 @@
 using UnityEngine;
 
+public enum AimInputMode
+{
+    Hold,
+    Toggle
+}
+
 [RequireComponent(typeof(CharacterController), typeof(PlayerInputReader))]
 public class PlayerController : MonoBehaviour
 {
@@ -26,11 +32,23 @@ public class PlayerController : MonoBehaviour
     [SerializeField, Min(0f)] private float gamepadSensitivity = 180f;
     [SerializeField] private bool invertY;
 
+    [Header("Aim")]
+    [SerializeField] private AimInputMode aimInputMode = AimInputMode.Hold;
+    [SerializeField] private Camera aimCamera;
+    [SerializeField, Range(20f, 100f)] private float hipFieldOfView = 60f;
+    [SerializeField, Range(15f, 90f)] private float aimFieldOfView = 45f;
+    [SerializeField, Min(0.01f)] private float aimTransitionDuration = 0.2f;
+    [SerializeField, Range(0.1f, 1f)]
+    private float aimSensitivityMultiplier = 0.55f;
+
     private CharacterController characterController;
     private PlayerInputReader input;
+    private PlayerCrosshairPresenter crosshairPresenter;
     public float VerticalVelocity {get; private set; }
     public float MoveDirection { get; private set; }
-    public bool IsAiming {get; private set; } 
+    public bool IsAiming { get; private set; }
+    public float AimBlend { get; private set; }
+    public bool IsAdsCrosshairActive => AimBlend >= 0.5f;
     public bool IsCrouching { get; private set; }
     public bool IsPaused { get; private set; }
     public bool IsSprinting =>
@@ -39,6 +57,11 @@ public class PlayerController : MonoBehaviour
     {
         get => invertY;
         set => invertY = value;
+    }
+    public AimInputMode AimMode
+    {
+        get => aimInputMode;
+        set => aimInputMode = value;
     }
     public bool IsGrounded => characterController.isGrounded;
 
@@ -59,6 +82,26 @@ public class PlayerController : MonoBehaviour
         Vector3 cameraStandingPosition = CameraPivot.localPosition;
         cameraStandingPosition.y = standingCameraHeight;
         CameraPivot.localPosition = cameraStandingPosition;
+
+        if (aimCamera == null)
+        {
+            aimCamera = CameraPivot.GetComponentInChildren<Camera>(true);
+        }
+
+        if (aimCamera != null)
+        {
+            aimCamera.fieldOfView = hipFieldOfView;
+        }
+
+        crosshairPresenter = GetComponent<PlayerCrosshairPresenter>();
+
+        if (crosshairPresenter == null)
+        {
+            crosshairPresenter =
+                gameObject.AddComponent<PlayerCrosshairPresenter>();
+        }
+
+        crosshairPresenter.SetState(0f, true);
     }
 
     private void Start()
@@ -75,12 +118,13 @@ public class PlayerController : MonoBehaviour
             return;
         }
 
+        HandleAimInput();
         Rotate();
         HandleCrouchInput();
         UpdateStance();
         Jump();
         Move();
-        Aim();
+        UpdateAimPresentation();
     }
 
     public void SetPaused(bool paused)
@@ -92,9 +136,13 @@ public class PlayerController : MonoBehaviour
         }
 
         IsPaused = paused;
+        input.ConsumeAimingPressed();
+        crosshairPresenter?.SetState(AimBlend, !paused);
 
         if (paused)
         {
+            TrySetAiming(false);
+
             if (Time.timeScale > 0f)
             {
                 timeScaleBeforePause = Time.timeScale;
@@ -149,6 +197,11 @@ public class PlayerController : MonoBehaviour
 
         Cursor.lockState = CursorLockMode.None;
         Cursor.visible = true;
+
+        if (aimCamera != null)
+        {
+            aimCamera.fieldOfView = hipFieldOfView;
+        }
     }
 
     public bool TrySetCrouching(bool shouldCrouch)
@@ -264,10 +317,12 @@ public class PlayerController : MonoBehaviour
             ? mouseSensitivity
             : gamepadSensitivity * Mathf.Max(0f, unscaledDeltaTime);
         float verticalDirection = invertY ? 1f : -1f;
+        float aimMultiplier =
+            IsAiming ? aimSensitivityMultiplier : 1f;
 
         return new Vector2(
-            lookInput.x * sensitivity,
-            lookInput.y * sensitivity * verticalDirection);
+            lookInput.x * sensitivity * aimMultiplier,
+            lookInput.y * sensitivity * verticalDirection * aimMultiplier);
     }
 
     private void Jump()
@@ -341,12 +396,69 @@ public class PlayerController : MonoBehaviour
                moveInput.y > 0.1f;
     }
 
-    private void Aim()
+    public bool TrySetAiming(bool shouldAim)
     {
-        if (input.AimingPressed)
+        return ApplyAimingState(shouldAim, IsSprinting);
+    }
+
+    private bool ApplyAimingState(
+        bool shouldAim,
+        bool isSprinting)
+    {
+        if (isSprinting)
         {
-            IsAiming = !IsAiming;
+            IsAiming = false;
+            return !shouldAim;
         }
+
+        if (shouldAim && IsPaused)
+        {
+            IsAiming = false;
+            return false;
+        }
+
+        IsAiming = shouldAim;
+        return true;
+    }
+
+    private void HandleAimInput()
+    {
+        if (IsSprinting)
+        {
+            input.ConsumeAimingPressed();
+            ApplyAimingState(false, true);
+            return;
+        }
+
+        if (aimInputMode == AimInputMode.Hold)
+        {
+            input.ConsumeAimingPressed();
+            TrySetAiming(input.AimingHeld);
+        }
+        else if (input.ConsumeAimingPressed())
+        {
+            TrySetAiming(!IsAiming);
+        }
+    }
+
+    private void UpdateAimPresentation()
+    {
+        float targetBlend = IsAiming ? 1f : 0f;
+        AimBlend = Mathf.MoveTowards(
+            AimBlend,
+            targetBlend,
+            Time.deltaTime / aimTransitionDuration);
+        float easedBlend = Mathf.SmoothStep(0f, 1f, AimBlend);
+
+        if (aimCamera != null)
+        {
+            aimCamera.fieldOfView = Mathf.Lerp(
+                hipFieldOfView,
+                aimFieldOfView,
+                easedBlend);
+        }
+
+        crosshairPresenter?.SetState(AimBlend, !IsPaused);
     }
 
     private void OnControllerColliderHit(ControllerColliderHit hit)

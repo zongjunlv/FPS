@@ -3,12 +3,13 @@ using System.Collections.Generic;
 using System.Reflection;
 using NUnit.Framework;
 using UnityEngine;
+using UnityEngine.InputSystem;
 using UnityEngine.SceneManagement;
 using UnityEngine.TestTools;
 
 namespace FPS.Tests.PlayMode
 {
-    public class CityNewSmokeTests
+    public class CityNewSmokeTests : InputTestFixture
     {
         private const string ScenePath =
             "Assets/ImportPackages/CSAssets2026/Scenes/CityNew.unity";
@@ -361,6 +362,203 @@ namespace FPS.Tests.PlayMode
                 crouchingVelocity.magnitude,
                 Is.EqualTo(1.5f).Within(0.01f),
                 "Crouching must override sprint input.");
+        }
+
+        [UnityTest]
+        public IEnumerator PlayerAimTransitionsCameraWeaponCrosshairAndSensitivity()
+        {
+            yield return LoadCityNew();
+
+            GameObject player = FindObjectWithComponent(
+                GetSceneObjects(SceneManager.GetActiveScene()),
+                "PlayerController");
+            Component controller = player.GetComponent("PlayerController");
+            MethodInfo trySetAiming =
+                controller.GetType().GetMethod("TrySetAiming");
+            MethodInfo calculateLookDelta =
+                controller.GetType().GetMethod("CalculateLookDelta");
+            PropertyInfo isAiming =
+                controller.GetType().GetProperty("IsAiming");
+            PropertyInfo aimBlend =
+                controller.GetType().GetProperty("AimBlend");
+            PropertyInfo isAdsCrosshairActive =
+                controller.GetType().GetProperty("IsAdsCrosshairActive");
+            PropertyInfo aimMode =
+                controller.GetType().GetProperty("AimMode");
+            Camera playerCamera =
+                FindChildByName(player.transform, "MainCamera")
+                    .GetComponent<Camera>();
+            Transform weaponTransform = FindObjectWithComponent(
+                GetSceneObjects(SceneManager.GetActiveScene()),
+                "WeaponController").transform;
+            Animator animator = player.GetComponentInChildren<Animator>();
+
+            Assert.That(trySetAiming, Is.Not.Null);
+            Assert.That(aimBlend, Is.Not.Null);
+            Assert.That(isAdsCrosshairActive, Is.Not.Null);
+            Assert.That(aimMode, Is.Not.Null);
+            Assert.That(playerCamera, Is.Not.Null);
+            Assert.That(weaponTransform, Is.Not.Null);
+            Assert.That(animator, Is.Not.Null);
+            aimMode.SetValue(
+                controller,
+                System.Enum.Parse(aimMode.PropertyType, "Toggle"));
+
+            float hipFov = playerCamera.fieldOfView;
+            Vector3 hipWeaponPosition = playerCamera.transform
+                .InverseTransformPoint(weaponTransform.position);
+            Vector2 hipLookDelta = (Vector2)calculateLookDelta.Invoke(
+                controller,
+                new object[] { new Vector2(10f, 0f), true, 0.5f });
+
+            Assert.That(
+                (bool)trySetAiming.Invoke(controller, new object[] { true }),
+                Is.True);
+            Assert.That(
+                playerCamera.fieldOfView,
+                Is.EqualTo(hipFov).Within(0.01f),
+                "Entering ADS must start a transition instead of snapping.");
+
+            yield return new WaitForSeconds(0.1f);
+
+            Assert.That(
+                playerCamera.fieldOfView,
+                Is.LessThan(hipFov - 0.1f)
+                    .And.GreaterThan(hipFov - 14.9f),
+                "ADS FOV must be between the hip and target values mid-transition.");
+
+            yield return new WaitForSeconds(0.2f);
+
+            Assert.That((bool)isAiming.GetValue(controller), Is.True);
+            Assert.That(
+                (float)aimBlend.GetValue(controller),
+                Is.GreaterThan(0.95f));
+            Assert.That(playerCamera.fieldOfView, Is.LessThan(hipFov - 5f));
+            Assert.That(
+                Vector3.Distance(
+                    playerCamera.transform.InverseTransformPoint(
+                        weaponTransform.position),
+                    hipWeaponPosition),
+                Is.GreaterThan(0.001f));
+            Assert.That(
+                (bool)isAdsCrosshairActive.GetValue(controller),
+                Is.True);
+            Assert.That(
+                animator.GetFloat("Aiming"),
+                Is.GreaterThan(0.8f),
+                "Animator Aiming must continue to drive the weapon pose.");
+
+            Vector2 adsLookDelta = (Vector2)calculateLookDelta.Invoke(
+                controller,
+                new object[] { new Vector2(10f, 0f), true, 0.5f });
+            Assert.That(
+                adsLookDelta.x,
+                Is.LessThan(hipLookDelta.x * 0.75f),
+                "ADS must reduce look sensitivity.");
+
+            trySetAiming.Invoke(controller, new object[] { false });
+            yield return new WaitForSeconds(0.3f);
+
+            Assert.That((bool)isAiming.GetValue(controller), Is.False);
+            Assert.That(playerCamera.fieldOfView, Is.EqualTo(hipFov).Within(0.1f));
+            Assert.That(
+                (bool)isAdsCrosshairActive.GetValue(controller),
+                Is.False);
+            Assert.That(animator.GetFloat("Aiming"), Is.LessThan(0.2f));
+        }
+
+        [UnityTest]
+        public IEnumerator SprintCancelsAimAndBlocksReentry()
+        {
+            yield return LoadCityNew();
+
+            GameObject player = FindObjectWithComponent(
+                GetSceneObjects(SceneManager.GetActiveScene()),
+                "PlayerController");
+            Component controller = player.GetComponent("PlayerController");
+            MethodInfo trySetAiming =
+                controller.GetType().GetMethod("TrySetAiming");
+            PropertyInfo isAiming =
+                controller.GetType().GetProperty("IsAiming");
+            PropertyInfo isSprinting =
+                controller.GetType().GetProperty("IsSprinting");
+            PropertyInfo aimMode =
+                controller.GetType().GetProperty("AimMode");
+            MethodInfo applyAimingState = controller.GetType().GetMethod(
+                "ApplyAimingState",
+                BindingFlags.Instance | BindingFlags.NonPublic);
+
+            aimMode.SetValue(
+                controller,
+                System.Enum.Parse(aimMode.PropertyType, "Toggle"));
+            Assert.That(applyAimingState, Is.Not.Null);
+            Assert.That(
+                (bool)trySetAiming.Invoke(controller, new object[] { true }),
+                Is.True);
+            Assert.That((bool)isAiming.GetValue(controller), Is.True);
+
+            Assert.That(
+                (bool)applyAimingState.Invoke(
+                    controller,
+                    new object[] { true, true }),
+                Is.False,
+                "ADS cannot start while sprinting.");
+            Assert.That(
+                (bool)isAiming.GetValue(controller),
+                Is.False,
+                "Starting a sprint must cancel ADS.");
+            Assert.That(
+                (bool)isSprinting.GetValue(controller),
+                Is.False,
+                "The scene starts without sprint input; movement-state " +
+                "simulation must not leak into live input.");
+        }
+
+        [UnityTest]
+        public IEnumerator ToggleAimRespondsToTwoRightMouseClicks()
+        {
+            Mouse mouse = InputSystem.AddDevice<Mouse>();
+
+            try
+            {
+                yield return LoadCityNew();
+
+                GameObject player = FindObjectWithComponent(
+                    GetSceneObjects(SceneManager.GetActiveScene()),
+                    "PlayerController");
+                Component controller =
+                    player.GetComponent("PlayerController");
+                PropertyInfo aimMode =
+                    controller.GetType().GetProperty("AimMode");
+                PropertyInfo isAiming =
+                    controller.GetType().GetProperty("IsAiming");
+
+                aimMode.SetValue(
+                    controller,
+                    System.Enum.Parse(aimMode.PropertyType, "Toggle"));
+
+                Press(mouse.rightButton);
+                yield return null;
+
+                Assert.That(
+                    (bool)isAiming.GetValue(controller),
+                    Is.True,
+                    "The first right click must enter Toggle ADS.");
+
+                Release(mouse.rightButton);
+                yield return null;
+                Press(mouse.rightButton);
+                yield return null;
+
+                Assert.That(
+                    (bool)isAiming.GetValue(controller),
+                    Is.False,
+                    "The second right click must exit Toggle ADS.");
+            }
+            finally
+            {
+                InputSystem.RemoveDevice(mouse);
+            }
         }
 
         private static IEnumerator WaitForStanceTransition()

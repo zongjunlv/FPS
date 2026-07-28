@@ -11121,6 +11121,12 @@ MonoBehaviour:
   mouseSensitivity: 0.1
   gamepadSensitivity: 180
   invertY: 0
+  aimInputMode: 1
+  aimCamera: {fileID: 0}
+  hipFieldOfView: 60
+  aimFieldOfView: 45
+  aimTransitionDuration: 0.2
+  aimSensitivityMultiplier: 0.55
 --- !u!143 &1073853144
 CharacterController:
   m_ObjectHideFlags: 0
