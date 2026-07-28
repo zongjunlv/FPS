@@ -45,7 +45,7 @@ public class PlayerController : MonoBehaviour
 
     private void Update()
     {
-        // Rotate();
+        Rotate();
         Move();
         Jump();
         Aim();
