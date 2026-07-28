@@ -1,11 +1,18 @@
 using System;
 using UnityEngine;
+using UnityEngine.Serialization;
 
 [CreateAssetMenu(fileName = "Weapon", menuName = "Scriptable Objects/Weapon")]
 public class WeaponDefinition : ScriptableObject
 {
     public String WeaponName;
-    public int MagazineCapcity;
+    [FormerlySerializedAs("MagazineCapcity")]
+    [Min(1)] public int MagazineCapacity = 30;
+    [Min(0)] public int InitialReserveAmmo = 120;
+    [Min(0.01f)] public float ReloadDuration = 2.4f;
+    public AudioClip DryFireSound;
+    public AudioClip ReloadSound;
+    public AudioClip EmptyReloadSound;
     public float FireIntervel;
     public bool IsAutomatic;
     [Header("Recoil")]

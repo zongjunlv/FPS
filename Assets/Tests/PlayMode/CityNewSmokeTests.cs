@@ -114,6 +114,440 @@ namespace FPS.Tests.PlayMode
         }
 
         [UnityTest]
+        public IEnumerator SuccessfulShotConsumesExactlyOneRound()
+        {
+            yield return LoadCityNew();
+
+            GameObject weaponObject = FindObjectWithComponent(
+                GetSceneObjects(SceneManager.GetActiveScene()),
+                "WeaponController");
+            Component weapon = weaponObject.GetComponent("WeaponController");
+            MethodInfo tryFire = weapon.GetType().GetMethod("TryFire");
+            PropertyInfo currentAmmo =
+                weapon.GetType().GetProperty("CurrentAmmo");
+
+            Assert.That(
+                currentAmmo,
+                Is.Not.Null,
+                "WeaponController.CurrentAmmo is missing.");
+
+            int ammoBefore = (int)currentAmmo.GetValue(weapon);
+            bool didFire = (bool)tryFire.Invoke(weapon, null);
+            int ammoAfter = (int)currentAmmo.GetValue(weapon);
+
+            Assert.That(didFire, Is.True);
+            Assert.That(
+                ammoAfter,
+                Is.EqualTo(ammoBefore - 1),
+                "A successful shot must consume exactly one round.");
+        }
+
+        [Test]
+        public void RuntimeAmmoStatePartiallyReloadsWithoutChangingCapacity()
+        {
+            System.Type ammoStateType =
+                System.Type.GetType("WeaponAmmoState, Assembly-CSharp");
+
+            Assert.That(
+                ammoStateType,
+                Is.Not.Null,
+                "WeaponAmmoState runtime module is missing.");
+
+            object ammoState = System.Activator.CreateInstance(
+                ammoStateType,
+                new object[] { 30, 5 });
+            MethodInfo tryConsumeRound =
+                ammoStateType.GetMethod("TryConsumeRound");
+            MethodInfo tryBeginReload =
+                ammoStateType.GetMethod("TryBeginReload");
+            MethodInfo advanceReload =
+                ammoStateType.GetMethod("AdvanceReload");
+            PropertyInfo currentAmmo =
+                ammoStateType.GetProperty("CurrentAmmo");
+            PropertyInfo reserveAmmo =
+                ammoStateType.GetProperty("ReserveAmmo");
+            PropertyInfo magazineCapacity =
+                ammoStateType.GetProperty("MagazineCapacity");
+
+            Assert.That((bool)tryConsumeRound.Invoke(ammoState, null), Is.True);
+            Assert.That((bool)tryConsumeRound.Invoke(ammoState, null), Is.True);
+
+            Assert.That((bool)tryBeginReload.Invoke(ammoState, null), Is.True);
+            Assert.That(
+                (bool)advanceReload.Invoke(
+                    ammoState,
+                    new object[] { 1f, 0.5f }),
+                Is.True);
+
+            Assert.That((int)currentAmmo.GetValue(ammoState), Is.EqualTo(30));
+            Assert.That((int)reserveAmmo.GetValue(ammoState), Is.EqualTo(3));
+            Assert.That(
+                (int)magazineCapacity.GetValue(ammoState),
+                Is.EqualTo(30),
+                "Reloading must not mutate static magazine capacity.");
+        }
+
+        [Test]
+        public void RuntimeAmmoStateUsesOnlyAvailableReserve()
+        {
+            System.Type ammoStateType =
+                System.Type.GetType("WeaponAmmoState, Assembly-CSharp");
+            object ammoState = System.Activator.CreateInstance(
+                ammoStateType,
+                new object[] { 3, 2 });
+            MethodInfo tryConsumeRound =
+                ammoStateType.GetMethod("TryConsumeRound");
+            MethodInfo tryBeginReload =
+                ammoStateType.GetMethod("TryBeginReload");
+            MethodInfo advanceReload =
+                ammoStateType.GetMethod("AdvanceReload");
+            PropertyInfo currentAmmo =
+                ammoStateType.GetProperty("CurrentAmmo");
+            PropertyInfo reserveAmmo =
+                ammoStateType.GetProperty("ReserveAmmo");
+
+            Assert.That(
+                (bool)tryBeginReload.Invoke(ammoState, null),
+                Is.False,
+                "A full magazine must not start reloading.");
+
+            for (int index = 0; index < 3; index++)
+            {
+                Assert.That(
+                    (bool)tryConsumeRound.Invoke(ammoState, null),
+                    Is.True);
+            }
+
+            Assert.That(
+                (bool)tryConsumeRound.Invoke(ammoState, null),
+                Is.False,
+                "An empty magazine cannot consume another round.");
+            Assert.That((bool)tryBeginReload.Invoke(ammoState, null), Is.True);
+            Assert.That(
+                (bool)advanceReload.Invoke(
+                    ammoState,
+                    new object[] { 1f, 0.5f }),
+                Is.True);
+            Assert.That((int)currentAmmo.GetValue(ammoState), Is.EqualTo(2));
+            Assert.That((int)reserveAmmo.GetValue(ammoState), Is.EqualTo(0));
+            Assert.That(
+                (bool)tryBeginReload.Invoke(ammoState, null),
+                Is.False,
+                "Reloading must not start when reserve ammo is empty.");
+        }
+
+        [Test]
+        public void CancellingReloadDoesNotTransferAmmo()
+        {
+            System.Type ammoStateType =
+                System.Type.GetType("WeaponAmmoState, Assembly-CSharp");
+            object ammoState = System.Activator.CreateInstance(
+                ammoStateType,
+                new object[] { 30, 90 });
+            MethodInfo tryConsumeRound =
+                ammoStateType.GetMethod("TryConsumeRound");
+            MethodInfo tryBeginReload =
+                ammoStateType.GetMethod("TryBeginReload");
+            MethodInfo cancelReload =
+                ammoStateType.GetMethod("CancelReload");
+            PropertyInfo currentAmmo =
+                ammoStateType.GetProperty("CurrentAmmo");
+            PropertyInfo reserveAmmo =
+                ammoStateType.GetProperty("ReserveAmmo");
+            PropertyInfo isReloading =
+                ammoStateType.GetProperty("IsReloading");
+
+            Assert.That((bool)tryConsumeRound.Invoke(ammoState, null), Is.True);
+            int currentBeforeReload = (int)currentAmmo.GetValue(ammoState);
+            int reserveBeforeReload = (int)reserveAmmo.GetValue(ammoState);
+
+            Assert.That((bool)tryBeginReload.Invoke(ammoState, null), Is.True);
+            Assert.That((bool)cancelReload.Invoke(ammoState, null), Is.True);
+
+            Assert.That((bool)isReloading.GetValue(ammoState), Is.False);
+            Assert.That(
+                (int)currentAmmo.GetValue(ammoState),
+                Is.EqualTo(currentBeforeReload));
+            Assert.That(
+                (int)reserveAmmo.GetValue(ammoState),
+                Is.EqualTo(reserveBeforeReload));
+        }
+
+        [UnityTest]
+        public IEnumerator EmptyMagazineDoesNotSpawnProjectileAndThrottlesFeedback()
+        {
+            yield return LoadCityNew();
+
+            GameObject weaponObject = FindObjectWithComponent(
+                GetSceneObjects(SceneManager.GetActiveScene()),
+                "WeaponController");
+            Component weapon = weaponObject.GetComponent("WeaponController");
+            MethodInfo tryFire = weapon.GetType().GetMethod("TryFire");
+            PropertyInfo currentAmmo =
+                weapon.GetType().GetProperty("CurrentAmmo");
+            PropertyInfo magazineCapacity =
+                weapon.GetType().GetProperty("MagazineCapacity");
+            PropertyInfo fireInterval =
+                weapon.GetType().GetProperty("FireInterval");
+            PropertyInfo dryFireFeedbackCount =
+                weapon.GetType().GetProperty("DryFireFeedbackCount");
+            int capacity = (int)magazineCapacity.GetValue(weapon);
+            float shotDelay = (float)fireInterval.GetValue(weapon) + 0.01f;
+
+            for (int index = 0; index < capacity; index++)
+            {
+                if (index > 0)
+                {
+                    yield return new WaitForSeconds(shotDelay);
+                }
+
+                Assert.That(
+                    (bool)tryFire.Invoke(weapon, null),
+                    Is.True,
+                    $"Shot {index + 1} should fire.");
+            }
+
+            Assert.That((int)currentAmmo.GetValue(weapon), Is.EqualTo(0));
+            yield return new WaitForSeconds(shotDelay);
+
+            int projectilesBefore =
+                CountComponentsByName("ProjectileController");
+            int feedbackBefore =
+                (int)dryFireFeedbackCount.GetValue(weapon);
+
+            Assert.That((bool)tryFire.Invoke(weapon, null), Is.False);
+            Assert.That(
+                CountComponentsByName("ProjectileController"),
+                Is.EqualTo(projectilesBefore),
+                "Dry firing must not instantiate a damaging projectile.");
+            Assert.That(
+                (int)dryFireFeedbackCount.GetValue(weapon),
+                Is.EqualTo(feedbackBefore + 1));
+
+            Assert.That((bool)tryFire.Invoke(weapon, null), Is.False);
+            Assert.That(
+                (int)dryFireFeedbackCount.GetValue(weapon),
+                Is.EqualTo(feedbackBefore + 1),
+                "Automatic dry-fire feedback must be rate limited.");
+        }
+
+        [UnityTest]
+        public IEnumerator ReloadBlocksFireAndTransfersAmmoOnCompletion()
+        {
+            yield return LoadCityNew();
+
+            GameObject playerObject = FindObjectWithComponent(
+                GetSceneObjects(SceneManager.GetActiveScene()),
+                "PlayerAnimatorController");
+            Component playerAnimator =
+                playerObject.GetComponent("PlayerAnimatorController");
+            PropertyInfo isReloadAnimationPlaying =
+                playerAnimator.GetType().GetProperty(
+                    "IsReloadAnimationPlaying");
+            GameObject weaponObject = FindObjectWithComponent(
+                GetSceneObjects(SceneManager.GetActiveScene()),
+                "WeaponController");
+            Component weapon = weaponObject.GetComponent("WeaponController");
+            MethodInfo tryFire = weapon.GetType().GetMethod("TryFire");
+            MethodInfo tryStartReload =
+                weapon.GetType().GetMethod("TryStartReload");
+            PropertyInfo currentAmmo =
+                weapon.GetType().GetProperty("CurrentAmmo");
+            PropertyInfo reserveAmmo =
+                weapon.GetType().GetProperty("ReserveAmmo");
+            PropertyInfo magazineCapacity =
+                weapon.GetType().GetProperty("MagazineCapacity");
+            PropertyInfo reloadDuration =
+                weapon.GetType().GetProperty("ReloadDuration");
+            PropertyInfo isReloading =
+                weapon.GetType().GetProperty("IsReloading");
+
+            Assert.That(tryStartReload, Is.Not.Null);
+            Assert.That(reserveAmmo, Is.Not.Null);
+            Assert.That(magazineCapacity, Is.Not.Null);
+            Assert.That(reloadDuration, Is.Not.Null);
+            Assert.That(isReloading, Is.Not.Null);
+
+            Assert.That((bool)tryFire.Invoke(weapon, null), Is.True);
+            int ammoAfterShot = (int)currentAmmo.GetValue(weapon);
+            int reserveBeforeReload = (int)reserveAmmo.GetValue(weapon);
+
+            Assert.That(
+                (bool)tryStartReload.Invoke(weapon, null),
+                Is.True);
+            Assert.That((bool)isReloading.GetValue(weapon), Is.True);
+            Assert.That(
+                (bool)isReloadAnimationPlaying.GetValue(playerAnimator),
+                Is.True);
+            Assert.That(
+                (bool)tryFire.Invoke(weapon, null),
+                Is.False,
+                "Reloading must block firing.");
+            Assert.That(
+                (int)currentAmmo.GetValue(weapon),
+                Is.EqualTo(ammoAfterShot));
+
+            yield return new WaitForSeconds(
+                (float)reloadDuration.GetValue(weapon) + 0.1f);
+
+            Assert.That((bool)isReloading.GetValue(weapon), Is.False);
+            Assert.That(
+                (int)currentAmmo.GetValue(weapon),
+                Is.EqualTo((int)magazineCapacity.GetValue(weapon)));
+            Assert.That(
+                (int)reserveAmmo.GetValue(weapon),
+                Is.EqualTo(reserveBeforeReload - 1));
+            Assert.That(
+                (bool)isReloadAnimationPlaying.GetValue(playerAnimator),
+                Is.False,
+                "Completing a reload must leave the arms animation state.");
+
+            Assert.That((bool)tryFire.Invoke(weapon, null), Is.True);
+            int currentBeforeCancelledReload =
+                (int)currentAmmo.GetValue(weapon);
+            int reserveBeforeCancelledReload =
+                (int)reserveAmmo.GetValue(weapon);
+            MethodInfo cancelReload =
+                weapon.GetType().GetMethod("CancelReload");
+
+            Assert.That(
+                (bool)tryStartReload.Invoke(weapon, null),
+                Is.True);
+            Assert.That((bool)cancelReload.Invoke(weapon, null), Is.True);
+            Assert.That(
+                (bool)isReloadAnimationPlaying.GetValue(playerAnimator),
+                Is.False,
+                "Cancelling a reload must leave the arms animation state.");
+            Assert.That(
+                (int)currentAmmo.GetValue(weapon),
+                Is.EqualTo(currentBeforeCancelledReload));
+            Assert.That(
+                (int)reserveAmmo.GetValue(weapon),
+                Is.EqualTo(reserveBeforeCancelledReload));
+        }
+
+        [UnityTest]
+        public IEnumerator ReloadInputStartsReloadAndExitsAim()
+        {
+            Keyboard keyboard = InputSystem.AddDevice<Keyboard>();
+
+            try
+            {
+                yield return LoadCityNew();
+
+                List<GameObject> sceneObjects =
+                    GetSceneObjects(SceneManager.GetActiveScene());
+                GameObject player = FindObjectWithComponent(
+                    sceneObjects,
+                    "PlayerController");
+                Component playerController =
+                    player.GetComponent("PlayerController");
+                Component inputReader =
+                    player.GetComponent("PlayerInputReader");
+                Component playerAnimator =
+                    player.GetComponent("PlayerAnimatorController");
+                Component weapon = FindObjectWithComponent(
+                    sceneObjects,
+                    "WeaponController").GetComponent("WeaponController");
+                MethodInfo trySetAiming =
+                    playerController.GetType().GetMethod("TrySetAiming");
+                MethodInfo tryFire = weapon.GetType().GetMethod("TryFire");
+                PropertyInfo isAiming =
+                    playerController.GetType().GetProperty("IsAiming");
+                PropertyInfo isReloading =
+                    weapon.GetType().GetProperty("IsReloading");
+                PropertyInfo reloadPressed =
+                    inputReader.GetType().GetProperty("ReloadPressed");
+                PropertyInfo isReloadAnimationPlaying =
+                    playerAnimator.GetType().GetProperty(
+                        "IsReloadAnimationPlaying");
+
+                Assert.That((bool)tryFire.Invoke(weapon, null), Is.True);
+                Assert.That(
+                    (bool)trySetAiming.Invoke(
+                        playerController,
+                        new object[] { true }),
+                    Is.True);
+
+                PressAndRelease(keyboard.rKey);
+                yield return null;
+                Assert.That(
+                    (bool)reloadPressed.GetValue(inputReader),
+                    Is.True,
+                    "Reload input callback must latch R until LateUpdate.");
+                yield return null;
+
+                Assert.That(
+                    (bool)isReloading.GetValue(weapon),
+                    Is.True,
+                    "Pressing R must start a valid reload.");
+                Assert.That(
+                    (bool)isAiming.GetValue(playerController),
+                    Is.False,
+                    "Starting a reload must exit ADS.");
+                Assert.That(
+                    isReloadAnimationPlaying,
+                    Is.Not.Null,
+                    "PlayerAnimatorController must expose reload animation state.");
+                Assert.That(
+                    (bool)isReloadAnimationPlaying.GetValue(playerAnimator),
+                    Is.True,
+                    "A successful reload must animate the first-person arms.");
+            }
+            finally
+            {
+                InputSystem.RemoveDevice(keyboard);
+            }
+        }
+
+        [UnityTest]
+        public IEnumerator AmmoHudTracksWeaponRuntimeState()
+        {
+            yield return LoadCityNew();
+
+            List<GameObject> sceneObjects =
+                GetSceneObjects(SceneManager.GetActiveScene());
+            GameObject weaponObject = FindObjectWithComponent(
+                sceneObjects,
+                "WeaponController");
+            Component weapon = weaponObject.GetComponent("WeaponController");
+            GameObject hudObject = FindObjectWithComponent(
+                sceneObjects,
+                "AmmoHudPresenter");
+
+            Assert.That(
+                hudObject,
+                Is.Not.Null,
+                "AmmoHudPresenter is missing from the player.");
+
+            Component hud = hudObject.GetComponent("AmmoHudPresenter");
+            PropertyInfo displayText =
+                hud.GetType().GetProperty("DisplayText");
+            PropertyInfo currentAmmo =
+                weapon.GetType().GetProperty("CurrentAmmo");
+            PropertyInfo reserveAmmo =
+                weapon.GetType().GetProperty("ReserveAmmo");
+            MethodInfo tryFire = weapon.GetType().GetMethod("TryFire");
+
+            string initialText =
+                $"{currentAmmo.GetValue(weapon)} / " +
+                $"{reserveAmmo.GetValue(weapon)}";
+            Assert.That(
+                (string)displayText.GetValue(hud),
+                Is.EqualTo(initialText));
+
+            Assert.That((bool)tryFire.Invoke(weapon, null), Is.True);
+            yield return null;
+
+            string textAfterShot =
+                $"{currentAmmo.GetValue(weapon)} / " +
+                $"{reserveAmmo.GetValue(weapon)}";
+            Assert.That(
+                (string)displayText.GetValue(hud),
+                Is.EqualTo(textAfterShot));
+        }
+
+        [UnityTest]
         public IEnumerator PlayerCrouchLowersCapsuleAndViewThenRestoresThem()
         {
             yield return LoadCityNew();
