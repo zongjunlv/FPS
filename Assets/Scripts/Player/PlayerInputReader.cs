@@ -1,4 +1,3 @@
-using System;
 using UnityEngine;
 using UnityEngine.InputSystem;
 
@@ -13,6 +12,9 @@ public class PlayerInputReader : MonoBehaviour
     [SerializeField] private InputActionReference attackAction;
     [SerializeField] private InputActionReference aimingAction;
 
+    private InputAction crouchAction;
+    private InputAction pauseAction;
+
     // 其他脚本只能读取输入结果，不需要直接管理 Input Action。
     public Vector2 Move => moveAction.action.ReadValue<Vector2>();
     public bool JumpPressed => jumpAction.action.WasPressedThisFrame();
@@ -22,7 +24,22 @@ public class PlayerInputReader : MonoBehaviour
     public bool AttackPressed => attackAction.action.WasPressedThisFrame();
     public bool AttackHeld => attackAction.action.IsPressed();
     public bool AimingPressed => aimingAction.action.WasPressedThisFrame();
+    public bool CrouchPressed =>
+        crouchAction != null && crouchAction.WasPressedThisFrame();
+    public bool PausePressed =>
+        pauseAction != null && pauseAction.WasPressedThisFrame();
+    public bool LookUsesPointerDelta =>
+        lookAction.action.activeControl?.device is Pointer;
 
+    private void Awake()
+    {
+        crouchAction = moveAction.action.actionMap.FindAction(
+            "Crouch",
+            true);
+        pauseAction = moveAction.action.actionMap.FindAction(
+            "Pause",
+            true);
+    }
 
     private void OnEnable()
     {
@@ -33,6 +50,8 @@ public class PlayerInputReader : MonoBehaviour
         interactAction.action.Enable();
         attackAction.action.Enable();
         aimingAction.action.Enable();
+        crouchAction?.Enable();
+        pauseAction?.Enable();
     }
 
     private void OnDisable()
@@ -44,5 +63,7 @@ public class PlayerInputReader : MonoBehaviour
         interactAction.action.Disable();
         attackAction.action.Disable();
         aimingAction.action.Disable();
+        crouchAction?.Disable();
+        pauseAction?.Disable();
     }
 }
