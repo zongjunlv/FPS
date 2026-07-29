@@ -1,16 +1,48 @@
+using System;
 using UnityEngine;
 
-public class Health : MonoBehaviour
+public sealed class Health : MonoBehaviour, IDamageable
 {
-    // Start is called once before the first execution of Update after the MonoBehaviour is created
-    void Start()
+    [SerializeField, Min(0.01f)] private float maxHealth = 100f;
+
+    public event Action<DamageInfo> Damaged;
+    public event Action Died;
+
+    public float MaxHealth { get; private set; }
+    public float CurrentHealth { get; private set; }
+    public bool IsDead { get; private set; }
+
+    private void Awake()
     {
-        
+        Initialize(maxHealth);
     }
 
-    // Update is called once per frame
-    void Update()
+    public void Initialize(float newMaxHealth)
     {
-        
+        MaxHealth = Mathf.Max(0.01f, newMaxHealth);
+        CurrentHealth = MaxHealth;
+        IsDead = false;
+    }
+
+    public bool ApplyDamage(DamageInfo damage)
+    {
+        if (IsDead || damage.Amount <= 0f)
+        {
+            return false;
+        }
+
+        CurrentHealth = Mathf.Max(
+            0f,
+            CurrentHealth - damage.Amount);
+        Damaged?.Invoke(damage);
+
+        if (CurrentHealth > 0f)
+        {
+            return true;
+        }
+
+        IsDead = true;
+        Died?.Invoke();
+        return true;
     }
 }

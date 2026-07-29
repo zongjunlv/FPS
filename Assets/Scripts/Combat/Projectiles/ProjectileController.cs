@@ -1,40 +1,42 @@
-using System.Security.Cryptography;
 using UnityEngine;
 
 public class ProjectileController : MonoBehaviour
 {
+    [Tooltip(
+        "Physical projectiles are reserved for slow special weapons " +
+        "such as rockets and grenades.")]
     [SerializeField] private ProjectileDefinition bullet;
     [SerializeField] private GameObject concrete;
-    // Start is called once before the first execution of Update after the MonoBehaviour is created
+
     private Rigidbody rigidbody;
-    void Start()
+
+    private void Start()
     {
         rigidbody = GetComponent<Rigidbody>();
         rigidbody.AddForce(transform.forward * bullet.Speed, ForceMode.Impulse);
         Destroy(gameObject, 1f);
     }
 
-    // Update is called once per frame
-    void Update()
-    {
-        
-    }
-
     private void OnCollisionEnter(Collision collision)
     {
-        
         ContactPoint contact = collision.GetContact(0);
         Quaternion rotation = Quaternion.LookRotation(contact.normal);
 
         Instantiate(concrete, contact.point, rotation);
 
-        if(collision.gameObject.tag == "Enemy")
+        IDamageable damageable =
+            DamageableResolver.Find(collision.transform);
+
+        if (damageable != null)
         {
-            collision.gameObject.GetComponent<EnemyController>().GetHit(bullet.Damage);
-            
+            damageable.ApplyDamage(
+                new DamageInfo(
+                    bullet.Damage,
+                    contact.point,
+                    transform.forward,
+                    gameObject));
         }
-        
+
         Destroy(gameObject);
     }
-
 }

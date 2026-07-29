@@ -3,6 +3,9 @@ using UnityEngine;
 
 public class WeaponController : MonoBehaviour
 {
+    private static readonly int FireStateHash =
+        Animator.StringToHash("Layer Base.Fire");
+
     [SerializeField] private WeaponDefinition weapon;
     [SerializeField] private MuzzleFlashController muzzleFlash;
 
@@ -28,6 +31,7 @@ public class WeaponController : MonoBehaviour
     public float FireInterval => weapon.FireIntervel;
     public float ReloadDuration => weapon.ReloadDuration;
     public bool IsReloading => ammoState.IsReloading;
+    public Transform MuzzleTransform => FirePoint.transform;
     public RuntimeAnimatorController CharacterAnimatorController =>
         weapon.CharacterAnimatorController;
     public int DryFireFeedbackCount { get; private set; }
@@ -39,6 +43,7 @@ public class WeaponController : MonoBehaviour
     private Animator weaponAnimator;
     private Camera aimCamera;
     private Transform shooterRoot;
+    private ShotTracerPool tracerPool;
     private readonly RaycastHit[] hitBuffer = new RaycastHit[32];
 
     private void Awake()
@@ -56,6 +61,12 @@ public class WeaponController : MonoBehaviour
         audioSource.playOnAwake = false;
         audioSource.spatialBlend = 0f;
         weaponAnimator = GetComponent<Animator>();
+
+        if (weaponAnimator != null)
+        {
+            weaponAnimator.cullingMode =
+                AnimatorCullingMode.AlwaysAnimate;
+        }
     }
 
     // Update is called once per frame
@@ -95,7 +106,10 @@ public class WeaponController : MonoBehaviour
 
         if (weaponAnimator != null)
         {
-            weaponAnimator.CrossFade("Fire", 0.03f, 0);
+            weaponAnimator.Play(
+                FireStateHash,
+                0,
+                0f);
         }
 
         muzzleFlash.Play();
@@ -104,10 +118,14 @@ public class WeaponController : MonoBehaviour
         return true;
     }
 
-    public void ConfigureAiming(Camera camera, Transform ownerRoot)
+    public void ConfigureAiming(
+        Camera camera,
+        Transform ownerRoot,
+        ShotTracerPool sharedTracerPool)
     {
         aimCamera = camera;
         shooterRoot = ownerRoot;
+        tracerPool = sharedTracerPool;
     }
 
     public bool TryStartReload()
@@ -253,16 +271,21 @@ public class WeaponController : MonoBehaviour
                 out RaycastHit hit))
         {
             tracerEnd = hit.point;
-            ApplyHit(hit);
+            ApplyHit(hit, ray.direction);
         }
 
-        ShotTracerController.Play(
-            ray.origin,
-            tracerEnd,
-            tracerSpeed);
+        if (tracerPool != null)
+        {
+            tracerPool.Play(
+                ray.origin,
+                tracerEnd,
+                tracerSpeed);
+        }
     }
 
-    private void ApplyHit(RaycastHit hit)
+    private void ApplyHit(
+        RaycastHit hit,
+        Vector3 shotDirection)
     {
         if (impactEffect != null)
         {
@@ -272,12 +295,19 @@ public class WeaponController : MonoBehaviour
                 Quaternion.LookRotation(hit.normal));
         }
 
-        EnemyController enemy =
-            hit.collider.GetComponentInParent<EnemyController>();
+        IDamageable damageable =
+            DamageableResolver.Find(hit.collider.transform);
 
-        if (enemy != null)
+        if (damageable != null)
         {
-            enemy.GetHit(weapon.Damage);
+            damageable.ApplyDamage(
+                new DamageInfo(
+                    weapon.Damage,
+                    hit.point,
+                    shotDirection,
+                    shooterRoot != null
+                        ? shooterRoot.gameObject
+                        : gameObject));
         }
     }
 

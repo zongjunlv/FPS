@@ -26,5 +26,5 @@ MonoBehaviour:
   CharacterAnimatorController: {fileID: 22100000, guid: 257eac322a7afde43bfa9aa9e60baa84, type: 2}
   FireIntervel: 0.28
   IsAutomatic: 0
-  HorizontalRecoil: 1.2
-  VerticalRecoil: 3
+  HorizontalRecoil: 1.83
+  VerticalRecoil: 10

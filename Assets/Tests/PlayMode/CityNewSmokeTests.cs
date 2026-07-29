@@ -260,8 +260,22 @@ namespace FPS.Tests.PlayMode
 
             Ray aimRay = aimCamera.ViewportPointToRay(
                 new Vector3(0.5f, 0.5f, 0f));
-            Collider enemyCollider =
-                enemy.GetComponentInChildren<Collider>();
+            Collider enemyCollider = null;
+
+            foreach (Collider collider in
+                     enemy.GetComponentsInChildren<Collider>())
+            {
+                if (collider.enabled)
+                {
+                    enemyCollider = collider;
+                    break;
+                }
+            }
+
+            Assert.That(
+                enemyCollider,
+                Is.Not.Null,
+                "Enemy requires an enabled damage hitbox.");
             enemy.transform.position +=
                 aimRay.GetPoint(3f) - enemyCollider.bounds.center;
             Physics.SyncTransforms();
@@ -291,6 +305,227 @@ namespace FPS.Tests.PlayMode
             Assert.That(
                 CountComponentsByName("ProjectileController"),
                 Is.EqualTo(0));
+        }
+
+        [UnityTest]
+        public IEnumerator HitscanDamagesUntaggedDamageable()
+        {
+            yield return LoadCityNew();
+
+            List<GameObject> sceneObjects =
+                GetSceneObjects(SceneManager.GetActiveScene());
+            GameObject weaponObject = FindObjectWithComponent(
+                sceneObjects,
+                "WeaponController");
+            GameObject player = FindObjectWithComponent(
+                sceneObjects,
+                "PlayerCombatController");
+            Component weapon =
+                weaponObject.GetComponent("WeaponController");
+            MethodInfo tryFire =
+                weapon.GetType().GetMethod("TryFire");
+            float weaponDamage =
+                (float)weapon.GetType()
+                    .GetProperty("Damage")
+                    .GetValue(weapon);
+            Camera aimCamera = FindChildByName(
+                    player.transform,
+                    "MainCamera")
+                .GetComponent<Camera>();
+            Ray aimRay = aimCamera.ViewportPointToRay(
+                new Vector3(0.5f, 0.5f, 0f));
+            GameObject target =
+                GameObject.CreatePrimitive(PrimitiveType.Cube);
+            target.name = "Untagged Damageable";
+            target.tag = "Untagged";
+            target.transform.position = aimRay.GetPoint(3f);
+
+            System.Type healthType =
+                System.Type.GetType("Health, Assembly-CSharp");
+            Component health = target.AddComponent(healthType);
+            healthType.GetMethod("Initialize")
+                .Invoke(health, new object[] { 100f });
+            Physics.SyncTransforms();
+
+            Assert.That(
+                target.GetComponent("EnemyController"),
+                Is.Null);
+            Assert.That((bool)tryFire.Invoke(weapon, null), Is.True);
+
+            float currentHealth =
+                (float)healthType.GetProperty("CurrentHealth")
+                    .GetValue(health);
+            Assert.That(
+                currentHealth,
+                Is.EqualTo(100f - weaponDamage).Within(0.001f),
+                "Hitscan must damage any IDamageable without an Enemy tag.");
+        }
+
+        [UnityTest]
+        public IEnumerator MuzzleObstructionBlocksDamageToCameraTarget()
+        {
+            yield return LoadCityNew();
+
+            List<GameObject> sceneObjects =
+                GetSceneObjects(SceneManager.GetActiveScene());
+            GameObject weaponObject = FindObjectWithComponent(
+                sceneObjects,
+                "WeaponController");
+            GameObject player = FindObjectWithComponent(
+                sceneObjects,
+                "PlayerCombatController");
+            GameObject enemy = FindObjectWithComponent(
+                sceneObjects,
+                "EnemyController");
+            enemy.SetActive(false);
+
+            Component weapon =
+                weaponObject.GetComponent("WeaponController");
+            MethodInfo tryFire =
+                weapon.GetType().GetMethod("TryFire");
+            Transform muzzle =
+                (Transform)weapon.GetType()
+                    .GetProperty("MuzzleTransform")
+                    .GetValue(weapon);
+            Camera aimCamera = FindChildByName(
+                    player.transform,
+                    "MainCamera")
+                .GetComponent<Camera>();
+            Ray aimRay = aimCamera.ViewportPointToRay(
+                new Vector3(0.5f, 0.5f, 0f));
+
+            GameObject target =
+                GameObject.CreatePrimitive(PrimitiveType.Cube);
+            target.name = "Camera Aim Damage Target";
+            target.transform.position = aimRay.GetPoint(5f);
+            target.transform.localScale = Vector3.one * 0.5f;
+            System.Type healthType =
+                System.Type.GetType("Health, Assembly-CSharp");
+            Component health = target.AddComponent(healthType);
+            healthType.GetMethod("Initialize")
+                .Invoke(health, new object[] { 100f });
+
+            Vector3 muzzleDirection =
+                (target.transform.position - muzzle.position).normalized;
+            GameObject obstruction =
+                GameObject.CreatePrimitive(PrimitiveType.Cube);
+            obstruction.name = "Muzzle Obstruction";
+            obstruction.transform.position =
+                muzzle.position + muzzleDirection * 0.35f;
+            obstruction.transform.localScale =
+                Vector3.one * 0.08f;
+            Physics.SyncTransforms();
+
+            Collider targetCollider =
+                target.GetComponent<Collider>();
+            Collider obstructionCollider =
+                obstruction.GetComponent<Collider>();
+            Assert.That(
+                targetCollider.Raycast(
+                    aimRay,
+                    out _,
+                    10f),
+                Is.True,
+                "Test target must be visible from the camera.");
+            Assert.That(
+                obstructionCollider.Raycast(
+                    aimRay,
+                    out _,
+                    10f),
+                Is.False,
+                "Test obstruction must not block the camera ray.");
+            Assert.That(
+                obstructionCollider.Raycast(
+                    new Ray(muzzle.position, muzzleDirection),
+                    out _,
+                    2f),
+                Is.True,
+                "Test obstruction must block the muzzle ray.");
+
+            Assert.That((bool)tryFire.Invoke(weapon, null), Is.True);
+
+            float remainingHealth =
+                (float)healthType.GetProperty("CurrentHealth")
+                    .GetValue(health);
+            GameObject impact = FindObjectByName("Concrete(Clone)");
+
+            Assert.That(remainingHealth, Is.EqualTo(100f));
+            Assert.That(impact, Is.Not.Null);
+            Assert.That(
+                Vector3.Distance(
+                    obstructionCollider.ClosestPoint(
+                        impact.transform.position),
+                    impact.transform.position),
+                Is.LessThan(0.03f),
+                "Impact must stop on the muzzle obstruction.");
+        }
+
+        [UnityTest]
+        public IEnumerator SpiderUsesHealthDeathEventAndConfiguredHitboxes()
+        {
+            yield return LoadCityNew();
+
+            GameObject enemy = FindObjectWithComponent(
+                GetSceneObjects(SceneManager.GetActiveScene()),
+                "EnemyController");
+            Assert.That(enemy, Is.Not.Null);
+
+            Component health = enemy.GetComponent("Health");
+            Assert.That(
+                health,
+                Is.Not.Null,
+                "Spider must use the common Health module.");
+
+            System.Type hitboxType =
+                System.Type.GetType(
+                    "DamageHitbox, Assembly-CSharp");
+            Component[] hitboxes =
+                enemy.GetComponentsInChildren(
+                    hitboxType,
+                    true);
+            Assert.That(
+                hitboxes.Length,
+                Is.GreaterThanOrEqualTo(2),
+                "Spider requires separate body and head hitboxes.");
+
+            bool hasBody = false;
+            bool hasHead = false;
+
+            foreach (Component hitbox in hitboxes)
+            {
+                float multiplier =
+                    (float)hitboxType
+                        .GetProperty("DamageMultiplier")
+                        .GetValue(hitbox);
+                hasBody |= Mathf.Approximately(multiplier, 1f);
+                hasHead |= multiplier > 1f;
+            }
+
+            Assert.That(hasBody, Is.True);
+            Assert.That(hasHead, Is.True);
+
+            object lethalDamage = System.Activator.CreateInstance(
+                System.Type.GetType(
+                    "DamageInfo, Assembly-CSharp"),
+                new object[]
+                {
+                    10000f,
+                    enemy.transform.position,
+                    Vector3.forward,
+                    null
+                });
+            health.GetType().GetMethod("ApplyDamage")
+                .Invoke(health, new[] { lethalDamage });
+            yield return null;
+
+            Assert.That(
+                enemy == null,
+                Is.True,
+                "Spider death presentation must respond to Health.Died.");
+            Assert.That(
+                FindObjectByName("P_EXP_Barrel(Clone)"),
+                Is.Not.Null,
+                "Spider death must spawn its explosion effect.");
         }
 
         [UnityTest]
@@ -812,6 +1047,75 @@ namespace FPS.Tests.PlayMode
             {
                 InputSystem.RemoveDevice(mouse);
                 InputSystem.RemoveDevice(keyboard);
+            }
+        }
+
+        [UnityTest]
+        public IEnumerator EveryPistolShotRestartsSlideAnimation()
+        {
+            yield return LoadCityNew();
+
+            GameObject player = FindObjectWithComponent(
+                GetSceneObjects(SceneManager.GetActiveScene()),
+                "PlayerCombatController");
+            Component combat =
+                player.GetComponent("PlayerCombatController");
+            MethodInfo trySelectWeapon =
+                combat.GetType().GetMethod("TrySelectWeapon");
+            PropertyInfo equippedWeapon =
+                combat.GetType().GetProperty("EquippedWeapon");
+
+            Assert.That(
+                (bool)trySelectWeapon.Invoke(
+                    combat,
+                    new object[] { 1 }),
+                Is.True);
+            yield return new WaitForSeconds(0.9f);
+
+            Component pistol =
+                (Component)equippedWeapon.GetValue(combat);
+            MethodInfo tryFire =
+                pistol.GetType().GetMethod("TryFire");
+            float fireInterval =
+                (float)pistol.GetType()
+                    .GetProperty("FireInterval")
+                    .GetValue(pistol);
+            Animator pistolAnimator =
+                pistol.GetComponent<Animator>();
+            int fireStateHash =
+                Animator.StringToHash("Layer Base.Fire");
+
+            Assert.That(pistolAnimator, Is.Not.Null);
+            Assert.That(
+                pistolAnimator.HasState(0, fireStateHash),
+                Is.True,
+                "Pistol Animator is missing Layer Base.Fire.");
+
+            for (int shot = 0; shot < 3; shot++)
+            {
+                Assert.That(
+                    (bool)tryFire.Invoke(pistol, null),
+                    Is.True,
+                    $"Pistol shot {shot + 1} did not fire.");
+                yield return new WaitForSeconds(0.05f);
+
+                AnimatorStateInfo state =
+                    pistolAnimator.IsInTransition(0)
+                        ? pistolAnimator.GetNextAnimatorStateInfo(0)
+                        : pistolAnimator.GetCurrentAnimatorStateInfo(0);
+
+                Assert.That(
+                    state.fullPathHash,
+                    Is.EqualTo(fireStateHash),
+                    $"Pistol shot {shot + 1} did not enter Fire.");
+                Assert.That(
+                    state.normalizedTime,
+                    Is.LessThan(0.2f),
+                    $"Pistol shot {shot + 1} did not restart " +
+                    "the slide animation from its beginning.");
+
+                yield return new WaitForSeconds(
+                    Mathf.Max(0f, fireInterval - 0.04f));
             }
         }
 

@@ -2081,6 +2081,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::EnemyController
   currentEnemy: {fileID: 11400000, guid: 978c73e2a1f764a538a8cffe7075fde2, type: 2}
   bombEffect: {fileID: 1126181125208960, guid: ca26d7307564ff848b29e32bbe6279ef, type: 3}
+  headDamageMultiplier: 2
 --- !u!65 &160434234
 BoxCollider:
   m_ObjectHideFlags: 0
@@ -7990,43 +7991,43 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 189091626146063571, guid: 464d2b315a1ed6b408948cc2fc04e8f7, type: 3}
       propertyPath: m_LocalPosition.x
-      value: 0.15761264
+      value: 0.1601
       objectReference: {fileID: 0}
     - target: {fileID: 189091626146063571, guid: 464d2b315a1ed6b408948cc2fc04e8f7, type: 3}
       propertyPath: m_LocalPosition.y
-      value: -0.04994387
+      value: -0.0574
       objectReference: {fileID: 0}
     - target: {fileID: 189091626146063571, guid: 464d2b315a1ed6b408948cc2fc04e8f7, type: 3}
       propertyPath: m_LocalPosition.z
-      value: 0.013895998
+      value: 0.0192
       objectReference: {fileID: 0}
     - target: {fileID: 189091626146063571, guid: 464d2b315a1ed6b408948cc2fc04e8f7, type: 3}
       propertyPath: m_LocalRotation.w
-      value: 0.5621034
+      value: 0.6428545
       objectReference: {fileID: 0}
     - target: {fileID: 189091626146063571, guid: 464d2b315a1ed6b408948cc2fc04e8f7, type: 3}
       propertyPath: m_LocalRotation.x
-      value: 0.5194852
+      value: 0.4868603
       objectReference: {fileID: 0}
     - target: {fileID: 189091626146063571, guid: 464d2b315a1ed6b408948cc2fc04e8f7, type: 3}
       propertyPath: m_LocalRotation.y
-      value: 0.59982145
+      value: 0.5401912
       objectReference: {fileID: 0}
     - target: {fileID: 189091626146063571, guid: 464d2b315a1ed6b408948cc2fc04e8f7, type: 3}
       propertyPath: m_LocalRotation.z
-      value: 0.23321486
+      value: 0.24062157
       objectReference: {fileID: 0}
     - target: {fileID: 189091626146063571, guid: 464d2b315a1ed6b408948cc2fc04e8f7, type: 3}
       propertyPath: m_LocalEulerAnglesHint.x
-      value: 17.712
+      value: 21.469
       objectReference: {fileID: 0}
     - target: {fileID: 189091626146063571, guid: 464d2b315a1ed6b408948cc2fc04e8f7, type: 3}
       propertyPath: m_LocalEulerAnglesHint.y
-      value: 105.796
+      value: 93.553
       objectReference: {fileID: 0}
     - target: {fileID: 189091626146063571, guid: 464d2b315a1ed6b408948cc2fc04e8f7, type: 3}
       propertyPath: m_LocalEulerAnglesHint.z
-      value: 68.347
+      value: 63.85
       objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
@@ -8066,6 +8067,8 @@ MonoBehaviour:
   FirePoint: {fileID: 1790961307}
   impactEffect: {fileID: 4213545028169340837, guid: 6257053c06cf446699aa5181cf9be98c, type: 3}
   dryFireFeedbackInterval: 0.35
+  maxAimDistance: 200
+  tracerSpeed: 280
 --- !u!1 &721661990
 GameObject:
   m_ObjectHideFlags: 0
@@ -9036,6 +9039,8 @@ MonoBehaviour:
   FirePoint: {fileID: 40679481}
   impactEffect: {fileID: 4213545028169340837, guid: 6257053c06cf446699aa5181cf9be98c, type: 3}
   dryFireFeedbackInterval: 0.35
+  maxAimDistance: 200
+  tracerSpeed: 280
 --- !u!1 &831014028
 GameObject:
   m_ObjectHideFlags: 0
@@ -11410,6 +11415,19 @@ MonoBehaviour:
   - {fileID: 719542206}
   initialWeaponIndex: 0
   switchDuration: 0.8
+--- !u!114 &1073853158
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1073853136}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a0e681a4695f4c3b87db94b0d758e870, type: 3}
+  m_Name:
+  m_EditorClassIdentifier: Assembly-CSharp::ShotTracerPool
+  capacity: 16
 --- !u!1 &1074274927
 GameObject:
   m_ObjectHideFlags: 0
@@ -21392,6 +21410,9 @@ PrefabInstance:
     - targetCorrespondingSourceObject: {fileID: 2751027687307977091, guid: 19eadcf8fbed56b4da77ca94c1b4145f, type: 3}
       insertIndex: -1
       addedObject: {fileID: 1073853157}
+    - targetCorrespondingSourceObject: {fileID: 2751027687307977091, guid: 19eadcf8fbed56b4da77ca94c1b4145f, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 1073853158}
     - targetCorrespondingSourceObject: {fileID: 4775947768125699116, guid: 19eadcf8fbed56b4da77ca94c1b4145f, type: 3}
       insertIndex: -1
       addedObject: {fileID: 1914029595}

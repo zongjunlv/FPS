@@ -2,6 +2,7 @@ using UnityEngine;
 
 [RequireComponent(typeof(PlayerInputReader), typeof(PlayerRecoilController))]
 [RequireComponent(typeof(PlayerController), typeof(WeaponLoadoutController))]
+[RequireComponent(typeof(ShotTracerPool))]
 public class PlayerCombatController : MonoBehaviour
 {
     [SerializeField] private WeaponLoadoutController loadout;
@@ -16,6 +17,7 @@ public class PlayerCombatController : MonoBehaviour
     private PlayerAnimatorController playerAnimator;
     private PlayerInputReader input;
     private AmmoHudPresenter ammoHud;
+    private ShotTracerPool tracerPool;
 
     private void Start()
     {
@@ -24,6 +26,12 @@ public class PlayerCombatController : MonoBehaviour
         playerController = GetComponent<PlayerController>();
         playerAnimator = GetComponent<PlayerAnimatorController>();
         ammoHud = GetComponent<AmmoHudPresenter>();
+        tracerPool = GetComponent<ShotTracerPool>();
+
+        if (tracerPool == null)
+        {
+            tracerPool = gameObject.AddComponent<ShotTracerPool>();
+        }
 
         if (loadout == null)
         {
@@ -180,7 +188,8 @@ public class PlayerCombatController : MonoBehaviour
             HandleReloadStateChanged;
         EquippedWeapon.ConfigureAiming(
             playerController.AimCamera,
-            transform);
+            transform,
+            tracerPool);
         ammoHud.Bind(EquippedWeapon);
     }
 
