@@ -11,10 +11,14 @@ public class MuzzleFlashController : MonoBehaviour
 
     private float remainingTime;
 
-    // Start is called once before the first execution of Update after the MonoBehaviour is created
-    void Start()
+    private void Awake()
     {
-        muzzleLight.enabled = false;
+        ResetEffect();
+    }
+
+    private void OnEnable()
+    {
+        ResetEffect();
     }
 
     // Update is called once per frame
@@ -30,18 +34,62 @@ public class MuzzleFlashController : MonoBehaviour
 
     public void Play()
     {
-        foreach(ParticleSystem particle in particles)
+        foreach (ParticleSystem particle in particles)
         {
-            particle.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
-            particle.Play(true);
+            if (particle == null)
+            {
+                continue;
+            }
+
+            ParticleSystem.MainModule main = particle.main;
+            main.loop = false;
+            main.playOnAwake = false;
+            particle.Stop(
+                false,
+                ParticleSystemStopBehavior.StopEmittingAndClear);
+            particle.Play(false);
         }
+
         muzzleLight.enabled = true;
         remainingTime = lightDuration;
     }
 
     private void OnDisable()
     {
+        StopParticles();
         muzzleLight.enabled = false;
         remainingTime = 0f;
+    }
+
+    private void ResetEffect()
+    {
+        foreach (ParticleSystem particle in particles)
+        {
+            if (particle == null)
+            {
+                continue;
+            }
+
+            ParticleSystem.MainModule main = particle.main;
+            main.loop = false;
+            main.playOnAwake = false;
+        }
+
+        StopParticles();
+        muzzleLight.enabled = false;
+        remainingTime = 0f;
+    }
+
+    private void StopParticles()
+    {
+        foreach (ParticleSystem particle in particles)
+        {
+            if (particle != null)
+            {
+                particle.Stop(
+                    false,
+                    ParticleSystemStopBehavior.StopEmittingAndClear);
+            }
+        }
     }
 }

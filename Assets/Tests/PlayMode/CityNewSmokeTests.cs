@@ -68,7 +68,7 @@ namespace FPS.Tests.PlayMode
         }
 
         [UnityTest]
-        public IEnumerator WeaponFiresProjectileAndEnemyCanDie()
+        public IEnumerator WeaponHitscanCreatesImpactWithoutProjectile()
         {
             yield return LoadCityNew();
 
@@ -77,40 +77,220 @@ namespace FPS.Tests.PlayMode
             GameObject weaponObject = FindObjectWithComponent(
                 sceneObjects,
                 "WeaponController");
-            GameObject enemyObject = FindObjectWithComponent(
+            GameObject player = FindObjectWithComponent(
                 sceneObjects,
-                "EnemyController");
+                "PlayerCombatController");
 
             Assert.That(weaponObject, Is.Not.Null);
-            Assert.That(enemyObject, Is.Not.Null);
+            Assert.That(player, Is.Not.Null);
 
             Component weapon = weaponObject.GetComponent("WeaponController");
             MethodInfo tryFire = weapon.GetType().GetMethod("TryFire");
             Assert.That(tryFire, Is.Not.Null, "WeaponController.TryFire is missing.");
+            Camera aimCamera = FindChildByName(
+                    player.transform,
+                    "MainCamera")
+                .GetComponent<Camera>();
+            Ray aimRay = aimCamera.ViewportPointToRay(
+                new Vector3(0.5f, 0.5f, 0f));
+            GameObject target =
+                GameObject.CreatePrimitive(PrimitiveType.Cube);
+            target.transform.position = aimRay.GetPoint(3f);
+            Physics.SyncTransforms();
+            Assert.That(
+                target.GetComponent<Collider>().Raycast(
+                    aimRay,
+                    out RaycastHit targetHit,
+                    10f),
+                Is.True);
 
             int projectileCountBefore = CountComponentsByName(
                 "ProjectileController");
             bool didFire = (bool)tryFire.Invoke(weapon, null);
             int projectileCountAfter = CountComponentsByName(
                 "ProjectileController");
+            GameObject impact = FindObjectByName("Concrete(Clone)");
 
             Assert.That(didFire, Is.True, "The equipped weapon did not fire.");
             Assert.That(
                 projectileCountAfter,
-                Is.GreaterThan(projectileCountBefore),
-                "Firing must instantiate a projectile.");
+                Is.EqualTo(projectileCountBefore),
+                "Hitscan firing must not instantiate a projectile.");
+            Assert.That(impact, Is.Not.Null);
+            Assert.That(
+                Vector3.Distance(
+                    impact.transform.position,
+                    targetHit.point),
+                Is.LessThan(0.03f),
+                "The impact effect must appear on the aimed surface.");
+        }
 
-            Component enemy = enemyObject.GetComponent("EnemyController");
-            MethodInfo getHit = enemy.GetType().GetMethod("GetHit");
-            Assert.That(getHit, Is.Not.Null, "EnemyController.GetHit is missing.");
+        [UnityTest]
+        public IEnumerator HitscanShotCreatesHighSpeedVisualTracer()
+        {
+            yield return LoadCityNew();
 
-            getHit.Invoke(enemy, new object[] { 10000f });
-            yield return null;
+            List<GameObject> sceneObjects =
+                GetSceneObjects(SceneManager.GetActiveScene());
+            GameObject weaponObject = FindObjectWithComponent(
+                sceneObjects,
+                "WeaponController");
+            GameObject player = FindObjectWithComponent(
+                sceneObjects,
+                "PlayerCombatController");
+            Component weapon =
+                weaponObject.GetComponent("WeaponController");
+            MethodInfo tryFire =
+                weapon.GetType().GetMethod("TryFire");
+            Camera aimCamera = FindChildByName(
+                    player.transform,
+                    "MainCamera")
+                .GetComponent<Camera>();
+            Ray aimRay = aimCamera.ViewportPointToRay(
+                new Vector3(0.5f, 0.5f, 0f));
+            GameObject target =
+                GameObject.CreatePrimitive(PrimitiveType.Cube);
+            target.transform.position = aimRay.GetPoint(8f);
+            Physics.SyncTransforms();
+
+            Assert.That((bool)tryFire.Invoke(weapon, null), Is.True);
+
+            GameObject tracerObject = FindObjectWithComponent(
+                GetSceneObjects(SceneManager.GetActiveScene()),
+                "ShotTracerController");
 
             Assert.That(
-                enemyObject == null,
+                tracerObject,
+                Is.Not.Null,
+                "Hitscan fire must create a visual tracer.");
+
+            Component tracer =
+                tracerObject.GetComponent("ShotTracerController");
+            PropertyInfo speed =
+                tracer.GetType().GetProperty("Speed");
+            LineRenderer line =
+                tracerObject.GetComponent<LineRenderer>();
+
+            Assert.That((float)speed.GetValue(tracer), Is.GreaterThanOrEqualTo(200f));
+            Assert.That(line, Is.Not.Null);
+            Assert.That(line.positionCount, Is.EqualTo(2));
+            Assert.That(
+                CountComponentsByName("ProjectileController"),
+                Is.EqualTo(0),
+                "The tracer must be visual-only, not a physical projectile.");
+        }
+
+        [UnityTest]
+        public IEnumerator ImpactMarkRemainsForThreeSeconds()
+        {
+            yield return LoadCityNew();
+
+            List<GameObject> sceneObjects =
+                GetSceneObjects(SceneManager.GetActiveScene());
+            GameObject weaponObject = FindObjectWithComponent(
+                sceneObjects,
+                "WeaponController");
+            GameObject player = FindObjectWithComponent(
+                sceneObjects,
+                "PlayerCombatController");
+            Component weapon =
+                weaponObject.GetComponent("WeaponController");
+            MethodInfo tryFire =
+                weapon.GetType().GetMethod("TryFire");
+            Camera aimCamera = FindChildByName(
+                    player.transform,
+                    "MainCamera")
+                .GetComponent<Camera>();
+            Ray aimRay = aimCamera.ViewportPointToRay(
+                new Vector3(0.5f, 0.5f, 0f));
+            GameObject target =
+                GameObject.CreatePrimitive(PrimitiveType.Cube);
+            target.transform.position = aimRay.GetPoint(3f);
+            Physics.SyncTransforms();
+
+            Assert.That((bool)tryFire.Invoke(weapon, null), Is.True);
+            GameObject impact = FindObjectByName("Concrete(Clone)");
+
+            Assert.That(impact, Is.Not.Null);
+            yield return new WaitForSeconds(2.8f);
+            Assert.That(
+                impact,
+                Is.Not.Null,
+                "The impact mark must remain visible for three seconds.");
+
+            yield return new WaitForSeconds(0.4f);
+            Assert.That(
+                impact == null,
                 Is.True,
-                "Lethal damage must destroy the enemy.");
+                "The impact object must be cleaned up after three seconds.");
+        }
+
+        [UnityTest]
+        public IEnumerator HitscanDamageCanDestroyEnemyAtCrosshair()
+        {
+            yield return LoadCityNew();
+
+            List<GameObject> sceneObjects =
+                GetSceneObjects(SceneManager.GetActiveScene());
+            GameObject weaponObject = FindObjectWithComponent(
+                sceneObjects,
+                "WeaponController");
+            GameObject player = FindObjectWithComponent(
+                sceneObjects,
+                "PlayerCombatController");
+            GameObject enemy = FindObjectWithComponent(
+                sceneObjects,
+                "EnemyController");
+            Component weapon =
+                weaponObject.GetComponent("WeaponController");
+            MethodInfo tryFire =
+                weapon.GetType().GetMethod("TryFire");
+            PropertyInfo fireInterval =
+                weapon.GetType().GetProperty("FireInterval");
+            Camera aimCamera = FindChildByName(
+                    player.transform,
+                    "MainCamera")
+                .GetComponent<Camera>();
+
+            foreach (UnityEngine.AI.NavMeshAgent agent in
+                     enemy.GetComponentsInChildren<UnityEngine.AI.NavMeshAgent>())
+            {
+                agent.enabled = false;
+            }
+
+            Ray aimRay = aimCamera.ViewportPointToRay(
+                new Vector3(0.5f, 0.5f, 0f));
+            Collider enemyCollider =
+                enemy.GetComponentInChildren<Collider>();
+            enemy.transform.position +=
+                aimRay.GetPoint(3f) - enemyCollider.bounds.center;
+            Physics.SyncTransforms();
+
+            Assert.That(
+                enemyCollider.Raycast(
+                    aimRay,
+                    out _,
+                    10f),
+                Is.True);
+
+            float shotDelay =
+                (float)fireInterval.GetValue(weapon) + 0.01f;
+
+            for (int shot = 0; shot < 10 && enemy != null; shot++)
+            {
+                Assert.That(
+                    (bool)tryFire.Invoke(weapon, null),
+                    Is.True);
+                yield return new WaitForSeconds(shotDelay);
+            }
+
+            Assert.That(
+                enemy == null,
+                Is.True,
+                "Repeated hitscan damage must destroy the aimed enemy.");
+            Assert.That(
+                CountComponentsByName("ProjectileController"),
+                Is.EqualTo(0));
         }
 
         [UnityTest]
@@ -271,6 +451,642 @@ namespace FPS.Tests.PlayMode
             Assert.That(
                 (int)reserveAmmo.GetValue(ammoState),
                 Is.EqualTo(reserveBeforeReload));
+        }
+
+        [Test]
+        public void WeaponSwitchStateStartsCompletesAndInterrupts()
+        {
+            System.Type switchStateType =
+                System.Type.GetType("WeaponSwitchState, Assembly-CSharp");
+
+            Assert.That(
+                switchStateType,
+                Is.Not.Null,
+                "WeaponSwitchState runtime module is missing.");
+
+            object switchState = System.Activator.CreateInstance(
+                switchStateType,
+                new object[] { 2, 0 });
+            MethodInfo tryBeginSwitch =
+                switchStateType.GetMethod("TryBeginSwitch");
+            MethodInfo advance =
+                switchStateType.GetMethod("Advance");
+            MethodInfo interrupt =
+                switchStateType.GetMethod("Interrupt");
+            PropertyInfo currentIndex =
+                switchStateType.GetProperty("CurrentIndex");
+            PropertyInfo pendingIndex =
+                switchStateType.GetProperty("PendingIndex");
+            PropertyInfo isSwitching =
+                switchStateType.GetProperty("IsSwitching");
+
+            Assert.That(
+                (bool)tryBeginSwitch.Invoke(
+                    switchState,
+                    new object[] { 1 }),
+                Is.True);
+            Assert.That((bool)isSwitching.GetValue(switchState), Is.True);
+            Assert.That((int)pendingIndex.GetValue(switchState), Is.EqualTo(1));
+            Assert.That(
+                (bool)advance.Invoke(
+                    switchState,
+                    new object[] { 0.2f, 0.6f }),
+                Is.False);
+
+            Assert.That((bool)interrupt.Invoke(switchState, null), Is.True);
+            Assert.That((bool)isSwitching.GetValue(switchState), Is.False);
+            Assert.That((int)currentIndex.GetValue(switchState), Is.EqualTo(0));
+
+            Assert.That(
+                (bool)tryBeginSwitch.Invoke(
+                    switchState,
+                    new object[] { 1 }),
+                Is.True);
+            Assert.That(
+                (bool)advance.Invoke(
+                    switchState,
+                    new object[] { 0.6f, 0.6f }),
+                Is.True);
+            Assert.That((bool)isSwitching.GetValue(switchState), Is.False);
+            Assert.That((int)currentIndex.GetValue(switchState), Is.EqualTo(1));
+        }
+
+        [UnityTest]
+        public IEnumerator NumberKeysAndMouseWheelSwitchWeapons()
+        {
+            Keyboard keyboard = InputSystem.AddDevice<Keyboard>();
+            Mouse mouse = InputSystem.AddDevice<Mouse>();
+
+            try
+            {
+                yield return LoadCityNew();
+
+                GameObject player = FindObjectWithComponent(
+                    GetSceneObjects(SceneManager.GetActiveScene()),
+                    "PlayerCombatController");
+                Component combat =
+                    player.GetComponent("PlayerCombatController");
+                Component inputReader =
+                    player.GetComponent("PlayerInputReader");
+                PropertyInfo equippedWeaponIndex =
+                    combat.GetType().GetProperty("EquippedWeaponIndex");
+                PropertyInfo isSwitching =
+                    combat.GetType().GetProperty("IsSwitching");
+                PropertyInfo weaponSelection =
+                    inputReader.GetType().GetProperty("WeaponSelection");
+
+                Assert.That(
+                    (int)equippedWeaponIndex.GetValue(combat),
+                    Is.EqualTo(0));
+
+                PressAndRelease(keyboard.digit2Key);
+                yield return null;
+
+                Assert.That(
+                    (int)weaponSelection.GetValue(inputReader),
+                    Is.EqualTo(1),
+                    "Digit 2 input must remain latched until LateUpdate.");
+                yield return null;
+
+                Assert.That(
+                    (bool)isSwitching.GetValue(combat),
+                    Is.True,
+                    "Digit 2 must start switching to the pistol.");
+
+                yield return new WaitForSeconds(0.9f);
+
+                Assert.That(
+                    (int)equippedWeaponIndex.GetValue(combat),
+                    Is.EqualTo(1));
+
+                Set(mouse.scroll, new Vector2(0f, 120f));
+                yield return null;
+                Set(mouse.scroll, Vector2.zero);
+                yield return null;
+                yield return new WaitForSeconds(0.9f);
+
+                Assert.That(
+                    (int)equippedWeaponIndex.GetValue(combat),
+                    Is.EqualTo(0),
+                    "Mouse wheel must cycle back to the AR.");
+            }
+            finally
+            {
+                InputSystem.RemoveDevice(mouse);
+                InputSystem.RemoveDevice(keyboard);
+            }
+        }
+
+        [UnityTest]
+        public IEnumerator SemiAutomaticPistolFiresOnceWhileAttackIsHeld()
+        {
+            Mouse mouse = InputSystem.AddDevice<Mouse>();
+
+            try
+            {
+                yield return LoadCityNew();
+
+                GameObject player = FindObjectWithComponent(
+                    GetSceneObjects(SceneManager.GetActiveScene()),
+                    "PlayerCombatController");
+                Component combat =
+                    player.GetComponent("PlayerCombatController");
+                PropertyInfo equippedWeapon =
+                    combat.GetType().GetProperty("EquippedWeapon");
+                MethodInfo trySelectWeapon =
+                    combat.GetType().GetMethod("TrySelectWeapon");
+                Component ar =
+                    (Component)equippedWeapon.GetValue(combat);
+                PropertyInfo arDamage =
+                    ar.GetType().GetProperty("Damage");
+                PropertyInfo arCapacity =
+                    ar.GetType().GetProperty("MagazineCapacity");
+                PropertyInfo arFireInterval =
+                    ar.GetType().GetProperty("FireInterval");
+                PropertyInfo arVerticalRecoil =
+                    ar.GetType().GetProperty("VerticalRecoil");
+
+                Assert.That(
+                    (bool)trySelectWeapon.Invoke(
+                        combat,
+                        new object[] { 1 }),
+                    Is.True);
+                yield return new WaitForSeconds(0.9f);
+
+                Component pistol =
+                    (Component)equippedWeapon.GetValue(combat);
+                PropertyInfo weaponName =
+                    pistol.GetType().GetProperty("WeaponName");
+                PropertyInfo isAutomatic =
+                    pistol.GetType().GetProperty("IsAutomatic");
+                PropertyInfo damage =
+                    pistol.GetType().GetProperty("Damage");
+                PropertyInfo magazineCapacity =
+                    pistol.GetType().GetProperty("MagazineCapacity");
+                PropertyInfo fireInterval =
+                    pistol.GetType().GetProperty("FireInterval");
+                PropertyInfo verticalRecoil =
+                    pistol.GetType().GetProperty("VerticalRecoil");
+                PropertyInfo currentAmmo =
+                    pistol.GetType().GetProperty("CurrentAmmo");
+
+                Assert.That(
+                    (string)weaponName.GetValue(pistol),
+                    Is.EqualTo("Pistol"));
+                Assert.That(
+                    (bool)isAutomatic.GetValue(pistol),
+                    Is.False);
+                Assert.That(
+                    (float)damage.GetValue(pistol),
+                    Is.Not.EqualTo((float)arDamage.GetValue(ar)));
+                Assert.That(
+                    (int)magazineCapacity.GetValue(pistol),
+                    Is.Not.EqualTo((int)arCapacity.GetValue(ar)));
+                Assert.That(
+                    (float)fireInterval.GetValue(pistol),
+                    Is.Not.EqualTo((float)arFireInterval.GetValue(ar)));
+                Assert.That(
+                    (float)verticalRecoil.GetValue(pistol),
+                    Is.Not.EqualTo((float)arVerticalRecoil.GetValue(ar)));
+
+                int ammoBefore = (int)currentAmmo.GetValue(pistol);
+                Press(mouse.leftButton);
+                yield return new WaitForSeconds(0.7f);
+                Release(mouse.leftButton);
+                yield return null;
+
+                Assert.That(
+                    (int)currentAmmo.GetValue(pistol),
+                    Is.EqualTo(ammoBefore - 1),
+                    "Holding attack must fire a semi-auto pistol only once.");
+            }
+            finally
+            {
+                InputSystem.RemoveDevice(mouse);
+            }
+        }
+
+        [UnityTest]
+        public IEnumerator WeaponSwitchBlocksCombatAndPreservesEachWeaponAmmo()
+        {
+            Keyboard keyboard = InputSystem.AddDevice<Keyboard>();
+            Mouse mouse = InputSystem.AddDevice<Mouse>();
+
+            try
+            {
+                yield return LoadCityNew();
+
+                List<GameObject> sceneObjects =
+                    GetSceneObjects(SceneManager.GetActiveScene());
+                GameObject player = FindObjectWithComponent(
+                    sceneObjects,
+                    "PlayerCombatController");
+                Component combat =
+                    player.GetComponent("PlayerCombatController");
+                Component hud = FindObjectWithComponent(
+                    sceneObjects,
+                    "AmmoHudPresenter").GetComponent("AmmoHudPresenter");
+                PropertyInfo equippedWeapon =
+                    combat.GetType().GetProperty("EquippedWeapon");
+                PropertyInfo equippedWeaponIndex =
+                    combat.GetType().GetProperty("EquippedWeaponIndex");
+                PropertyInfo isSwitching =
+                    combat.GetType().GetProperty("IsSwitching");
+                MethodInfo trySelectWeapon =
+                    combat.GetType().GetMethod("TrySelectWeapon");
+                MethodInfo cancelWeaponSwitch =
+                    combat.GetType().GetMethod("CancelWeaponSwitch");
+                PropertyInfo hudWeaponName =
+                    hud.GetType().GetProperty("WeaponNameText");
+                PropertyInfo hudFireMode =
+                    hud.GetType().GetProperty("FireModeText");
+                PropertyInfo hudAmmo =
+                    hud.GetType().GetProperty("DisplayText");
+
+                Component ar =
+                    (Component)equippedWeapon.GetValue(combat);
+                MethodInfo arTryFire = ar.GetType().GetMethod("TryFire");
+                PropertyInfo currentAmmo =
+                    ar.GetType().GetProperty("CurrentAmmo");
+                PropertyInfo reserveAmmo =
+                    ar.GetType().GetProperty("ReserveAmmo");
+                PropertyInfo isReloading =
+                    ar.GetType().GetProperty("IsReloading");
+
+                Assert.That((bool)arTryFire.Invoke(ar, null), Is.True);
+                int arAmmo = (int)currentAmmo.GetValue(ar);
+                int arReserve = (int)reserveAmmo.GetValue(ar);
+
+                Assert.That(
+                    (bool)trySelectWeapon.Invoke(
+                        combat,
+                        new object[] { 1 }),
+                    Is.True);
+                PressAndRelease(keyboard.rKey);
+                Press(mouse.leftButton);
+                yield return null;
+                Release(mouse.leftButton);
+                yield return null;
+
+                Assert.That((bool)isSwitching.GetValue(combat), Is.True);
+                Assert.That(
+                    (int)currentAmmo.GetValue(ar),
+                    Is.EqualTo(arAmmo),
+                    "Switching must block firing.");
+                Assert.That(
+                    (bool)isReloading.GetValue(ar),
+                    Is.False,
+                    "Switching must block reload input.");
+
+                Assert.That(
+                    (bool)cancelWeaponSwitch.Invoke(combat, null),
+                    Is.True);
+                Assert.That((bool)isSwitching.GetValue(combat), Is.False);
+                Assert.That(
+                    (int)equippedWeaponIndex.GetValue(combat),
+                    Is.EqualTo(0),
+                    "Interrupted switching must restore the source weapon.");
+
+                Assert.That(
+                    (bool)trySelectWeapon.Invoke(
+                        combat,
+                        new object[] { 1 }),
+                    Is.True);
+                yield return new WaitForSeconds(0.9f);
+
+                Component pistol =
+                    (Component)equippedWeapon.GetValue(combat);
+                MethodInfo pistolTryFire =
+                    pistol.GetType().GetMethod("TryFire");
+                Assert.That(
+                    (bool)pistolTryFire.Invoke(pistol, null),
+                    Is.True);
+                int pistolAmmo = (int)currentAmmo.GetValue(pistol);
+                int pistolReserve = (int)reserveAmmo.GetValue(pistol);
+
+                Assert.That(
+                    (string)hudWeaponName.GetValue(hud),
+                    Is.EqualTo("Pistol"));
+                Assert.That(
+                    (string)hudFireMode.GetValue(hud),
+                    Is.EqualTo("SEMI"));
+                Assert.That(
+                    (string)hudAmmo.GetValue(hud),
+                    Is.EqualTo($"{pistolAmmo} / {pistolReserve}"));
+
+                Assert.That(
+                    (bool)trySelectWeapon.Invoke(
+                        combat,
+                        new object[] { 0 }),
+                    Is.True);
+                yield return new WaitForSeconds(0.9f);
+
+                Assert.That(
+                    (int)currentAmmo.GetValue(ar),
+                    Is.EqualTo(arAmmo));
+                Assert.That(
+                    (int)reserveAmmo.GetValue(ar),
+                    Is.EqualTo(arReserve));
+                Assert.That(
+                    (string)hudWeaponName.GetValue(hud),
+                    Is.EqualTo("AR"));
+                Assert.That(
+                    (string)hudFireMode.GetValue(hud),
+                    Is.EqualTo("AUTO"));
+
+                Assert.That(
+                    (bool)trySelectWeapon.Invoke(
+                        combat,
+                        new object[] { 1 }),
+                    Is.True);
+                yield return new WaitForSeconds(0.9f);
+
+                Assert.That(
+                    (int)currentAmmo.GetValue(pistol),
+                    Is.EqualTo(pistolAmmo));
+                Assert.That(
+                    (int)reserveAmmo.GetValue(pistol),
+                    Is.EqualTo(pistolReserve));
+            }
+            finally
+            {
+                InputSystem.RemoveDevice(mouse);
+                InputSystem.RemoveDevice(keyboard);
+            }
+        }
+
+        [UnityTest]
+        public IEnumerator WeaponSwitchDoesNotRestartUnholsterAnimationOnCompletion()
+        {
+            yield return LoadCityNew();
+
+            List<GameObject> sceneObjects =
+                GetSceneObjects(SceneManager.GetActiveScene());
+            GameObject player = FindObjectWithComponent(
+                sceneObjects,
+                "PlayerCombatController");
+            Component combat =
+                player.GetComponent("PlayerCombatController");
+            MethodInfo trySelectWeapon =
+                combat.GetType().GetMethod("TrySelectWeapon");
+            Animator animator = player.GetComponentInChildren<Animator>();
+            int holsterLayer = animator.GetLayerIndex("Layer Holster");
+
+            Assert.That(holsterLayer, Is.GreaterThanOrEqualTo(0));
+            Assert.That(
+                (bool)trySelectWeapon.Invoke(
+                    combat,
+                    new object[] { 1 }),
+                Is.True);
+
+            yield return new WaitForSeconds(0.7f);
+            AnimatorStateInfo beforeCompletion =
+                animator.GetCurrentAnimatorStateInfo(holsterLayer);
+
+            Assert.That(
+                beforeCompletion.IsName("Layer Holster.Unholster"),
+                Is.True,
+                "The destination weapon should already be unholstering.");
+
+            yield return new WaitForSeconds(0.15f);
+            AnimatorStateInfo afterCompletion =
+                animator.GetCurrentAnimatorStateInfo(holsterLayer);
+
+            Assert.That(
+                afterCompletion.IsName("Layer Holster.Unholster"),
+                Is.True);
+            Assert.That(
+                animator.IsInTransition(holsterLayer),
+                Is.False,
+                "Completing a switch must not start another holster-layer transition.");
+            Assert.That(
+                afterCompletion.normalizedTime,
+                Is.GreaterThan(beforeCompletion.normalizedTime),
+                "Completing a switch must not restart the unholster animation.");
+        }
+
+        [UnityTest]
+        public IEnumerator WeaponSwitchUsesAnimatorHolsteredParameter()
+        {
+            yield return LoadCityNew();
+
+            List<GameObject> sceneObjects =
+                GetSceneObjects(SceneManager.GetActiveScene());
+            GameObject player = FindObjectWithComponent(
+                sceneObjects,
+                "PlayerCombatController");
+            Component combat =
+                player.GetComponent("PlayerCombatController");
+            Component loadout =
+                player.GetComponent("WeaponLoadoutController");
+            MethodInfo trySelectWeapon =
+                combat.GetType().GetMethod("TrySelectWeapon");
+            PropertyInfo switchDuration =
+                loadout.GetType().GetProperty("SwitchDuration");
+            Animator animator = player.GetComponentInChildren<Animator>();
+            int holsterLayer = animator.GetLayerIndex("Layer Holster");
+
+            Assert.That(
+                (bool)trySelectWeapon.Invoke(
+                    combat,
+                    new object[] { 1 }),
+                Is.True);
+
+            float presentationSwapTime =
+                (float)switchDuration.GetValue(loadout) * 0.5f;
+            yield return new WaitForSeconds(
+                presentationSwapTime - 0.12f);
+
+            AnimatorStateInfo holsterState =
+                animator.GetCurrentAnimatorStateInfo(holsterLayer);
+            AnimatorStateInfo nextHolsterState =
+                animator.GetNextAnimatorStateInfo(holsterLayer);
+            int holsteredParameter =
+                Animator.StringToHash("Holstered");
+
+            Assert.That(
+                animator.GetBool(holsteredParameter),
+                Is.True,
+                "The switch must drive the controller's Holstered parameter.");
+            Assert.That(
+                holsterState.IsName("Layer Holster.Holster") ||
+                nextHolsterState.IsName("Layer Holster.Holster"),
+                Is.True,
+                "The holster layer must naturally transition toward Holster.");
+        }
+
+        [UnityTest]
+        public IEnumerator BothWeaponsHitscanAtCameraCrosshair()
+        {
+            yield return LoadCityNew();
+
+            List<GameObject> sceneObjects =
+                GetSceneObjects(SceneManager.GetActiveScene());
+            GameObject player = FindObjectWithComponent(
+                sceneObjects,
+                "PlayerCombatController");
+            Component combat =
+                player.GetComponent("PlayerCombatController");
+            PropertyInfo equippedWeapon =
+                combat.GetType().GetProperty("EquippedWeapon");
+            MethodInfo trySelectWeapon =
+                combat.GetType().GetMethod("TrySelectWeapon");
+            Camera aimCamera = FindChildByName(
+                    player.transform,
+                    "MainCamera")
+                .GetComponent<Camera>();
+            Ray crosshairRay = aimCamera.ViewportPointToRay(
+                new Vector3(0.5f, 0.5f, 0f));
+            GameObject aimTarget =
+                GameObject.CreatePrimitive(PrimitiveType.Cube);
+            aimTarget.name = "CrosshairAimTarget";
+            aimTarget.transform.position = crosshairRay.GetPoint(3f);
+            aimTarget.transform.localScale = Vector3.one * 0.5f;
+            Collider aimTargetCollider =
+                aimTarget.GetComponent<Collider>();
+            Physics.SyncTransforms();
+
+            for (int weaponIndex = 0; weaponIndex < 2; weaponIndex++)
+            {
+                if (weaponIndex > 0)
+                {
+                    Assert.That(
+                        (bool)trySelectWeapon.Invoke(
+                            combat,
+                            new object[] { weaponIndex }),
+                        Is.True);
+                    yield return new WaitForSeconds(0.9f);
+                }
+
+                Component weapon =
+                    (Component)equippedWeapon.GetValue(combat);
+                MethodInfo tryFire =
+                    weapon.GetType().GetMethod("TryFire");
+                Ray currentCrosshairRay =
+                    aimCamera.ViewportPointToRay(
+                        new Vector3(0.5f, 0.5f, 0f));
+
+                Assert.That(
+                    aimTargetCollider.Raycast(
+                        currentCrosshairRay,
+                        out RaycastHit targetHit,
+                        10f),
+                    Is.True);
+
+                Assert.That(
+                    (bool)tryFire.Invoke(weapon, null),
+                    Is.True);
+
+                GameObject impact =
+                    FindObjectByName("Concrete(Clone)");
+
+                Assert.That(impact, Is.Not.Null);
+                Assert.That(
+                    Vector3.Distance(
+                        impact.transform.position,
+                        targetHit.point),
+                    Is.LessThan(0.03f),
+                    $"{weapon.gameObject.name} hitscan impact must align " +
+                    "with the camera crosshair.");
+                Assert.That(
+                    CountComponentsByName("ProjectileController"),
+                    Is.EqualTo(0));
+
+                Object.Destroy(impact);
+                yield return null;
+            }
+
+            Object.Destroy(aimTarget);
+        }
+
+        [UnityTest]
+        public IEnumerator PistolMuzzleFlashRemainsOffUntilShot()
+        {
+            yield return LoadCityNew();
+
+            GameObject player = FindObjectWithComponent(
+                GetSceneObjects(SceneManager.GetActiveScene()),
+                "PlayerCombatController");
+            Component combat =
+                player.GetComponent("PlayerCombatController");
+            MethodInfo trySelectWeapon =
+                combat.GetType().GetMethod("TrySelectWeapon");
+            PropertyInfo equippedWeapon =
+                combat.GetType().GetProperty("EquippedWeapon");
+
+            Assert.That(
+                (bool)trySelectWeapon.Invoke(
+                    combat,
+                    new object[] { 1 }),
+                Is.True);
+            yield return new WaitForSeconds(1.1f);
+
+            Component pistol =
+                (Component)equippedWeapon.GetValue(combat);
+            ParticleSystem[] particles =
+                pistol.GetComponentsInChildren<ParticleSystem>(true);
+            Light muzzleLight =
+                pistol.GetComponentInChildren<Light>(true);
+
+            Assert.That(particles, Is.Not.Empty);
+            Assert.That(
+                muzzleLight.enabled,
+                Is.False,
+                "The pistol muzzle light must be off before firing.");
+
+            foreach (ParticleSystem particle in particles)
+            {
+                Assert.That(
+                    particle.IsAlive(true),
+                    Is.False,
+                    $"{particle.name} must not play automatically.");
+            }
+
+            MethodInfo tryFire = pistol.GetType().GetMethod("TryFire");
+            Assert.That((bool)tryFire.Invoke(pistol, null), Is.True);
+            Assert.That(muzzleLight.enabled, Is.True);
+            Assert.That(
+                System.Array.Exists(
+                    particles,
+                    particle => particle.isPlaying),
+                Is.True,
+                "Firing must explicitly play the muzzle particles.");
+        }
+
+        [UnityTest]
+        public IEnumerator PistolHitscanDoesNotCreateProjectile()
+        {
+            yield return LoadCityNew();
+
+            GameObject player = FindObjectWithComponent(
+                GetSceneObjects(SceneManager.GetActiveScene()),
+                "PlayerCombatController");
+            Component combat =
+                player.GetComponent("PlayerCombatController");
+            MethodInfo trySelectWeapon =
+                combat.GetType().GetMethod("TrySelectWeapon");
+            PropertyInfo equippedWeapon =
+                combat.GetType().GetProperty("EquippedWeapon");
+
+            Assert.That(
+                (bool)trySelectWeapon.Invoke(
+                    combat,
+                    new object[] { 1 }),
+                Is.True);
+            yield return new WaitForSeconds(0.9f);
+
+            Component pistol =
+                (Component)equippedWeapon.GetValue(combat);
+            MethodInfo tryFire = pistol.GetType().GetMethod("TryFire");
+            int projectileCountBefore =
+                CountComponentsByName("ProjectileController");
+
+            Assert.That((bool)tryFire.Invoke(pistol, null), Is.True);
+
+            Assert.That(
+                CountComponentsByName("ProjectileController"),
+                Is.EqualTo(projectileCountBefore),
+                "Pistol hitscan must resolve without a physical projectile.");
         }
 
         [UnityTest]
@@ -1068,6 +1884,20 @@ namespace FPS.Tests.PlayMode
             foreach (GameObject sceneObject in sceneObjects)
             {
                 if (sceneObject.GetComponent(componentName) != null)
+                {
+                    return sceneObject;
+                }
+            }
+
+            return null;
+        }
+
+        private static GameObject FindObjectByName(string objectName)
+        {
+            foreach (GameObject sceneObject in
+                     GetSceneObjects(SceneManager.GetActiveScene()))
+            {
+                if (sceneObject.name == objectName)
                 {
                     return sceneObject;
                 }

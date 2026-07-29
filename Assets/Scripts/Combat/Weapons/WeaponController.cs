@@ -6,24 +6,30 @@ public class WeaponController : MonoBehaviour
     [SerializeField] private WeaponDefinition weapon;
     [SerializeField] private MuzzleFlashController muzzleFlash;
 
-    [SerializeField] private GameObject Bullet;
     [SerializeField] private GameObject FirePoint;
-    [SerializeField] private GameObject FireEffects;
+    [SerializeField] private GameObject impactEffect;
     [SerializeField, Min(0.1f)] private float dryFireFeedbackInterval = 0.35f;
+    [SerializeField, Min(1f)] private float maxAimDistance = 200f;
+    [SerializeField, Min(200f)] private float tracerSpeed = 280f;
 
     public event Action AmmoChanged;
     public event Action DryFired;
     public event Action ReloadStateChanged;
 
     public bool IsAutomatic => weapon.IsAutomatic;
+    public string WeaponName => weapon.WeaponName;
+    public string FireModeName => weapon.IsAutomatic ? "AUTO" : "SEMI";
     public float VerticalRecoil => weapon.VerticalRecoil;
     public float HorizontalRecoil => weapon.HorizontalRecoil;
+    public float Damage => weapon.Damage;
     public int CurrentAmmo => ammoState.CurrentAmmo;
     public int ReserveAmmo => ammoState.ReserveAmmo;
     public int MagazineCapacity => ammoState.MagazineCapacity;
     public float FireInterval => weapon.FireIntervel;
     public float ReloadDuration => weapon.ReloadDuration;
     public bool IsReloading => ammoState.IsReloading;
+    public RuntimeAnimatorController CharacterAnimatorController =>
+        weapon.CharacterAnimatorController;
     public int DryFireFeedbackCount { get; private set; }
 
     private float nextFireTime;
@@ -31,6 +37,9 @@ public class WeaponController : MonoBehaviour
     private WeaponAmmoState ammoState;
     private AudioSource audioSource;
     private Animator weaponAnimator;
+    private Camera aimCamera;
+    private Transform shooterRoot;
+    private readonly RaycastHit[] hitBuffer = new RaycastHit[32];
 
     private void Awake()
     {
@@ -77,11 +86,28 @@ public class WeaponController : MonoBehaviour
         }
 
         nextFireTime = Time.time + weapon.FireIntervel;
-        Instantiate(Bullet, FirePoint.transform.position, FirePoint.transform.rotation);
+        ResolveHitscan();
+
+        if (weapon.FireSound != null)
+        {
+            audioSource.PlayOneShot(weapon.FireSound);
+        }
+
+        if (weaponAnimator != null)
+        {
+            weaponAnimator.CrossFade("Fire", 0.03f, 0);
+        }
+
         muzzleFlash.Play();
         AmmoChanged?.Invoke();
 
         return true;
+    }
+
+    public void ConfigureAiming(Camera camera, Transform ownerRoot)
+    {
+        aimCamera = camera;
+        shooterRoot = ownerRoot;
     }
 
     public bool TryStartReload()
@@ -131,6 +157,22 @@ public class WeaponController : MonoBehaviour
         return true;
     }
 
+    public void PlayHolsterFeedback()
+    {
+        if (weapon.HolsterSound != null)
+        {
+            audioSource.PlayOneShot(weapon.HolsterSound);
+        }
+    }
+
+    public void PlayUnholsterFeedback()
+    {
+        if (weapon.UnholsterSound != null)
+        {
+            audioSource.PlayOneShot(weapon.UnholsterSound);
+        }
+    }
+
     private void OnDisable()
     {
         if (ammoState != null)
@@ -161,5 +203,115 @@ public class WeaponController : MonoBehaviour
         }
 
         DryFired?.Invoke();
+    }
+
+    private void ResolveHitscan()
+    {
+        Transform firePoint = FirePoint.transform;
+
+        if (aimCamera == null)
+        {
+            ResolveShotRay(
+                new Ray(firePoint.position, firePoint.forward),
+                maxAimDistance);
+            return;
+        }
+
+        Ray aimRay = aimCamera.ViewportPointToRay(
+            new Vector3(0.5f, 0.5f, 0f));
+        Vector3 aimPoint = aimRay.GetPoint(maxAimDistance);
+
+        if (TryGetFirstValidHit(
+                aimRay,
+                maxAimDistance,
+                out RaycastHit cameraHit))
+        {
+            aimPoint = cameraHit.point;
+        }
+
+        Vector3 direction = aimPoint - firePoint.position;
+        float rayDistance = direction.magnitude;
+
+        if (direction.sqrMagnitude <= 0.0001f)
+        {
+            direction = aimRay.direction;
+            rayDistance = maxAimDistance;
+        }
+
+        ResolveShotRay(
+            new Ray(firePoint.position, direction.normalized),
+            rayDistance + 0.05f);
+    }
+
+    private void ResolveShotRay(Ray ray, float distance)
+    {
+        Vector3 tracerEnd = ray.GetPoint(distance);
+
+        if (TryGetFirstValidHit(
+                ray,
+                distance,
+                out RaycastHit hit))
+        {
+            tracerEnd = hit.point;
+            ApplyHit(hit);
+        }
+
+        ShotTracerController.Play(
+            ray.origin,
+            tracerEnd,
+            tracerSpeed);
+    }
+
+    private void ApplyHit(RaycastHit hit)
+    {
+        if (impactEffect != null)
+        {
+            Instantiate(
+                impactEffect,
+                hit.point + hit.normal * 0.002f,
+                Quaternion.LookRotation(hit.normal));
+        }
+
+        EnemyController enemy =
+            hit.collider.GetComponentInParent<EnemyController>();
+
+        if (enemy != null)
+        {
+            enemy.GetHit(weapon.Damage);
+        }
+    }
+
+    private bool TryGetFirstValidHit(
+        Ray ray,
+        float distance,
+        out RaycastHit validHit)
+    {
+        int hitCount = Physics.RaycastNonAlloc(
+            ray,
+            hitBuffer,
+            distance,
+            Physics.DefaultRaycastLayers,
+            QueryTriggerInteraction.Ignore);
+        float nearestDistance = float.PositiveInfinity;
+        validHit = default;
+
+        for (int index = 0; index < hitCount; index++)
+        {
+            RaycastHit hit = hitBuffer[index];
+
+            if (shooterRoot != null &&
+                hit.collider.transform.IsChildOf(shooterRoot))
+            {
+                continue;
+            }
+
+            if (hit.distance < nearestDistance)
+            {
+                nearestDistance = hit.distance;
+                validHit = hit;
+            }
+        }
+
+        return nearestDistance < float.PositiveInfinity;
     }
 }

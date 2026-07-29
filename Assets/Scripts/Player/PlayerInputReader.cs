@@ -15,8 +15,13 @@ public class PlayerInputReader : MonoBehaviour
     private InputAction crouchAction;
     private InputAction pauseAction;
     private InputAction reloadAction;
+    private InputAction weaponSlot1Action;
+    private InputAction weaponSlot2Action;
+    private InputAction cycleWeaponAction;
     private bool aimingPressed;
     private bool reloadPressed;
+    private int weaponSelection = -1;
+    private int weaponCycleDirection;
 
     // 其他脚本只能读取输入结果，不需要直接管理 Input Action。
     public Vector2 Move => moveAction.action.ReadValue<Vector2>();
@@ -33,6 +38,8 @@ public class PlayerInputReader : MonoBehaviour
     public bool PausePressed =>
         pauseAction != null && pauseAction.WasPressedThisFrame();
     public bool ReloadPressed => reloadPressed;
+    public int WeaponSelection => weaponSelection;
+    public int WeaponCycleDirection => weaponCycleDirection;
     public bool LookUsesPointerDelta =>
         lookAction.action.activeControl?.device is Pointer;
 
@@ -50,6 +57,20 @@ public class PlayerInputReader : MonoBehaviour
         return wasPressed;
     }
 
+    public int ConsumeWeaponSelection()
+    {
+        int requestedSlot = weaponSelection;
+        weaponSelection = -1;
+        return requestedSlot;
+    }
+
+    public int ConsumeWeaponCycleDirection()
+    {
+        int direction = weaponCycleDirection;
+        weaponCycleDirection = 0;
+        return direction;
+    }
+
     private void Awake()
     {
         crouchAction = moveAction.action.actionMap.FindAction(
@@ -61,12 +82,24 @@ public class PlayerInputReader : MonoBehaviour
         reloadAction = moveAction.action.actionMap.FindAction(
             "Reload",
             true);
+        weaponSlot1Action = moveAction.action.actionMap.FindAction(
+            "WeaponSlot1",
+            true);
+        weaponSlot2Action = moveAction.action.actionMap.FindAction(
+            "WeaponSlot2",
+            true);
+        cycleWeaponAction = moveAction.action.actionMap.FindAction(
+            "CycleWeapon",
+            true);
     }
 
     private void OnEnable()
     {
         aimingAction.action.performed += OnAimingPerformed;
         reloadAction.performed += OnReloadPerformed;
+        weaponSlot1Action.performed += OnWeaponSlot1Performed;
+        weaponSlot2Action.performed += OnWeaponSlot2Performed;
+        cycleWeaponAction.performed += OnCycleWeaponPerformed;
         moveAction.action.Enable();
         jumpAction.action.Enable();
         lookAction.action.Enable();
@@ -77,14 +110,22 @@ public class PlayerInputReader : MonoBehaviour
         crouchAction?.Enable();
         pauseAction?.Enable();
         reloadAction?.Enable();
+        weaponSlot1Action?.Enable();
+        weaponSlot2Action?.Enable();
+        cycleWeaponAction?.Enable();
     }
 
     private void OnDisable()
     {
         aimingAction.action.performed -= OnAimingPerformed;
         reloadAction.performed -= OnReloadPerformed;
+        weaponSlot1Action.performed -= OnWeaponSlot1Performed;
+        weaponSlot2Action.performed -= OnWeaponSlot2Performed;
+        cycleWeaponAction.performed -= OnCycleWeaponPerformed;
         aimingPressed = false;
         reloadPressed = false;
+        weaponSelection = -1;
+        weaponCycleDirection = 0;
         moveAction.action.Disable();
         jumpAction.action.Disable();
         lookAction.action.Disable();
@@ -95,6 +136,9 @@ public class PlayerInputReader : MonoBehaviour
         crouchAction?.Disable();
         pauseAction?.Disable();
         reloadAction?.Disable();
+        weaponSlot1Action?.Disable();
+        weaponSlot2Action?.Disable();
+        cycleWeaponAction?.Disable();
     }
 
     private void OnAimingPerformed(InputAction.CallbackContext context)
@@ -105,5 +149,25 @@ public class PlayerInputReader : MonoBehaviour
     private void OnReloadPerformed(InputAction.CallbackContext context)
     {
         reloadPressed = true;
+    }
+
+    private void OnWeaponSlot1Performed(InputAction.CallbackContext context)
+    {
+        weaponSelection = 0;
+    }
+
+    private void OnWeaponSlot2Performed(InputAction.CallbackContext context)
+    {
+        weaponSelection = 1;
+    }
+
+    private void OnCycleWeaponPerformed(InputAction.CallbackContext context)
+    {
+        float scrollValue = context.ReadValue<float>();
+
+        if (Mathf.Abs(scrollValue) > 0.01f)
+        {
+            weaponCycleDirection = scrollValue > 0f ? 1 : -1;
+        }
     }
 }

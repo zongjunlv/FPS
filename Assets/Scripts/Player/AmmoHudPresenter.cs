@@ -12,6 +12,8 @@ public class AmmoHudPresenter : MonoBehaviour
     private float emptyFeedbackUntil;
 
     public string DisplayText { get; private set; } = "0 / 0";
+    public string WeaponNameText { get; private set; } = string.Empty;
+    public string FireModeText { get; private set; } = string.Empty;
     public string StatusText
     {
         get
@@ -31,10 +33,13 @@ public class AmmoHudPresenter : MonoBehaviour
     {
         Unbind();
         weapon = targetWeapon;
+        emptyFeedbackUntil = 0f;
 
         if (weapon == null)
         {
             DisplayText = "0 / 0";
+            WeaponNameText = string.Empty;
+            FireModeText = string.Empty;
             return;
         }
 
@@ -70,6 +75,8 @@ public class AmmoHudPresenter : MonoBehaviour
         }
 
         DisplayText = $"{weapon.CurrentAmmo} / {weapon.ReserveAmmo}";
+        WeaponNameText = weapon.WeaponName;
+        FireModeText = weapon.FireModeName;
     }
 
     private void ShowEmptyFeedback()
@@ -94,6 +101,10 @@ public class AmmoHudPresenter : MonoBehaviour
             new Rect(right - width, bottom - 44f, width, 40f),
             DisplayText,
             ammoStyle);
+        GUI.Label(
+            new Rect(right - width, bottom - 98f, width, 24f),
+            $"{WeaponNameText}  {FireModeText}",
+            statusStyle);
 
         string status = StatusText;
 

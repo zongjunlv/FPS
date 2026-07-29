@@ -10,9 +10,14 @@ public class WeaponDefinition : ScriptableObject
     [Min(1)] public int MagazineCapacity = 30;
     [Min(0)] public int InitialReserveAmmo = 120;
     [Min(0.01f)] public float ReloadDuration = 2.4f;
+    [Min(0f)] public float Damage = 10f;
+    public AudioClip FireSound;
     public AudioClip DryFireSound;
     public AudioClip ReloadSound;
     public AudioClip EmptyReloadSound;
+    public AudioClip HolsterSound;
+    public AudioClip UnholsterSound;
+    public RuntimeAnimatorController CharacterAnimatorController;
     public float FireIntervel;
     public bool IsAutomatic;
     [Header("Recoil")]

@@ -145,7 +145,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: dc3abdf543a4d4699b6358e829fef8da, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::ImpactEffectController
-  lifetime: 0.5
+  lifetime: 3.05
 --- !u!1 &6466064205674047189
 GameObject:
   m_ObjectHideFlags: 0

@@ -49,6 +49,7 @@ public class PlayerController : MonoBehaviour
     public bool IsAiming { get; private set; }
     public float AimBlend { get; private set; }
     public bool IsAdsCrosshairActive => AimBlend >= 0.5f;
+    public Camera AimCamera => aimCamera;
     public bool IsCrouching { get; private set; }
     public bool IsPaused { get; private set; }
     public bool IsSprinting =>

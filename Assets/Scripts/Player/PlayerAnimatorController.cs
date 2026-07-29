@@ -9,15 +9,22 @@ public class PlayerAnimatorController : MonoBehaviour
     private static readonly int Movement = Animator.StringToHash("Movement");
     private static readonly int Running = Animator.StringToHash("Running");
     private static readonly int Aiming = Animator.StringToHash("Aiming");
+    private static readonly int Holstered =
+        Animator.StringToHash("Holstered");
     private static readonly int Reload =
         Animator.StringToHash("Layer Actions.Reload");
     private static readonly int ReloadEmpty =
         Animator.StringToHash("Layer Actions.Reload Empty");
     private static readonly int DefaultAction =
         Animator.StringToHash("Layer Actions.Default");
+    private static readonly int Holster =
+        Animator.StringToHash("Layer Holster.Holster");
+    private static readonly int Unholster =
+        Animator.StringToHash("Layer Holster.Unholster");
 
     private PlayerController playerController;
     private int actionsLayerIndex = -1;
+    private int holsterLayerIndex = -1;
 
     public bool IsReloadAnimationPlaying { get; private set; }
 
@@ -29,7 +36,7 @@ public class PlayerAnimatorController : MonoBehaviour
         }
 
         playerController = GetComponent<PlayerController>();
-        actionsLayerIndex = animator.GetLayerIndex("Layer Actions");
+        RefreshLayerIndices();
     }
 
     private void Update()
@@ -79,5 +86,47 @@ public class PlayerAnimatorController : MonoBehaviour
         }
 
         IsReloadAnimationPlaying = false;
+    }
+
+    public void SetWeaponAnimatorController(
+        RuntimeAnimatorController controller)
+    {
+        if (controller == null ||
+            animator.runtimeAnimatorController == controller)
+        {
+            return;
+        }
+
+        animator.runtimeAnimatorController = controller;
+        RefreshLayerIndices();
+        IsReloadAnimationPlaying = false;
+    }
+
+    public bool PlayHolsterAnimation()
+    {
+        return SetHolsteredState(true, Holster);
+    }
+
+    public bool PlayUnholsterAnimation()
+    {
+        return SetHolsteredState(false, Unholster);
+    }
+
+    private bool SetHolsteredState(bool holstered, int stateHash)
+    {
+        if (holsterLayerIndex < 0 ||
+            !animator.HasState(holsterLayerIndex, stateHash))
+        {
+            return false;
+        }
+
+        animator.SetBool(Holstered, holstered);
+        return true;
+    }
+
+    private void RefreshLayerIndices()
+    {
+        actionsLayerIndex = animator.GetLayerIndex("Layer Actions");
+        holsterLayerIndex = animator.GetLayerIndex("Layer Holster");
     }
 }

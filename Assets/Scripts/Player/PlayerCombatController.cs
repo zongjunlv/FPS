@@ -1,16 +1,19 @@
 using UnityEngine;
 
 [RequireComponent(typeof(PlayerInputReader), typeof(PlayerRecoilController))]
-[RequireComponent(typeof(PlayerController))]
-
+[RequireComponent(typeof(PlayerController), typeof(WeaponLoadoutController))]
 public class PlayerCombatController : MonoBehaviour
 {
-    [SerializeField] private WeaponController equippedWeapon;
-    
+    [SerializeField] private WeaponLoadoutController loadout;
+
+    public WeaponController EquippedWeapon { get; private set; }
+    public int EquippedWeaponIndex => loadout.CurrentIndex;
+    public int WeaponCount => loadout.WeaponCount;
+    public bool IsSwitching => loadout.IsSwitching;
+
     private PlayerRecoilController playerRecoil;
     private PlayerController playerController;
     private PlayerAnimatorController playerAnimator;
-
     private PlayerInputReader input;
     private AmmoHudPresenter ammoHud;
 
@@ -22,60 +25,171 @@ public class PlayerCombatController : MonoBehaviour
         playerAnimator = GetComponent<PlayerAnimatorController>();
         ammoHud = GetComponent<AmmoHudPresenter>();
 
+        if (loadout == null)
+        {
+            loadout = GetComponent<WeaponLoadoutController>();
+        }
+
         if (ammoHud == null)
         {
             ammoHud = gameObject.AddComponent<AmmoHudPresenter>();
         }
 
-        ammoHud.Bind(equippedWeapon);
-        equippedWeapon.ReloadStateChanged += HandleReloadStateChanged;
+        loadout.SwitchStarted += HandleSwitchStarted;
+        loadout.SwitchInterrupted += HandleSwitchInterrupted;
+        loadout.WeaponPresentationChanged +=
+            HandleWeaponPresentationChanged;
+        loadout.EquippedWeaponChanged += HandleEquippedWeaponChanged;
+
+        BindEquippedWeapon(loadout.CurrentWeapon);
+        playerAnimator.SetWeaponAnimatorController(
+            EquippedWeapon.CharacterAnimatorController);
     }
 
     private void OnDestroy()
     {
-        if (equippedWeapon != null)
+        if (loadout != null)
         {
-            equippedWeapon.ReloadStateChanged -= HandleReloadStateChanged;
+            loadout.SwitchStarted -= HandleSwitchStarted;
+            loadout.SwitchInterrupted -= HandleSwitchInterrupted;
+            loadout.WeaponPresentationChanged -=
+                HandleWeaponPresentationChanged;
+            loadout.EquippedWeaponChanged -= HandleEquippedWeaponChanged;
+        }
+
+        if (EquippedWeapon != null)
+        {
+            EquippedWeapon.ReloadStateChanged -=
+                HandleReloadStateChanged;
         }
     }
 
-    // 在 PlayerController 更新运动与暂停状态后处理战斗输入。
     private void LateUpdate()
     {
+        HandleWeaponSelectionInput();
+
         if (playerController.IsSprinting)
         {
-            equippedWeapon.CancelReload();
+            loadout.Interrupt();
+            EquippedWeapon.CancelReload();
+        }
+
+        if (loadout.IsSwitching)
+        {
+            input.ConsumeReloadPressed();
+            return;
         }
 
         if (input.ConsumeReloadPressed() &&
             !playerController.IsPaused &&
             !playerController.IsSprinting &&
-            equippedWeapon.TryStartReload())
+            EquippedWeapon.TryStartReload())
         {
             playerController.TrySetAiming(false);
         }
 
-        bool wantsToFire = equippedWeapon.IsAutomatic
+        bool wantsToFire = EquippedWeapon.IsAutomatic
             ? input.AttackHeld
             : input.AttackPressed;
 
         if (wantsToFire &&
             !playerController.IsPaused &&
             !playerController.IsSprinting &&
-            equippedWeapon.TryFire())
+            EquippedWeapon.TryFire())
         {
             playerRecoil.AddRecoil(
-                equippedWeapon.VerticalRecoil,
-                equippedWeapon.HorizontalRecoil);
+                EquippedWeapon.VerticalRecoil,
+                EquippedWeapon.HorizontalRecoil);
         }
+    }
+
+    public bool TrySelectWeapon(int targetIndex)
+    {
+        if (playerController.IsPaused ||
+            playerController.IsSprinting)
+        {
+            return false;
+        }
+
+        return loadout.TrySelect(targetIndex);
+    }
+
+    public bool CancelWeaponSwitch()
+    {
+        return loadout.Interrupt();
+    }
+
+    private void HandleWeaponSelectionInput()
+    {
+        int requestedSlot = input.ConsumeWeaponSelection();
+        int cycleDirection = input.ConsumeWeaponCycleDirection();
+
+        if (playerController.IsPaused ||
+            playerController.IsSprinting)
+        {
+            return;
+        }
+
+        if (requestedSlot >= 0)
+        {
+            loadout.TrySelect(requestedSlot);
+            return;
+        }
+
+        loadout.TryCycle(cycleDirection);
+    }
+
+    private void HandleSwitchStarted()
+    {
+        playerController.TrySetAiming(false);
+        playerAnimator.StopReloadAnimation();
+        playerAnimator.PlayHolsterAnimation();
+    }
+
+    private void HandleWeaponPresentationChanged(
+        WeaponController weapon)
+    {
+        playerAnimator.SetWeaponAnimatorController(
+            weapon.CharacterAnimatorController);
+        playerAnimator.PlayUnholsterAnimation();
+    }
+
+    private void HandleSwitchInterrupted()
+    {
+        playerAnimator.SetWeaponAnimatorController(
+            loadout.CurrentWeapon.CharacterAnimatorController);
+        playerAnimator.PlayUnholsterAnimation();
+    }
+
+    private void HandleEquippedWeaponChanged(
+        WeaponController weapon)
+    {
+        BindEquippedWeapon(weapon);
+    }
+
+    private void BindEquippedWeapon(WeaponController weapon)
+    {
+        if (EquippedWeapon != null)
+        {
+            EquippedWeapon.ReloadStateChanged -=
+                HandleReloadStateChanged;
+        }
+
+        EquippedWeapon = weapon;
+        EquippedWeapon.ReloadStateChanged +=
+            HandleReloadStateChanged;
+        EquippedWeapon.ConfigureAiming(
+            playerController.AimCamera,
+            transform);
+        ammoHud.Bind(EquippedWeapon);
     }
 
     private void HandleReloadStateChanged()
     {
-        if (equippedWeapon.IsReloading)
+        if (EquippedWeapon.IsReloading)
         {
             playerAnimator.PlayReloadAnimation(
-                equippedWeapon.CurrentAmmo == 0);
+                EquippedWeapon.CurrentAmmo == 0);
             return;
         }
 
