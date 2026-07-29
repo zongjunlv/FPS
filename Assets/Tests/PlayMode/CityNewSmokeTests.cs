@@ -106,6 +106,8 @@ namespace FPS.Tests.PlayMode
 
             int projectileCountBefore = CountComponentsByName(
                 "ProjectileController");
+            weapon.GetType().GetMethod("SetSpreadSampleOverride")
+                .Invoke(weapon, new object[] { Vector2.zero });
             bool didFire = (bool)tryFire.Invoke(weapon, null);
             int projectileCountAfter = CountComponentsByName(
                 "ProjectileController");
@@ -153,6 +155,8 @@ namespace FPS.Tests.PlayMode
             target.transform.position = aimRay.GetPoint(8f);
             Physics.SyncTransforms();
 
+            weapon.GetType().GetMethod("SetSpreadSampleOverride")
+                .Invoke(weapon, new object[] { Vector2.zero });
             Assert.That((bool)tryFire.Invoke(weapon, null), Is.True);
 
             GameObject tracerObject = FindObjectWithComponent(
@@ -343,7 +347,7 @@ namespace FPS.Tests.PlayMode
             System.Type healthType =
                 System.Type.GetType("Health, Assembly-CSharp");
             Component health = target.AddComponent(healthType);
-            healthType.GetMethod("Initialize")
+            healthType.GetMethod("Initialize", new[] { typeof(float) })
                 .Invoke(health, new object[] { 100f });
             Physics.SyncTransforms();
 
@@ -402,7 +406,7 @@ namespace FPS.Tests.PlayMode
             System.Type healthType =
                 System.Type.GetType("Health, Assembly-CSharp");
             Component health = target.AddComponent(healthType);
-            healthType.GetMethod("Initialize")
+            healthType.GetMethod("Initialize", new[] { typeof(float) })
                 .Invoke(health, new object[] { 100f });
 
             Vector3 muzzleDirection =
@@ -442,6 +446,8 @@ namespace FPS.Tests.PlayMode
                 Is.True,
                 "Test obstruction must block the muzzle ray.");
 
+            weapon.GetType().GetMethod("SetSpreadSampleOverride")
+                .Invoke(weapon, new object[] { Vector2.zero });
             Assert.That((bool)tryFire.Invoke(weapon, null), Is.True);
 
             float remainingHealth =
@@ -522,10 +528,31 @@ namespace FPS.Tests.PlayMode
                 enemy == null,
                 Is.True,
                 "Spider death presentation must respond to Health.Died.");
+            GameObject deathEffect =
+                FindObjectByName("P_EXP_Barrel(Clone)");
             Assert.That(
-                FindObjectByName("P_EXP_Barrel(Clone)"),
+                deathEffect,
                 Is.Not.Null,
                 "Spider death must spawn its explosion effect.");
+            Component deathEffectController = deathEffect.GetComponent(
+                System.Type.GetType(
+                    "EnemyDeathEffectController, Assembly-CSharp"));
+            Assert.That(deathEffectController, Is.Not.Null);
+            Assert.That(
+                (float)deathEffectController.GetType()
+                    .GetProperty("Lifetime")
+                    .GetValue(deathEffectController),
+                Is.LessThanOrEqualTo(1.3f));
+            Assert.That(
+                deathEffect.transform.Find("Smoke Particles")
+                    .gameObject.activeSelf,
+                Is.False);
+            Assert.That(
+                deathEffect.transform.Find("Burn Mark Particle")
+                    .gameObject.activeSelf,
+                Is.False);
+            yield return new WaitForSeconds(1.35f);
+            Assert.That(deathEffect == null, Is.True);
         }
 
         [UnityTest]
@@ -1131,10 +1158,29 @@ namespace FPS.Tests.PlayMode
                 "PlayerCombatController");
             Component combat =
                 player.GetComponent("PlayerCombatController");
+            Component loadout =
+                player.GetComponent("WeaponLoadoutController");
+            PropertyInfo switchDuration =
+                loadout.GetType().GetProperty("SwitchDuration");
             MethodInfo trySelectWeapon =
                 combat.GetType().GetMethod("TrySelectWeapon");
             Animator animator = player.GetComponentInChildren<Animator>();
             int holsterLayer = animator.GetLayerIndex("Layer Holster");
+            float configuredSwitchDuration =
+                (float)switchDuration.GetValue(loadout);
+
+            Assert.That(
+                configuredSwitchDuration,
+                Is.LessThanOrEqualTo(0.6f),
+                "Weapon switching must stay compact.");
+            Assert.That(
+                animator.GetFloat(
+                    Animator.StringToHash("Play Rate Holster")),
+                Is.GreaterThanOrEqualTo(1.4f));
+            Assert.That(
+                animator.GetFloat(
+                    Animator.StringToHash("Play Rate Unholster")),
+                Is.GreaterThanOrEqualTo(1.4f));
 
             Assert.That(holsterLayer, Is.GreaterThanOrEqualTo(0));
             Assert.That(
@@ -1277,6 +1323,8 @@ namespace FPS.Tests.PlayMode
                         10f),
                     Is.True);
 
+                weapon.GetType().GetMethod("SetSpreadSampleOverride")
+                    .Invoke(weapon, new object[] { Vector2.zero });
                 Assert.That(
                     (bool)tryFire.Invoke(weapon, null),
                     Is.True);
@@ -1347,14 +1395,90 @@ namespace FPS.Tests.PlayMode
             }
 
             MethodInfo tryFire = pistol.GetType().GetMethod("TryFire");
+            Component muzzleFeedback =
+                pistol.GetComponentInChildren(
+                    System.Type.GetType(
+                        "MuzzleFlashController, Assembly-CSharp"),
+                    true);
+            PropertyInfo playCount =
+                muzzleFeedback.GetType().GetProperty("PlayCount");
+            AudioSource fireAudioSource =
+                (AudioSource)pistol.GetType()
+                    .GetProperty("FireAudioSource")
+                    .GetValue(pistol);
+
+            Assert.That(fireAudioSource.spatialBlend, Is.EqualTo(1f));
             Assert.That((bool)tryFire.Invoke(pistol, null), Is.True);
             Assert.That(muzzleLight.enabled, Is.True);
+            Assert.That((int)playCount.GetValue(muzzleFeedback), Is.EqualTo(1));
             Assert.That(
                 System.Array.Exists(
                     particles,
                     particle => particle.isPlaying),
                 Is.True,
                 "Firing must explicitly play the muzzle particles.");
+
+            yield return new WaitForSeconds(0.29f);
+            Assert.That((bool)tryFire.Invoke(pistol, null), Is.True);
+            Assert.That(muzzleLight.enabled, Is.True);
+            Assert.That(
+                (int)playCount.GetValue(muzzleFeedback),
+                Is.EqualTo(2),
+                "Every accepted shot must replay muzzle flash and light.");
+        }
+
+        [UnityTest]
+        public IEnumerator SceneBuildsFixedCombatFeedbackTestRange()
+        {
+            yield return LoadCityNew();
+            yield return null;
+
+            GameObject range =
+                GameObject.Find("Combat Feedback Test Range");
+            System.Type surfaceType =
+                System.Type.GetType("SurfaceDescriptor, Assembly-CSharp");
+            System.Type hitboxType =
+                System.Type.GetType("DamageHitbox, Assembly-CSharp");
+            System.Type damagePadType =
+                System.Type.GetType(
+                    "PlayerDamageTestPad, Assembly-CSharp");
+
+            Assert.That(range, Is.Not.Null);
+            Assert.That(
+                range.GetComponentsInChildren(surfaceType, true).Length,
+                Is.GreaterThanOrEqualTo(2));
+            Assert.That(
+                range.GetComponentsInChildren(hitboxType, true).Length,
+                Is.GreaterThanOrEqualTo(2));
+            Assert.That(
+                range.GetComponentsInChildren(damagePadType, true).Length,
+                Is.EqualTo(1));
+            foreach (TextMesh label in
+                     range.GetComponentsInChildren<TextMesh>(true))
+            {
+                Assert.That(
+                    Mathf.DeltaAngle(
+                        label.transform.localEulerAngles.y,
+                        180f),
+                    Is.EqualTo(0f).Within(0.1f));
+            }
+
+            GameObject player = FindObjectWithComponent(
+                GetSceneObjects(SceneManager.GetActiveScene()),
+                "PlayerCombatController");
+            Component health = player.GetComponent("Health");
+            Assert.That(
+                (float)health.GetType().GetProperty("MaxArmor")
+                    .GetValue(health),
+                Is.EqualTo(100f));
+            Assert.That(
+                player.GetComponent(
+                    System.Type.GetType(
+                        "PlayerVitalsHudPresenter, Assembly-CSharp")),
+                Is.Not.Null);
+            Assert.That(
+                player.GetComponentsInChildren<AudioListener>(true).Length,
+                Is.EqualTo(1));
         }
 
         [UnityTest]

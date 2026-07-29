@@ -23,4 +23,13 @@ public class WeaponDefinition : ScriptableObject
     [Header("Recoil")]
     [Min(0f)] public float HorizontalRecoil = 2f;
     [Min(0f)] public float VerticalRecoil = 0.4f;
+    [Range(0.1f, 1f)] public float AdsRecoilMultiplier = 0.55f;
+    [Header("Accuracy")]
+    [Min(0f)] public float HipSpreadDegrees = 0.65f;
+    [Min(0f)] public float AdsSpreadDegrees = 0.12f;
+    [Min(0f)] public float MovementSpreadBonus = 0.8f;
+    [Min(0f)] public float SprintSpreadBonus = 2.5f;
+    [Min(0f)] public float SpreadPerShot = 0.18f;
+    [Min(0f)] public float MaxShotSpread = 1.5f;
+    [Min(0f)] public float SpreadRecoverySpeed = 3f;
 }

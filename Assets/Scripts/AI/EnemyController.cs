@@ -45,7 +45,20 @@ public class EnemyController : MonoBehaviour
 
         if (bombEffect != null)
         {
-            Instantiate(bombEffect, transform.position, transform.rotation);
+            GameObject deathEffect = Instantiate(
+                bombEffect,
+                transform.position,
+                Quaternion.identity);
+            EnemyDeathEffectController controller =
+                deathEffect.GetComponent<EnemyDeathEffectController>();
+
+            if (controller == null)
+            {
+                controller =
+                    deathEffect.AddComponent<EnemyDeathEffectController>();
+            }
+
+            controller.Configure();
         }
 
         Destroy(gameObject);
@@ -77,7 +90,8 @@ public class EnemyController : MonoBehaviour
             "Body Hitbox",
             bodyCenter,
             bodySize,
-            1f);
+            1f,
+            HitRegion.Body);
 
         Vector3 headSize = originalSize;
         headSize.x *= 0.75f;
@@ -89,14 +103,16 @@ public class EnemyController : MonoBehaviour
             "Head Hitbox",
             headCenter,
             headSize,
-            headDamageMultiplier);
+            headDamageMultiplier,
+            HitRegion.Head);
     }
 
     private void CreateHitbox(
         string hitboxName,
         Vector3 center,
         Vector3 size,
-        float multiplier)
+        float multiplier,
+        HitRegion region)
     {
         var hitboxObject = new GameObject(hitboxName);
         hitboxObject.layer = gameObject.layer;
@@ -109,6 +125,6 @@ public class EnemyController : MonoBehaviour
 
         DamageHitbox hitbox =
             hitboxObject.AddComponent<DamageHitbox>();
-        hitbox.Configure(health, multiplier);
+        hitbox.ConfigureRegion(health, multiplier, region);
     }
 }

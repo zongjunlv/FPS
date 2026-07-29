@@ -10,6 +10,9 @@ public class MuzzleFlashController : MonoBehaviour
     [SerializeField] private float lightDuration = 0.05f;
 
     private float remainingTime;
+    public int PlayCount { get; private set; }
+    public bool IsLightActive =>
+        muzzleLight != null && muzzleLight.enabled;
 
     private void Awake()
     {
@@ -34,6 +37,7 @@ public class MuzzleFlashController : MonoBehaviour
 
     public void Play()
     {
+        PlayCount++;
         foreach (ParticleSystem particle in particles)
         {
             if (particle == null)
@@ -50,14 +54,20 @@ public class MuzzleFlashController : MonoBehaviour
             particle.Play(false);
         }
 
-        muzzleLight.enabled = true;
+        if (muzzleLight != null)
+        {
+            muzzleLight.enabled = true;
+        }
         remainingTime = lightDuration;
     }
 
     private void OnDisable()
     {
         StopParticles();
-        muzzleLight.enabled = false;
+        if (muzzleLight != null)
+        {
+            muzzleLight.enabled = false;
+        }
         remainingTime = 0f;
     }
 
@@ -76,7 +86,10 @@ public class MuzzleFlashController : MonoBehaviour
         }
 
         StopParticles();
-        muzzleLight.enabled = false;
+        if (muzzleLight != null)
+        {
+            muzzleLight.enabled = false;
+        }
         remainingTime = 0f;
     }
 

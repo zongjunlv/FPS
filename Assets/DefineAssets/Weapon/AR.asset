@@ -26,5 +26,13 @@ MonoBehaviour:
   CharacterAnimatorController: {fileID: 22100000, guid: 1288116e5192cd84b808721e453eb7e7, type: 2}
   FireIntervel: 0.1
   IsAutomatic: 1
-  HorizontalRecoil: 0
+  HorizontalRecoil: 0.65
   VerticalRecoil: 5
+  AdsRecoilMultiplier: 0.55
+  HipSpreadDegrees: 0.55
+  AdsSpreadDegrees: 0.1
+  MovementSpreadBonus: 0.75
+  SprintSpreadBonus: 2.5
+  SpreadPerShot: 0.16
+  MaxShotSpread: 1.4
+  SpreadRecoverySpeed: 3.2

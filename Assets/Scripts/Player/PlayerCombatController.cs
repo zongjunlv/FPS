@@ -1,3 +1,4 @@
+using System;
 using UnityEngine;
 
 [RequireComponent(typeof(PlayerInputReader), typeof(PlayerRecoilController))]
@@ -11,6 +12,7 @@ public class PlayerCombatController : MonoBehaviour
     public int EquippedWeaponIndex => loadout.CurrentIndex;
     public int WeaponCount => loadout.WeaponCount;
     public bool IsSwitching => loadout.IsSwitching;
+    public event Action<ShotResult> ShotResolved;
 
     private PlayerRecoilController playerRecoil;
     private PlayerController playerController;
@@ -43,6 +45,16 @@ public class PlayerCombatController : MonoBehaviour
             ammoHud = gameObject.AddComponent<AmmoHudPresenter>();
         }
 
+        if (GetComponent<PlayerCombatFeedbackController>() == null)
+        {
+            gameObject.AddComponent<PlayerCombatFeedbackController>();
+        }
+
+        if (GetComponent<FeedbackTestRangeController>() == null)
+        {
+            gameObject.AddComponent<FeedbackTestRangeController>();
+        }
+
         loadout.SwitchStarted += HandleSwitchStarted;
         loadout.SwitchInterrupted += HandleSwitchInterrupted;
         loadout.WeaponPresentationChanged +=
@@ -69,6 +81,7 @@ public class PlayerCombatController : MonoBehaviour
         {
             EquippedWeapon.ReloadStateChanged -=
                 HandleReloadStateChanged;
+            EquippedWeapon.ShotResolved -= HandleShotResolved;
         }
     }
 
@@ -100,14 +113,20 @@ public class PlayerCombatController : MonoBehaviour
             ? input.AttackHeld
             : input.AttackPressed;
 
+        EquippedWeapon.SetFiringContext(
+            playerController.AimBlend,
+            input.Move.magnitude,
+            playerController.IsSprinting);
+        playerRecoil.SetMovementAmount(input.Move.magnitude);
+
         if (wantsToFire &&
             !playerController.IsPaused &&
             !playerController.IsSprinting &&
             EquippedWeapon.TryFire())
         {
             playerRecoil.AddRecoil(
-                EquippedWeapon.VerticalRecoil,
-                EquippedWeapon.HorizontalRecoil);
+                EquippedWeapon.CurrentVerticalRecoil,
+                EquippedWeapon.CurrentHorizontalRecoil);
         }
     }
 
@@ -181,16 +200,23 @@ public class PlayerCombatController : MonoBehaviour
         {
             EquippedWeapon.ReloadStateChanged -=
                 HandleReloadStateChanged;
+            EquippedWeapon.ShotResolved -= HandleShotResolved;
         }
 
         EquippedWeapon = weapon;
         EquippedWeapon.ReloadStateChanged +=
             HandleReloadStateChanged;
+        EquippedWeapon.ShotResolved += HandleShotResolved;
         EquippedWeapon.ConfigureAiming(
             playerController.AimCamera,
             transform,
             tracerPool);
         ammoHud.Bind(EquippedWeapon);
+    }
+
+    private void HandleShotResolved(ShotResult result)
+    {
+        ShotResolved?.Invoke(result);
     }
 
     private void HandleReloadStateChanged()

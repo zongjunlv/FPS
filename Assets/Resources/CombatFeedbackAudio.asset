@@ -1,0 +1,17 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d9ef0fb44ee54380b947be045a3fc70a, type: 3}
+  m_Name: CombatFeedbackAudio
+  m_EditorClassIdentifier: Assembly-CSharp::CombatFeedbackAudioProfile
+  ConcreteImpact: {fileID: 8300000, guid: 3093f609a97a5d94797824ea3a2a5d74, type: 3}
+  MetalImpact: {fileID: 8300000, guid: 7cb7865f0082e4444b2e6ce47a91f060, type: 3}
+  PlayerDamaged: {fileID: 8300000, guid: 3ba5e26ab3bf72d4697e4b3b1e340933, type: 3}

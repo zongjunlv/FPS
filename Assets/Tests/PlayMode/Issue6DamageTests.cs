@@ -38,7 +38,7 @@ namespace FPS.Tests.PlayMode
             try
             {
                 Component health = target.AddComponent(healthType);
-                healthType.GetMethod("Initialize")
+                healthType.GetMethod("Initialize", new[] { typeof(float) })
                     .Invoke(health, new object[] { 100f });
                 object damage = Activator.CreateInstance(
                     damageInfoType,
@@ -50,9 +50,10 @@ namespace FPS.Tests.PlayMode
                         null
                     });
 
-                bool accepted =
-                    (bool)healthType.GetMethod("ApplyDamage")
-                        .Invoke(health, new[] { damage });
+                object result = healthType.GetMethod("ApplyDamage")
+                    .Invoke(health, new[] { damage });
+                bool accepted = (bool)result.GetType()
+                    .GetProperty("WasApplied").GetValue(result);
 
                 Assert.That(accepted, Is.True);
                 Assert.That(
@@ -87,7 +88,7 @@ namespace FPS.Tests.PlayMode
             {
                 Component health = target.AddComponent(healthType);
                 MethodInfo initialize =
-                    healthType.GetMethod("Initialize");
+                    healthType.GetMethod("Initialize", new[] { typeof(float) });
                 MethodInfo applyDamage =
                     healthType.GetMethod("ApplyDamage");
                 PropertyInfo currentHealth =
@@ -111,14 +112,17 @@ namespace FPS.Tests.PlayMode
                         null
                     });
 
-                bool accepted =
-                    (bool)applyDamage.Invoke(
-                        health,
-                        new[] { lethalDamage });
-                bool acceptedAfterDeath =
-                    (bool)applyDamage.Invoke(
-                        health,
-                        new[] { lethalDamage });
+                object result = applyDamage.Invoke(
+                    health,
+                    new[] { lethalDamage });
+                object resultAfterDeath = applyDamage.Invoke(
+                    health,
+                    new[] { lethalDamage });
+                bool accepted = (bool)result.GetType()
+                    .GetProperty("WasApplied").GetValue(result);
+                bool acceptedAfterDeath = (bool)resultAfterDeath
+                    .GetType().GetProperty("WasApplied")
+                    .GetValue(resultAfterDeath);
 
                 Assert.That(accepted, Is.True);
                 Assert.That(acceptedAfterDeath, Is.False);
@@ -147,7 +151,7 @@ namespace FPS.Tests.PlayMode
             try
             {
                 Component health = target.AddComponent(healthType);
-                healthType.GetMethod("Initialize")
+                healthType.GetMethod("Initialize", new[] { typeof(float) })
                     .Invoke(health, new object[] { 10f });
                 int deathCount = 0;
                 Action onDeath = () => deathCount++;
@@ -198,7 +202,7 @@ namespace FPS.Tests.PlayMode
             try
             {
                 Component health = target.AddComponent(healthType);
-                healthType.GetMethod("Initialize")
+                healthType.GetMethod("Initialize", new[] { typeof(float) })
                     .Invoke(health, new object[] { 100f });
                 Component hitbox = head.AddComponent(hitboxType);
                 hitboxType.GetMethod("Configure")
@@ -213,9 +217,10 @@ namespace FPS.Tests.PlayMode
                         null
                     });
 
-                bool accepted =
-                    (bool)hitboxType.GetMethod("ApplyDamage")
-                        .Invoke(hitbox, new[] { damage });
+                object result = hitboxType.GetMethod("ApplyDamage")
+                    .Invoke(hitbox, new[] { damage });
+                bool accepted = (bool)result.GetType()
+                    .GetProperty("WasApplied").GetValue(result);
                 float remaining =
                     (float)healthType.GetProperty("CurrentHealth")
                         .GetValue(health);

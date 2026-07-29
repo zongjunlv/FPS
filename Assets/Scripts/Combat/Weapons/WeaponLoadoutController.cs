@@ -5,7 +5,7 @@ public class WeaponLoadoutController : MonoBehaviour
 {
     [SerializeField] private WeaponController[] weapons;
     [SerializeField, Min(0)] private int initialWeaponIndex;
-    [SerializeField, Min(0.1f)] private float switchDuration = 0.8f;
+    [SerializeField, Min(0.1f)] private float switchDuration = 0.56f;
 
     public event Action SwitchStarted;
     public event Action SwitchCompleted;

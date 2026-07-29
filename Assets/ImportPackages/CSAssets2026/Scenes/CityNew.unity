@@ -10904,6 +10904,11 @@ Animator:
   m_AllowConstantClipSamplingOptimization: 1
   m_KeepAnimatorStateOnDisable: 0
   m_WriteDefaultValuesOnDisable: 0
+--- !u!1 &1038020299 stripped
+GameObject:
+  m_CorrespondingSourceObject: {fileID: 442530907946946506, guid: 19eadcf8fbed56b4da77ca94c1b4145f, type: 3}
+  m_PrefabInstance: {fileID: 1899783996}
+  m_PrefabAsset: {fileID: 0}
 --- !u!1001 &1041243493
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -11368,6 +11373,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::PlayerAnimatorController
   animator: {fileID: 765694179}
+  switchAnimationSpeed: 1.45
 --- !u!114 &1073853155
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -11414,7 +11420,7 @@ MonoBehaviour:
   - {fileID: 816876982}
   - {fileID: 719542206}
   initialWeaponIndex: 0
-  switchDuration: 0.8
+  switchDuration: 0.56
 --- !u!114 &1073853158
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -21413,6 +21419,9 @@ PrefabInstance:
     - targetCorrespondingSourceObject: {fileID: 2751027687307977091, guid: 19eadcf8fbed56b4da77ca94c1b4145f, type: 3}
       insertIndex: -1
       addedObject: {fileID: 1073853158}
+    - targetCorrespondingSourceObject: {fileID: 442530907946946506, guid: 19eadcf8fbed56b4da77ca94c1b4145f, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 1901628780}
     - targetCorrespondingSourceObject: {fileID: 4775947768125699116, guid: 19eadcf8fbed56b4da77ca94c1b4145f, type: 3}
       insertIndex: -1
       addedObject: {fileID: 1914029595}
@@ -21422,6 +21431,14 @@ Transform:
   m_CorrespondingSourceObject: {fileID: 1508516655096054801, guid: 19eadcf8fbed56b4da77ca94c1b4145f, type: 3}
   m_PrefabInstance: {fileID: 1899783996}
   m_PrefabAsset: {fileID: 0}
+--- !u!81 &1901628780
+AudioListener:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1038020299}
+  m_Enabled: 0
 --- !u!1001 &1901631427
 PrefabInstance:
   m_ObjectHideFlags: 0

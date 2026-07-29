@@ -4,6 +4,8 @@ using UnityEngine;
 public class PlayerAnimatorController : MonoBehaviour
 {
     [SerializeField] private Animator animator;
+    [SerializeField, Range(1f, 2f)]
+    private float switchAnimationSpeed = 1.45f;
 
     private static readonly int PickupTrigger = Animator.StringToHash("pickup");
     private static readonly int Movement = Animator.StringToHash("Movement");
@@ -21,6 +23,10 @@ public class PlayerAnimatorController : MonoBehaviour
         Animator.StringToHash("Layer Holster.Holster");
     private static readonly int Unholster =
         Animator.StringToHash("Layer Holster.Unholster");
+    private static readonly int HolsterPlayRate =
+        Animator.StringToHash("Play Rate Holster");
+    private static readonly int UnholsterPlayRate =
+        Animator.StringToHash("Play Rate Unholster");
 
     private PlayerController playerController;
     private int actionsLayerIndex = -1;
@@ -104,11 +110,13 @@ public class PlayerAnimatorController : MonoBehaviour
 
     public bool PlayHolsterAnimation()
     {
+        ApplySwitchAnimationSpeed();
         return SetHolsteredState(true, Holster);
     }
 
     public bool PlayUnholsterAnimation()
     {
+        ApplySwitchAnimationSpeed();
         return SetHolsteredState(false, Unholster);
     }
 
@@ -128,5 +136,17 @@ public class PlayerAnimatorController : MonoBehaviour
     {
         actionsLayerIndex = animator.GetLayerIndex("Layer Actions");
         holsterLayerIndex = animator.GetLayerIndex("Layer Holster");
+        ApplySwitchAnimationSpeed();
+    }
+
+    private void ApplySwitchAnimationSpeed()
+    {
+        if (animator == null)
+        {
+            return;
+        }
+
+        animator.SetFloat(HolsterPlayRate, switchAnimationSpeed);
+        animator.SetFloat(UnholsterPlayRate, switchAnimationSpeed);
     }
 }

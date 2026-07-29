@@ -18,12 +18,21 @@ public class WeaponController : MonoBehaviour
     public event Action AmmoChanged;
     public event Action DryFired;
     public event Action ReloadStateChanged;
+    public event Action<ShotResult> ShotResolved;
 
     public bool IsAutomatic => weapon.IsAutomatic;
     public string WeaponName => weapon.WeaponName;
     public string FireModeName => weapon.IsAutomatic ? "AUTO" : "SEMI";
     public float VerticalRecoil => weapon.VerticalRecoil;
     public float HorizontalRecoil => weapon.HorizontalRecoil;
+    public float CurrentVerticalRecoil =>
+        weapon.VerticalRecoil *
+        Mathf.Lerp(1f, weapon.AdsRecoilMultiplier, aimBlend);
+    public float CurrentHorizontalRecoil =>
+        weapon.HorizontalRecoil *
+        Mathf.Lerp(1f, weapon.AdsRecoilMultiplier, aimBlend);
+    public float CurrentSpreadDegrees =>
+        spreadState.CurrentSpreadDegrees;
     public float Damage => weapon.Damage;
     public int CurrentAmmo => ammoState.CurrentAmmo;
     public int ReserveAmmo => ammoState.ReserveAmmo;
@@ -35,15 +44,21 @@ public class WeaponController : MonoBehaviour
     public RuntimeAnimatorController CharacterAnimatorController =>
         weapon.CharacterAnimatorController;
     public int DryFireFeedbackCount { get; private set; }
+    public ShotResult LastShotResult { get; private set; }
+    public AudioSource FireAudioSource => fireAudioSource;
 
     private float nextFireTime;
     private float nextDryFireFeedbackTime;
     private WeaponAmmoState ammoState;
     private AudioSource audioSource;
+    private AudioSource fireAudioSource;
     private Animator weaponAnimator;
     private Camera aimCamera;
     private Transform shooterRoot;
     private ShotTracerPool tracerPool;
+    private WeaponSpreadState spreadState;
+    private float aimBlend;
+    private Vector2? spreadSampleOverride;
     private readonly RaycastHit[] hitBuffer = new RaycastHit[32];
 
     private void Awake()
@@ -60,6 +75,36 @@ public class WeaponController : MonoBehaviour
 
         audioSource.playOnAwake = false;
         audioSource.spatialBlend = 0f;
+        GameObject fireAudioObject =
+            new GameObject("Spatial Gunshot Audio");
+        fireAudioObject.transform.SetParent(
+            FirePoint != null ? FirePoint.transform : transform,
+            false);
+        fireAudioSource = fireAudioObject.AddComponent<AudioSource>();
+        fireAudioSource.playOnAwake = false;
+        fireAudioSource.spatialBlend = 1f;
+        fireAudioSource.minDistance = 1.5f;
+        fireAudioSource.maxDistance = 60f;
+        fireAudioSource.rolloffMode = AudioRolloffMode.Logarithmic;
+        spreadState = new WeaponSpreadState();
+        spreadState.Configure(
+            weapon.HipSpreadDegrees,
+            weapon.AdsSpreadDegrees,
+            weapon.MovementSpreadBonus,
+            weapon.SprintSpreadBonus,
+            weapon.SpreadPerShot,
+            weapon.MaxShotSpread,
+            weapon.SpreadRecoverySpeed);
+        WeaponImpactFeedbackController impactFeedback =
+            GetComponent<WeaponImpactFeedbackController>();
+
+        if (impactFeedback == null)
+        {
+            impactFeedback =
+                gameObject.AddComponent<WeaponImpactFeedbackController>();
+        }
+
+        impactFeedback.Configure(this, impactEffect);
         weaponAnimator = GetComponent<Animator>();
 
         if (weaponAnimator != null)
@@ -75,6 +120,7 @@ public class WeaponController : MonoBehaviour
         bool completed = ammoState.AdvanceReload(
             Time.deltaTime,
             weapon.ReloadDuration);
+        spreadState.Tick(Time.deltaTime);
 
         if (completed)
         {
@@ -98,10 +144,11 @@ public class WeaponController : MonoBehaviour
 
         nextFireTime = Time.time + weapon.FireIntervel;
         ResolveHitscan();
+        spreadState.RegisterShot();
 
         if (weapon.FireSound != null)
         {
-            audioSource.PlayOneShot(weapon.FireSound);
+            fireAudioSource.PlayOneShot(weapon.FireSound);
         }
 
         if (weaponAnimator != null)
@@ -116,6 +163,28 @@ public class WeaponController : MonoBehaviour
         AmmoChanged?.Invoke();
 
         return true;
+    }
+
+    public void SetFiringContext(
+        float adsBlend,
+        float movementAmount,
+        bool isSprinting)
+    {
+        aimBlend = Mathf.Clamp01(adsBlend);
+        spreadState.SetContext(
+            aimBlend,
+            movementAmount,
+            isSprinting);
+    }
+
+    public void SetSpreadSampleOverride(Vector2 sample)
+    {
+        spreadSampleOverride = Vector2.ClampMagnitude(sample, 1f);
+    }
+
+    public void ClearSpreadSampleOverride()
+    {
+        spreadSampleOverride = null;
     }
 
     public void ConfigureAiming(
@@ -237,6 +306,14 @@ public class WeaponController : MonoBehaviour
 
         Ray aimRay = aimCamera.ViewportPointToRay(
             new Vector3(0.5f, 0.5f, 0f));
+        Vector2 spreadSample = spreadSampleOverride ??
+            UnityEngine.Random.insideUnitCircle;
+        aimRay.direction = WeaponSpreadState.ApplySpread(
+            aimRay.direction,
+            aimCamera.transform.right,
+            aimCamera.transform.up,
+            CurrentSpreadDegrees,
+            spreadSample);
         Vector3 aimPoint = aimRay.GetPoint(maxAimDistance);
 
         if (TryGetFirstValidHit(
@@ -264,6 +341,7 @@ public class WeaponController : MonoBehaviour
     private void ResolveShotRay(Ray ray, float distance)
     {
         Vector3 tracerEnd = ray.GetPoint(distance);
+        ShotResult result = ShotResult.Miss;
 
         if (TryGetFirstValidHit(
                 ray,
@@ -271,7 +349,7 @@ public class WeaponController : MonoBehaviour
                 out RaycastHit hit))
         {
             tracerEnd = hit.point;
-            ApplyHit(hit, ray.direction);
+            result = ApplyHit(hit, ray.direction);
         }
 
         if (tracerPool != null)
@@ -281,26 +359,22 @@ public class WeaponController : MonoBehaviour
                 tracerEnd,
                 tracerSpeed);
         }
+
+        LastShotResult = result;
+        ShotResolved?.Invoke(result);
     }
 
-    private void ApplyHit(
+    private ShotResult ApplyHit(
         RaycastHit hit,
         Vector3 shotDirection)
     {
-        if (impactEffect != null)
-        {
-            Instantiate(
-                impactEffect,
-                hit.point + hit.normal * 0.002f,
-                Quaternion.LookRotation(hit.normal));
-        }
-
         IDamageable damageable =
             DamageableResolver.Find(hit.collider.transform);
+        DamageResult damageResult = DamageResult.None;
 
         if (damageable != null)
         {
-            damageable.ApplyDamage(
+            damageResult = damageable.ApplyDamage(
                 new DamageInfo(
                     weapon.Damage,
                     hit.point,
@@ -309,6 +383,13 @@ public class WeaponController : MonoBehaviour
                         ? shooterRoot.gameObject
                         : gameObject));
         }
+
+        return new ShotResult(
+            true,
+            hit.point,
+            hit.normal,
+            SurfaceResolver.Resolve(hit.collider),
+            damageResult);
     }
 
     private bool TryGetFirstValidHit(

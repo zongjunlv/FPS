@@ -28,3 +28,11 @@ MonoBehaviour:
   IsAutomatic: 0
   HorizontalRecoil: 1.83
   VerticalRecoil: 10
+  AdsRecoilMultiplier: 0.5
+  HipSpreadDegrees: 0.7
+  AdsSpreadDegrees: 0.14
+  MovementSpreadBonus: 0.9
+  SprintSpreadBonus: 2.8
+  SpreadPerShot: 0.24
+  MaxShotSpread: 1.2
+  SpreadRecoverySpeed: 4
