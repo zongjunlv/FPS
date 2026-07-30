@@ -171,6 +171,44 @@ public sealed class EnemyNavigationController : MonoBehaviour
         SetDestination(destination, false);
     }
 
+    public bool TryResolveReachableDestination(
+        Vector3 desired,
+        float sampleRadius,
+        out Vector3 resolved)
+    {
+        if (!UsesNavMesh)
+        {
+            resolved = desired;
+            return true;
+        }
+
+        if (!NavMesh.SamplePosition(
+                desired,
+                out NavMeshHit hit,
+                Mathf.Max(0.1f, sampleRadius),
+                agent.areaMask))
+        {
+            resolved = default;
+            return false;
+        }
+
+        NavMeshPath path = new NavMeshPath();
+
+        if (!NavMesh.CalculatePath(
+                transform.position,
+                hit.position,
+                agent.areaMask,
+                path) ||
+            path.status != NavMeshPathStatus.PathComplete)
+        {
+            resolved = default;
+            return false;
+        }
+
+        resolved = hit.position;
+        return true;
+    }
+
     public void Stop()
     {
         movementStopped = true;

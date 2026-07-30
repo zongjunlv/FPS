@@ -71,7 +71,18 @@ public sealed class CityNewTerminalMissionBootstrap : MonoBehaviour
             yield break;
         }
 
-        Health targetHealth = enemies[0].GetComponent<Health>();
+        EnemyController targetEnemy = enemies[0];
+
+        foreach (EnemyController enemy in enemies)
+        {
+            if (enemy.name == "SPIDER_BOT")
+            {
+                targetEnemy = enemy;
+                break;
+            }
+        }
+
+        Health targetHealth = targetEnemy.GetComponent<Health>();
 
         if (targetHealth == null)
         {

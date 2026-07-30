@@ -10,6 +10,8 @@ public sealed class RuntimeNavMeshBootstrap : MonoBehaviour
     private NavMeshSurface surface;
 
     public bool IsReady { get; private set; }
+    public static bool IsSceneReady =>
+        instance != null && instance.IsReady;
 
     public static void EnsureForActiveScene()
     {

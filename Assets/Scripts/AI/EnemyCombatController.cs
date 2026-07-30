@@ -33,7 +33,12 @@ public sealed class EnemyCombatController : MonoBehaviour
         perception = GetComponent<EnemyPerceptionController>();
         navigation = GetComponent<EnemyNavigationController>();
         animator = GetComponent<Animator>();
-        audioSource = gameObject.AddComponent<AudioSource>();
+        audioSource = GetComponent<AudioSource>();
+
+        if (audioSource == null)
+        {
+            audioSource = gameObject.AddComponent<AudioSource>();
+        }
         audioSource.playOnAwake = false;
         audioSource.spatialBlend = 1f;
         audioSource.minDistance = 1f;
@@ -68,10 +73,12 @@ public sealed class EnemyCombatController : MonoBehaviour
 
         if (Decision == EnemyAttackDecision.Chase)
         {
-            navigation.SetDestination(
-                perception.HasVisualContact
-                    ? target.position
-                    : perception.LastKnownPosition);
+            Vector3 chaseDestination = perception.HasVisualContact
+                ? target.position
+                : perception.HasSquadSearchAssignment
+                    ? perception.SquadSearchDestination
+                    : perception.LastKnownPosition;
+            navigation.SetDestination(chaseDestination);
             return;
         }
 

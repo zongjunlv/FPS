@@ -35,6 +35,7 @@ public class EnemyController : MonoBehaviour
     private void EnsureAwareness()
     {
         RuntimeNavMeshBootstrap.EnsureForActiveScene();
+        EnemySquadCoordinator.EnsureForActiveScene();
 
         if (GetComponent<EnemyPerceptionController>() == null)
         {

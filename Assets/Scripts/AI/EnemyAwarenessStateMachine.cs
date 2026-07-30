@@ -64,6 +64,31 @@ public sealed class EnemyAwarenessStateMachine
         State = EnemyAwarenessState.Suspicious;
     }
 
+    public void ApplySharedAlert(
+        Vector3 position,
+        float confidence)
+    {
+        float safeConfidence = Mathf.Clamp01(confidence);
+
+        if (safeConfidence <= 0f)
+        {
+            return;
+        }
+
+        LastKnownPosition = position;
+        Awareness = Mathf.Max(Awareness, safeConfidence);
+        lostSightElapsed = 0f;
+
+        if (State == EnemyAwarenessState.Alert ||
+            safeConfidence >= 0.75f)
+        {
+            State = EnemyAwarenessState.Alert;
+            return;
+        }
+
+        BeginSearch();
+    }
+
     public void Tick(float deltaTime)
     {
         float safeDeltaTime = Mathf.Max(0f, deltaTime);

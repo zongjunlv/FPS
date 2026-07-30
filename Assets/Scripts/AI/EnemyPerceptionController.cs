@@ -17,8 +17,13 @@ public sealed class EnemyPerceptionController : MonoBehaviour
     private EnemyAwarenessStateMachine awareness;
     private EnemyNavigationController navigation;
     private CombatSoundEventChannel soundEvents;
+    private EnemySquadCoordinator squadCoordinator;
+    private readonly EnemyAlertMemory squadAlertMemory = new();
     private Transform target;
     private bool investigatingSound;
+    private bool hasSquadSearchAssignment;
+    private Vector3 squadSearchDestination;
+    private float latestVisualIntelTime = float.NegativeInfinity;
     private readonly RaycastHit[] sightHits = new RaycastHit[16];
 
     public EnemyAwarenessState State =>
@@ -34,6 +39,14 @@ public sealed class EnemyPerceptionController : MonoBehaviour
     public int PatrolPointCount =>
         navigation != null ? navigation.PatrolPointCount : 0;
     public Transform Target => target;
+    public int ReceivedSquadAlertCount =>
+        squadAlertMemory.AcceptedCount;
+    public bool HasSquadSearchAssignment =>
+        hasSquadSearchAssignment;
+    public Vector3 SquadSearchDestination =>
+        squadSearchDestination;
+    public EnemySquadAlert LastReceivedSquadAlert =>
+        squadAlertMemory.LatestAlert;
 
     private void Awake()
     {
@@ -46,6 +59,8 @@ public sealed class EnemyPerceptionController : MonoBehaviour
         soundEvents =
             Resources.Load<CombatSoundEventChannel>(
                 "CombatSoundEvents");
+        squadAlertMemory.Configure(3f);
+        squadCoordinator = EnemySquadCoordinator.Instance;
     }
 
     private void OnEnable()
@@ -54,6 +69,8 @@ public sealed class EnemyPerceptionController : MonoBehaviour
         {
             soundEvents.SoundPublished += HandleSound;
         }
+
+        squadCoordinator?.Register(this);
     }
 
     private void Start()
@@ -72,6 +89,8 @@ public sealed class EnemyPerceptionController : MonoBehaviour
         {
             soundEvents.SoundPublished -= HandleSound;
         }
+
+        squadCoordinator?.Unregister(this);
     }
 
     private void Update()
@@ -81,7 +100,18 @@ public sealed class EnemyPerceptionController : MonoBehaviour
         if (HasVisualContact)
         {
             investigatingSound = false;
+            hasSquadSearchAssignment = false;
             awareness.Observe(target.position, Time.deltaTime);
+            latestVisualIntelTime = Time.time;
+
+            if (awareness.State == EnemyAwarenessState.Alert)
+            {
+                squadCoordinator?.TryBroadcast(
+                    this,
+                    target.position,
+                    1f,
+                    Time.time);
+            }
         }
         else if (awareness.State == EnemyAwarenessState.Search)
         {
@@ -105,13 +135,59 @@ public sealed class EnemyPerceptionController : MonoBehaviour
 
         if (awareness.State == EnemyAwarenessState.Patrol)
         {
+            hasSquadSearchAssignment = false;
             navigation.TickPatrol();
         }
         else if (awareness.State != EnemyAwarenessState.Alert)
         {
             navigation.SetDestination(
-                awareness.LastKnownPosition);
+                hasSquadSearchAssignment
+                    ? squadSearchDestination
+                    : awareness.LastKnownPosition);
         }
+    }
+
+    public void BindSquadCoordinator(
+        EnemySquadCoordinator coordinator,
+        float alertLifetime)
+    {
+        squadCoordinator = coordinator;
+        squadAlertMemory.Configure(alertLifetime);
+    }
+
+    public bool ReceiveSquadAlert(
+        EnemySquadAlert alert,
+        Vector3 assignedSearchPoint,
+        float receivedAt)
+    {
+        if (HasVisualContact ||
+            alert.Timestamp <= latestVisualIntelTime ||
+            !squadAlertMemory.TryAccept(
+                alert,
+                transform.position,
+                receivedAt))
+        {
+            return false;
+        }
+
+        investigatingSound = false;
+        hasSquadSearchAssignment = true;
+        squadSearchDestination = assignedSearchPoint;
+        awareness.ApplySharedAlert(
+            alert.LastKnownPosition,
+            alert.Confidence);
+        navigation.SetDestination(squadSearchDestination);
+        return true;
+    }
+
+    public bool TryResolveSquadSearchPoint(
+        Vector3 desired,
+        out Vector3 resolved)
+    {
+        return navigation.TryResolveReachableDestination(
+            desired,
+            1.75f,
+            out resolved);
     }
 
     public void SetTarget(Transform newTarget)
@@ -242,7 +318,7 @@ public sealed class EnemyPerceptionController : MonoBehaviour
             screenPoint.x - 80f,
             Screen.height - screenPoint.y,
             160f,
-            42f);
+            62f);
         GUI.color = State switch
         {
             EnemyAwarenessState.Alert => Color.red,
@@ -251,10 +327,15 @@ public sealed class EnemyPerceptionController : MonoBehaviour
                 new Color(1f, 0.65f, 0.1f),
             _ => Color.cyan
         };
+        string squadIntel = squadAlertMemory.HasAlert
+            ? $"\n协同: {squadAlertMemory.LatestAlert.Source.name} " +
+              $"{squadAlertMemory.LatestAlert.Confidence:P0}"
+            : string.Empty;
         GUI.Label(
             rect,
             $"{State}  {Awareness:P0}\n" +
-            $"目标: {Destination.x:F1}, {Destination.z:F1}");
+            $"目标: {Destination.x:F1}, {Destination.z:F1}" +
+            squadIntel);
         GUI.color = Color.white;
     }
 
