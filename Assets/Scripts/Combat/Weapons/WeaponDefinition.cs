@@ -32,4 +32,7 @@ public class WeaponDefinition : ScriptableObject
     [Min(0f)] public float SpreadPerShot = 0.18f;
     [Min(0f)] public float MaxShotSpread = 1.5f;
     [Min(0f)] public float SpreadRecoverySpeed = 3f;
+    [Header("AI Hearing")]
+    [Min(1f)] public float GunshotHearingRadius = 45f;
+    [Range(0.1f, 2f)] public float GunshotIntensity = 1f;
 }

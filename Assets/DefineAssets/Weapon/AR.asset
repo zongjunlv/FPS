@@ -36,3 +36,5 @@ MonoBehaviour:
   SpreadPerShot: 0.16
   MaxShotSpread: 1.4
   SpreadRecoverySpeed: 3.2
+  GunshotHearingRadius: 55
+  GunshotIntensity: 1

@@ -255,6 +255,20 @@ namespace FPS.Tests.PlayMode
                     player.transform,
                     "MainCamera")
                 .GetComponent<Camera>();
+            Behaviour perception = enemy.GetComponent(
+                "EnemyPerceptionController") as Behaviour;
+            Behaviour navigation = enemy.GetComponent(
+                "EnemyNavigationController") as Behaviour;
+
+            if (perception != null)
+            {
+                perception.enabled = false;
+            }
+
+            if (navigation != null)
+            {
+                navigation.enabled = false;
+            }
 
             foreach (UnityEngine.AI.NavMeshAgent agent in
                      enemy.GetComponentsInChildren<UnityEngine.AI.NavMeshAgent>())

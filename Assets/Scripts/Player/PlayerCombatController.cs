@@ -12,6 +12,7 @@ public class PlayerCombatController : MonoBehaviour
     public int EquippedWeaponIndex => loadout.CurrentIndex;
     public int WeaponCount => loadout.WeaponCount;
     public bool IsSwitching => loadout.IsSwitching;
+    public bool GameplayInputEnabled { get; private set; } = true;
     public event Action<ShotResult> ShotResolved;
 
     private PlayerRecoilController playerRecoil;
@@ -87,6 +88,11 @@ public class PlayerCombatController : MonoBehaviour
 
     private void LateUpdate()
     {
+        if (!GameplayInputEnabled)
+        {
+            return;
+        }
+
         HandleWeaponSelectionInput();
 
         if (playerController.IsSprinting)
@@ -144,6 +150,19 @@ public class PlayerCombatController : MonoBehaviour
     public bool CancelWeaponSwitch()
     {
         return loadout.Interrupt();
+    }
+
+    public void SetGameplayInputEnabled(bool enabled)
+    {
+        GameplayInputEnabled = enabled;
+
+        if (enabled || loadout == null)
+        {
+            return;
+        }
+
+        loadout.Interrupt();
+        EquippedWeapon?.CancelReload();
     }
 
     private void HandleWeaponSelectionInput()

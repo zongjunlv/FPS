@@ -10,8 +10,14 @@ public class EnemyController : MonoBehaviour
     private Health health;
     private bool deathPresentationTriggered;
 
+    public float AttackDamage =>
+        currentEnemy != null
+            ? Mathf.Max(1f, currentEnemy.Attack)
+            : 20f;
+
     private void Awake()
     {
+        EnsureAwareness();
         health = GetComponent<Health>();
 
         if (health == null)
@@ -24,6 +30,21 @@ public class EnemyController : MonoBehaviour
         health.Initialize(configuredHealth);
         health.Died += HandleDeath;
         EnsureHitboxes();
+    }
+
+    private void EnsureAwareness()
+    {
+        RuntimeNavMeshBootstrap.EnsureForActiveScene();
+
+        if (GetComponent<EnemyPerceptionController>() == null)
+        {
+            gameObject.AddComponent<EnemyPerceptionController>();
+        }
+
+        if (GetComponent<EnemyCombatController>() == null)
+        {
+            gameObject.AddComponent<EnemyCombatController>();
+        }
     }
 
     private void OnDestroy()

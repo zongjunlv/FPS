@@ -59,6 +59,7 @@ public class WeaponController : MonoBehaviour
     private WeaponSpreadState spreadState;
     private float aimBlend;
     private Vector2? spreadSampleOverride;
+    private CombatSoundEventChannel soundEventChannel;
     private readonly RaycastHit[] hitBuffer = new RaycastHit[32];
 
     private void Awake()
@@ -87,6 +88,9 @@ public class WeaponController : MonoBehaviour
         fireAudioSource.maxDistance = 60f;
         fireAudioSource.rolloffMode = AudioRolloffMode.Logarithmic;
         spreadState = new WeaponSpreadState();
+        soundEventChannel =
+            Resources.Load<CombatSoundEventChannel>(
+                "CombatSoundEvents");
         spreadState.Configure(
             weapon.HipSpreadDegrees,
             weapon.AdsSpreadDegrees,
@@ -145,6 +149,14 @@ public class WeaponController : MonoBehaviour
         nextFireTime = Time.time + weapon.FireIntervel;
         ResolveHitscan();
         spreadState.RegisterShot();
+        soundEventChannel?.Publish(
+            new SoundStimulus(
+                FirePoint.transform.position,
+                weapon.GunshotHearingRadius,
+                weapon.GunshotIntensity,
+                shooterRoot != null
+                    ? shooterRoot.gameObject
+                    : gameObject));
 
         if (weapon.FireSound != null)
         {

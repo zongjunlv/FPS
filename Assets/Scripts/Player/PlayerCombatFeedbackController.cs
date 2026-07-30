@@ -1,5 +1,13 @@
 using UnityEngine;
 
+public enum DamageIndicatorSide
+{
+    Front,
+    Right,
+    Back,
+    Left
+}
+
 [RequireComponent(typeof(Health))]
 public sealed class PlayerCombatFeedbackController : MonoBehaviour
 {
@@ -12,6 +20,8 @@ public sealed class PlayerCombatFeedbackController : MonoBehaviour
     private AudioClip playerDamagedClip;
 
     public int DamageFeedbackCount { get; private set; }
+    public DamageIndicatorSide LastDamageSide { get; private set; }
+    public float DamageFlashAlpha { get; private set; }
 
     private void Start()
     {
@@ -31,6 +41,13 @@ public sealed class PlayerCombatFeedbackController : MonoBehaviour
         }
 
         vitalsHud.Bind(health);
+
+        if (player != null &&
+            combat != null &&
+            GetComponent<PlayerFailureFlowController>() == null)
+        {
+            gameObject.AddComponent<PlayerFailureFlowController>();
+        }
         damageAudioSource = gameObject.AddComponent<AudioSource>();
         damageAudioSource.playOnAwake = false;
         damageAudioSource.spatialBlend = 0f;
@@ -53,6 +70,11 @@ public sealed class PlayerCombatFeedbackController : MonoBehaviour
 
     private void Update()
     {
+        DamageFlashAlpha = Mathf.MoveTowards(
+            DamageFlashAlpha,
+            0f,
+            Time.unscaledDeltaTime * 1.8f);
+
         if (crosshair != null && player != null && input != null)
         {
             crosshair.SetMotionState(
@@ -92,10 +114,83 @@ public sealed class PlayerCombatFeedbackController : MonoBehaviour
     private void HandlePlayerDamaged(DamageInfo damage)
     {
         DamageFeedbackCount++;
+        DamageFlashAlpha = 1f;
+        LastDamageSide = ResolveDamageSide(damage);
 
         if (playerDamagedClip != null)
         {
             damageAudioSource.PlayOneShot(playerDamagedClip);
         }
+    }
+
+    private DamageIndicatorSide ResolveDamageSide(DamageInfo damage)
+    {
+        Vector3 toSource = damage.Source != null
+            ? damage.Source.transform.position - transform.position
+            : -damage.HitDirection;
+        toSource.y = 0f;
+
+        if (toSource.sqrMagnitude <= 0.001f)
+        {
+            return DamageIndicatorSide.Front;
+        }
+
+        toSource.Normalize();
+        float horizontal = Vector3.Dot(transform.right, toSource);
+        float forward = Vector3.Dot(transform.forward, toSource);
+
+        if (Mathf.Abs(horizontal) > Mathf.Abs(forward))
+        {
+            return horizontal >= 0f
+                ? DamageIndicatorSide.Right
+                : DamageIndicatorSide.Left;
+        }
+
+        return forward >= 0f
+            ? DamageIndicatorSide.Front
+            : DamageIndicatorSide.Back;
+    }
+
+    private void OnGUI()
+    {
+        if (DamageFlashAlpha <= 0f)
+        {
+            return;
+        }
+
+        Color previous = GUI.color;
+        GUI.depth = -80;
+        GUI.color = new Color(
+            0.9f,
+            0.02f,
+            0.01f,
+            DamageFlashAlpha * 0.12f);
+        GUI.DrawTexture(
+            new Rect(0f, 0f, Screen.width, Screen.height),
+            Texture2D.whiteTexture);
+        GUI.color = new Color(
+            1f,
+            0.05f,
+            0.02f,
+            DamageFlashAlpha * 0.78f);
+        Rect indicator = LastDamageSide switch
+        {
+            DamageIndicatorSide.Left =>
+                new Rect(0f, Screen.height * 0.25f, 20f,
+                    Screen.height * 0.5f),
+            DamageIndicatorSide.Right =>
+                new Rect(Screen.width - 20f, Screen.height * 0.25f,
+                    20f, Screen.height * 0.5f),
+            DamageIndicatorSide.Back =>
+                new Rect(Screen.width * 0.25f, Screen.height - 20f,
+                    Screen.width * 0.5f, 20f),
+            _ => new Rect(
+                Screen.width * 0.25f,
+                0f,
+                Screen.width * 0.5f,
+                20f)
+        };
+        GUI.DrawTexture(indicator, Texture2D.whiteTexture);
+        GUI.color = previous;
     }
 }

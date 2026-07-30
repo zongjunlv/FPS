@@ -52,6 +52,7 @@ public class PlayerController : MonoBehaviour
     public Camera AimCamera => aimCamera;
     public bool IsCrouching { get; private set; }
     public bool IsPaused { get; private set; }
+    public bool GameplayInputEnabled { get; private set; } = true;
     public bool IsSprinting =>
         CanSprint(input.Move, input.SprintHeld);
     public bool InvertY
@@ -112,6 +113,12 @@ public class PlayerController : MonoBehaviour
 
     private void Update()
     {
+        if (!GameplayInputEnabled)
+        {
+            ApplyCursorState();
+            return;
+        }
+
         HandlePauseInput();
 
         if (IsPaused)
@@ -159,6 +166,28 @@ public class PlayerController : MonoBehaviour
         ApplyCursorState();
     }
 
+    public void SetGameplayInputEnabled(bool enabled)
+    {
+        GameplayInputEnabled = enabled;
+
+        if (!enabled)
+        {
+            IsAiming = false;
+            AimBlend = 0f;
+            MoveDirection = 0f;
+            VerticalVelocity = 0f;
+
+            if (aimCamera != null)
+            {
+                aimCamera.fieldOfView = hipFieldOfView;
+            }
+
+            crosshairPresenter?.SetState(0f, false);
+        }
+
+        ApplyCursorState();
+    }
+
     private void HandlePauseInput()
     {
         if (input.PausePressed)
@@ -173,6 +202,7 @@ public class PlayerController : MonoBehaviour
     {
         bool shouldLock =
             hasFocus &&
+            GameplayInputEnabled &&
             !IsPaused &&
             Time.timeScale > 0f;
 
