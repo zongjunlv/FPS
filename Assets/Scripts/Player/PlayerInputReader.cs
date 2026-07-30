@@ -29,6 +29,9 @@ public class PlayerInputReader : MonoBehaviour
     public Vector2 Look => lookAction.action.ReadValue<Vector2>();
     public bool SprintHeld => sprintAction.action.IsPressed();
     public bool InteractPressed => interactAction.action.WasPressedThisFrame();
+    public bool InteractHeld => interactAction.action.IsPressed();
+    public bool InteractReleased =>
+        interactAction.action.WasReleasedThisFrame();
     public bool AttackPressed => attackAction.action.WasPressedThisFrame();
     public bool AttackHeld => attackAction.action.IsPressed();
     public bool AimingPressed => aimingPressed;

@@ -51,6 +51,16 @@ public class PlayerCombatController : MonoBehaviour
             gameObject.AddComponent<PlayerCombatFeedbackController>();
         }
 
+        if (GetComponent<PlayerInteractionController>() == null)
+        {
+            gameObject.AddComponent<PlayerInteractionController>();
+        }
+
+        if (GetComponent<CityNewTerminalMissionBootstrap>() == null)
+        {
+            gameObject.AddComponent<CityNewTerminalMissionBootstrap>();
+        }
+
         if (GetComponent<FeedbackTestRangeController>() == null)
         {
             gameObject.AddComponent<FeedbackTestRangeController>();
