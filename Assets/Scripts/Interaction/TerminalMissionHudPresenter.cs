@@ -7,6 +7,7 @@ public sealed class TerminalMissionHudPresenter : MonoBehaviour
     private GUIStyle titleStyle;
     private GUIStyle objectiveStyle;
     private GUIStyle markerStyle;
+    private bool visible = true;
 
     public bool ObjectiveCompleted =>
         terminal != null &&
@@ -25,9 +26,14 @@ public sealed class TerminalMissionHudPresenter : MonoBehaviour
             "PlayerHudVisualProfile");
     }
 
+    public void SetVisible(bool shouldShow)
+    {
+        visible = shouldShow;
+    }
+
     private void OnGUI()
     {
-        if (terminal == null)
+        if (terminal == null || !visible)
         {
             return;
         }

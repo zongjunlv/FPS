@@ -383,9 +383,15 @@ public class WeaponController : MonoBehaviour
         IDamageable damageable =
             DamageableResolver.Find(hit.collider.transform);
         DamageResult damageResult = DamageResult.None;
+        GameObject damageTarget = null;
 
         if (damageable != null)
         {
+            Health targetHealth =
+                hit.collider.GetComponentInParent<Health>();
+            damageTarget = targetHealth != null
+                ? targetHealth.gameObject
+                : hit.collider.gameObject;
             damageResult = damageable.ApplyDamage(
                 new DamageInfo(
                     weapon.Damage,
@@ -401,7 +407,8 @@ public class WeaponController : MonoBehaviour
             hit.point,
             hit.normal,
             SurfaceResolver.Resolve(hit.collider),
-            damageResult);
+            damageResult,
+            damageTarget);
     }
 
     private bool TryGetFirstValidHit(

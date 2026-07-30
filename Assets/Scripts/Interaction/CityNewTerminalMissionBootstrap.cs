@@ -1,3 +1,4 @@
+using System.Collections;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 
@@ -54,5 +55,58 @@ public sealed class CityNewTerminalMissionBootstrap : MonoBehaviour
         }
 
         missionHud.Bind(Terminal);
+        StartCoroutine(BootstrapMission());
+    }
+
+    private IEnumerator BootstrapMission()
+    {
+        yield return null;
+        EnemyController[] enemies =
+            FindObjectsByType<EnemyController>(
+                FindObjectsInactive.Exclude,
+                FindObjectsSortMode.None);
+
+        if (enemies.Length == 0)
+        {
+            yield break;
+        }
+
+        Health targetHealth = enemies[0].GetComponent<Health>();
+
+        if (targetHealth == null)
+        {
+            yield break;
+        }
+
+        Vector3 extractionPosition =
+            new Vector3(48.414f, 0.05f, 41.41f);
+        GameObject extractionAnchor = GameObject.Find("Point light (1)");
+
+        if (extractionAnchor != null)
+        {
+            extractionPosition.x = extractionAnchor.transform.position.x;
+            extractionPosition.z = extractionAnchor.transform.position.z;
+        }
+
+        if (Physics.Raycast(
+                extractionPosition + Vector3.up * 10f,
+                Vector3.down,
+                out RaycastHit groundHit,
+                30f,
+                Physics.DefaultRaycastLayers,
+                QueryTriggerInteraction.Ignore))
+        {
+            extractionPosition.y = groundHit.point.y + 0.04f;
+        }
+
+        CityNewMissionController mission =
+            GetComponent<CityNewMissionController>();
+
+        if (mission == null)
+        {
+            mission = gameObject.AddComponent<CityNewMissionController>();
+        }
+
+        mission.Configure(Terminal, targetHealth, extractionPosition);
     }
 }

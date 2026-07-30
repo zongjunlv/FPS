@@ -18,6 +18,7 @@ public sealed class PlayerFailureFlowController : MonoBehaviour
 
     public bool IsFailed { get; private set; }
     public bool IsRestarting { get; private set; }
+    public bool ExternalPresentationEnabled { get; private set; }
 
     private void Start()
     {
@@ -31,7 +32,8 @@ public sealed class PlayerFailureFlowController : MonoBehaviour
 
     private void Update()
     {
-        if (IsFailed &&
+        if (!ExternalPresentationEnabled &&
+            IsFailed &&
             !IsRestarting &&
             Keyboard.current != null &&
             Keyboard.current.rKey.wasPressedThisFrame)
@@ -62,6 +64,11 @@ public sealed class PlayerFailureFlowController : MonoBehaviour
         return true;
     }
 
+    public void SetExternalPresentation(bool enabled)
+    {
+        ExternalPresentationEnabled = enabled;
+    }
+
     private void HandleDeath()
     {
         if (IsFailed)
@@ -79,7 +86,7 @@ public sealed class PlayerFailureFlowController : MonoBehaviour
 
     private void OnGUI()
     {
-        if (!IsFailed)
+        if (!IsFailed || ExternalPresentationEnabled)
         {
             return;
         }
