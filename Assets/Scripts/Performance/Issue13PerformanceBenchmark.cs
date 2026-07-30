@@ -1,0 +1,687 @@
+using System;
+using System.Collections;
+using System.Collections.Generic;
+using System.IO;
+using System.Reflection;
+using Unity.Profiling;
+using UnityEngine;
+using UnityEngine.AI;
+using UnityEngine.Profiling;
+
+public sealed class Issue13PerformanceBenchmark : MonoBehaviour
+{
+    private const int DefaultEnemyCount = 24;
+    private const float DefaultWarmupSeconds = 5f;
+    private const float DefaultSampleSeconds = 20f;
+    private const int DefaultSeed = 13013;
+    private const int MaximumSampleFrames = 24000;
+
+    private readonly double[] frameMilliseconds =
+        new double[MaximumSampleFrames];
+    private readonly double[] mainThreadMilliseconds =
+        new double[MaximumSampleFrames];
+    private readonly long[] gcBytes =
+        new long[MaximumSampleFrames];
+
+    private WeaponController weapon;
+    private Health playerHealth;
+    private ProfilerRecorder mainThreadRecorder;
+    private ProfilerRecorder gcRecorder;
+    private bool scenarioReady;
+    private int requestedEnemyCount;
+    private float warmupSeconds;
+    private float sampleSeconds;
+    private int randomSeed;
+    private int benchmarkWidth;
+    private int benchmarkHeight;
+    private FullScreenMode benchmarkScreenMode;
+    private string variant;
+    private string outputPath;
+    private int shots;
+    private int hits;
+    private long peakUnityUsedMemory;
+    private long peakGcUsedMemory;
+
+    [RuntimeInitializeOnLoadMethod(
+        RuntimeInitializeLoadType.AfterSceneLoad)]
+    private static void StartFromCommandLine()
+    {
+        string[] arguments = Environment.GetCommandLineArgs();
+
+        if (!HasArgument(arguments, "-fps-benchmark"))
+        {
+            return;
+        }
+
+        GameObject host =
+            new GameObject("Issue 13 Performance Benchmark");
+        host.AddComponent<Issue13PerformanceBenchmark>()
+            .Configure(arguments);
+    }
+
+    private void Configure(string[] arguments)
+    {
+        requestedEnemyCount = ReadInt(
+            arguments,
+            "-benchmark-enemies",
+            DefaultEnemyCount);
+        warmupSeconds = ReadFloat(
+            arguments,
+            "-benchmark-warmup",
+            DefaultWarmupSeconds);
+        sampleSeconds = ReadFloat(
+            arguments,
+            "-benchmark-duration",
+            DefaultSampleSeconds);
+        randomSeed = ReadInt(
+            arguments,
+            "-benchmark-seed",
+            DefaultSeed);
+        benchmarkWidth = Mathf.Max(
+            640,
+            ReadInt(arguments, "-benchmark-width", 1280));
+        benchmarkHeight = Mathf.Max(
+            360,
+            ReadInt(arguments, "-benchmark-height", 720));
+        benchmarkScreenMode =
+            HasArgument(arguments, "-benchmark-fullscreen")
+                ? FullScreenMode.FullScreenWindow
+                : FullScreenMode.Windowed;
+        variant = ReadString(
+            arguments,
+            "-benchmark-variant",
+            "unspecified");
+        outputPath = ReadString(
+            arguments,
+            "-benchmark-output",
+            Path.Combine(
+                Application.persistentDataPath,
+                $"issue-13-{variant}.json"));
+        requestedEnemyCount = Mathf.Max(3, requestedEnemyCount);
+        warmupSeconds = Mathf.Max(1f, warmupSeconds);
+        sampleSeconds = Mathf.Max(2f, sampleSeconds);
+        QualitySettings.vSyncCount = 0;
+        Application.targetFrameRate = -1;
+        Application.runInBackground = true;
+        Screen.SetResolution(
+            benchmarkWidth,
+            benchmarkHeight,
+            benchmarkScreenMode);
+        UnityEngine.Random.InitState(randomSeed);
+        StartCoroutine(Run());
+    }
+
+    private IEnumerator Run()
+    {
+        float setupDeadline = Time.realtimeSinceStartup + 15f;
+
+        while (!RuntimeNavMeshBootstrap.IsSceneReady &&
+               Time.realtimeSinceStartup < setupDeadline)
+        {
+            yield return null;
+        }
+
+        PlayerCombatController combat =
+            FindFirstObjectByType<PlayerCombatController>();
+
+        while ((combat == null || combat.EquippedWeapon == null) &&
+               Time.realtimeSinceStartup < setupDeadline)
+        {
+            combat = FindFirstObjectByType<PlayerCombatController>();
+            yield return null;
+        }
+
+        if (combat == null || combat.EquippedWeapon == null)
+        {
+            FailAndQuit("Player weapon was not ready.");
+            yield break;
+        }
+
+        weapon = combat.EquippedWeapon;
+        playerHealth = combat.GetComponent<Health>();
+        playerHealth?.Initialize(1000000f);
+        weapon.SetSpreadSampleOverride(Vector2.zero);
+        weapon.ShotResolved += CountShotResult;
+        int actualEnemyCount = BuildEnemyStressGroup(
+            combat.transform);
+
+        if (actualEnemyCount != requestedEnemyCount)
+        {
+            FailAndQuit(
+                $"Expected {requestedEnemyCount} enemies, " +
+                $"spawned {actualEnemyCount}.");
+            yield break;
+        }
+
+        scenarioReady = true;
+        double warmupEnd =
+            Time.realtimeSinceStartupAsDouble + warmupSeconds;
+
+        while (Time.realtimeSinceStartupAsDouble < warmupEnd)
+        {
+            yield return null;
+        }
+
+        StartRecorders();
+        int sampleCount = 0;
+        double sampleStart = Time.realtimeSinceStartupAsDouble;
+        double sampleEnd = sampleStart + sampleSeconds;
+
+        while (Time.realtimeSinceStartupAsDouble < sampleEnd &&
+               sampleCount < MaximumSampleFrames)
+        {
+            yield return null;
+            double frameMs = Time.unscaledDeltaTime * 1000.0;
+            frameMilliseconds[sampleCount] = frameMs;
+            mainThreadMilliseconds[sampleCount] =
+                mainThreadRecorder.Valid
+                    ? mainThreadRecorder.LastValue / 1000000.0
+                    : frameMs;
+            gcBytes[sampleCount] = gcRecorder.Valid
+                ? Math.Max(0L, gcRecorder.LastValue)
+                : 0L;
+            peakUnityUsedMemory = Math.Max(
+                peakUnityUsedMemory,
+                Profiler.GetTotalAllocatedMemoryLong());
+            peakGcUsedMemory = Math.Max(
+                peakGcUsedMemory,
+                GC.GetTotalMemory(false));
+            sampleCount++;
+        }
+
+        double actualDuration =
+            Time.realtimeSinceStartupAsDouble - sampleStart;
+        Issue13BenchmarkReport report = CreateReport(
+            actualEnemyCount,
+            sampleCount,
+            actualDuration);
+        StopRecorders();
+        string directory = Path.GetDirectoryName(outputPath);
+
+        if (!string.IsNullOrEmpty(directory))
+        {
+            Directory.CreateDirectory(directory);
+        }
+
+        File.WriteAllText(
+            outputPath,
+            JsonUtility.ToJson(report, true));
+        Debug.Log(
+            $"ISSUE13_PERF_RESULT {outputPath}\n" +
+            JsonUtility.ToJson(report));
+        Application.Quit(0);
+    }
+
+    private void Update()
+    {
+        if (!scenarioReady || weapon == null)
+        {
+            return;
+        }
+
+        if (weapon.CurrentAmmo == 0)
+        {
+            weapon.TryStartReload();
+            return;
+        }
+
+        weapon.TryFire();
+
+        if (playerHealth != null &&
+            playerHealth.CurrentHealth < 500000f)
+        {
+            playerHealth.Initialize(1000000f);
+        }
+    }
+
+    private int BuildEnemyStressGroup(Transform player)
+    {
+        EnemyController[] existing =
+            FindObjectsByType<EnemyController>(
+                FindObjectsInactive.Exclude,
+                FindObjectsSortMode.None);
+
+        if (existing.Length == 0)
+        {
+            return 0;
+        }
+
+        EnemyController template = existing[0];
+
+        foreach (EnemyController enemy in existing)
+        {
+            if (enemy.name == "SPIDER_BOT")
+            {
+                template = enemy;
+                break;
+            }
+        }
+
+        var enemies = new List<EnemyController>(
+            requestedEnemyCount);
+        var occupied = new List<Vector3>(requestedEnemyCount);
+
+        foreach (EnemyController enemy in existing)
+        {
+            if (enemies.Count >= requestedEnemyCount)
+            {
+                break;
+            }
+
+            PrepareEnemy(enemy, player);
+            enemies.Add(enemy);
+            occupied.Add(enemy.transform.position);
+        }
+
+        for (int candidate = 0;
+             candidate < 512 &&
+             enemies.Count < requestedEnemyCount;
+             candidate++)
+        {
+            float angle = candidate * 137.50776f * Mathf.Deg2Rad;
+            float radius = 7f + (candidate % 9) * 1.65f;
+            Vector3 desired = template.transform.position +
+                new Vector3(
+                    Mathf.Cos(angle),
+                    0f,
+                    Mathf.Sin(angle)) * radius;
+
+            if (!NavMesh.SamplePosition(
+                    desired,
+                    out NavMeshHit hit,
+                    3f,
+                    NavMesh.AllAreas) ||
+                IsTooClose(hit.position, occupied))
+            {
+                continue;
+            }
+
+            EnemyController clone = Instantiate(
+                template,
+                hit.position,
+                template.transform.rotation);
+            clone.name =
+                $"BENCHMARK SPIDER {enemies.Count + 1:00}";
+            clone.GetComponent<EnemyNavigationController>()
+                ?.AttachToNavMesh();
+            PrepareEnemy(clone, player);
+            enemies.Add(clone);
+            occupied.Add(hit.position);
+        }
+
+        return enemies.Count;
+    }
+
+    private static void PrepareEnemy(
+        EnemyController enemy,
+        Transform player)
+    {
+        enemy.GetComponent<Health>()?.Initialize(1000000f);
+        EnemyPerceptionController perception =
+            enemy.GetComponent<EnemyPerceptionController>();
+
+        if (perception == null)
+        {
+            return;
+        }
+
+        perception.SetTarget(player);
+        perception.Configure(100f, 360f, 100f, 0.4f, 5f);
+        FieldInfo overlayField =
+            typeof(EnemyPerceptionController).GetField(
+                "showDebugOverlay",
+                BindingFlags.Instance | BindingFlags.NonPublic);
+        overlayField?.SetValue(perception, false);
+    }
+
+    private static bool IsTooClose(
+        Vector3 candidate,
+        List<Vector3> occupied)
+    {
+        foreach (Vector3 position in occupied)
+        {
+            if (Vector3.Distance(candidate, position) < 1.2f)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private void CountShotResult(ShotResult result)
+    {
+        shots++;
+
+        if (result.DidHit)
+        {
+            hits++;
+        }
+    }
+
+    private void StartRecorders()
+    {
+        mainThreadRecorder = ProfilerRecorder.StartNew(
+            ProfilerCategory.Internal,
+            "Main Thread",
+            1);
+        gcRecorder = ProfilerRecorder.StartNew(
+            ProfilerCategory.Memory,
+            "GC Allocated In Frame",
+            1);
+    }
+
+    private void StopRecorders()
+    {
+        mainThreadRecorder.Dispose();
+        gcRecorder.Dispose();
+    }
+
+    private Issue13BenchmarkReport CreateReport(
+        int actualEnemyCount,
+        int sampleCount,
+        double actualDuration)
+    {
+        Array.Sort(frameMilliseconds, 0, sampleCount);
+        Array.Sort(mainThreadMilliseconds, 0, sampleCount);
+        Array.Sort(gcBytes, 0, sampleCount);
+        double averageFrameMs =
+            Average(frameMilliseconds, sampleCount);
+        long allocatedFrames = 0;
+
+        for (int index = 0; index < sampleCount; index++)
+        {
+            if (gcBytes[index] > 0L)
+            {
+                allocatedFrames++;
+            }
+        }
+
+        return new Issue13BenchmarkReport
+        {
+            variant = variant,
+            unityVersion = Application.unityVersion,
+            operatingSystem = SystemInfo.operatingSystem,
+            processor = SystemInfo.processorType,
+            processorCount = SystemInfo.processorCount,
+            systemMemoryMb = SystemInfo.systemMemorySize,
+            graphicsDevice = SystemInfo.graphicsDeviceName,
+            graphicsMemoryMb = SystemInfo.graphicsMemorySize,
+            resolution = $"{Screen.width}x{Screen.height}",
+            screenMode = Screen.fullScreenMode.ToString(),
+            qualityLevel = QualitySettings.names[
+                QualitySettings.GetQualityLevel()],
+            enemyCount = actualEnemyCount,
+            warmupSeconds = warmupSeconds,
+            sampleSeconds = actualDuration,
+            seed = randomSeed,
+            sampleFrames = sampleCount,
+            shots = shots,
+            hits = hits,
+            averageFps = actualDuration > 0.0
+                ? sampleCount / actualDuration
+                : 0.0,
+            averageFrameMs = averageFrameMs,
+            p95FrameMs = Percentile(
+                frameMilliseconds,
+                sampleCount,
+                0.95),
+            p99FrameMs = Percentile(
+                frameMilliseconds,
+                sampleCount,
+                0.99),
+            onePercentLowFps = Percentile(
+                    frameMilliseconds,
+                    sampleCount,
+                    0.99) > 0.0
+                ? 1000.0 / Percentile(
+                    frameMilliseconds,
+                    sampleCount,
+                    0.99)
+                : 0.0,
+            averageMainThreadMs = Average(
+                mainThreadMilliseconds,
+                sampleCount),
+            p95MainThreadMs = Percentile(
+                mainThreadMilliseconds,
+                sampleCount,
+                0.95),
+            averageGcBytesPerFrame = Average(
+                gcBytes,
+                sampleCount),
+            p95GcBytesPerFrame = Percentile(
+                gcBytes,
+                sampleCount,
+                0.95),
+            gcAllocFramePercent = sampleCount > 0
+                ? allocatedFrames * 100.0 / sampleCount
+                : 0.0,
+            peakUnityUsedMemoryMb =
+                peakUnityUsedMemory / 1048576.0,
+            peakManagedMemoryMb =
+                peakGcUsedMemory / 1048576.0,
+            mainThreadRecorderValid = mainThreadRecorder.Valid,
+            gcRecorderValid = gcRecorder.Valid,
+            perceptionChecks = ReadPerceptionChecks(),
+            poolSummary = ReadPoolSummary()
+        };
+    }
+
+    private static long ReadPerceptionChecks()
+    {
+        Type type = Type.GetType(
+            "EnemyPerceptionScheduler, Assembly-CSharp");
+        object instance = type?.GetProperty(
+                "Instance",
+                BindingFlags.Public | BindingFlags.Static)
+            ?.GetValue(null);
+        object count = instance != null
+            ? type.GetProperty("TotalCheckCount")?.GetValue(instance)
+            : null;
+        return count is long value ? value : -1L;
+    }
+
+    private static string ReadPoolSummary()
+    {
+        Type type = Type.GetType(
+            "CombatEffectPool, Assembly-CSharp");
+
+        if (type == null)
+        {
+            return "not available";
+        }
+
+        Component pool =
+            FindFirstObjectByType(type) as Component;
+
+        if (pool == null)
+        {
+            return "not active";
+        }
+
+        object concrete = type.GetProperty("ConcreteCapacity")
+            ?.GetValue(pool);
+        object metal = type.GetProperty("MetalCapacity")
+            ?.GetValue(pool);
+        object audio = type.GetProperty("AudioCapacityValue")
+            ?.GetValue(pool);
+        return $"concrete={concrete}, metal={metal}, audio={audio}";
+    }
+
+    private static void FailAndQuit(string reason)
+    {
+        Debug.LogError($"ISSUE13_PERF_FAILED {reason}");
+        Application.Quit(2);
+    }
+
+    private static bool HasArgument(
+        string[] arguments,
+        string key)
+    {
+        return Array.IndexOf(arguments, key) >= 0;
+    }
+
+    private static string ReadString(
+        string[] arguments,
+        string key,
+        string fallback)
+    {
+        int index = Array.IndexOf(arguments, key);
+        return index >= 0 && index + 1 < arguments.Length
+            ? arguments[index + 1]
+            : fallback;
+    }
+
+    private static int ReadInt(
+        string[] arguments,
+        string key,
+        int fallback)
+    {
+        return int.TryParse(
+            ReadString(arguments, key, fallback.ToString()),
+            out int value)
+            ? value
+            : fallback;
+    }
+
+    private static float ReadFloat(
+        string[] arguments,
+        string key,
+        float fallback)
+    {
+        return float.TryParse(
+            ReadString(arguments, key, fallback.ToString()),
+            out float value)
+            ? value
+            : fallback;
+    }
+
+    private static double Average(
+        double[] values,
+        int count)
+    {
+        if (count <= 0)
+        {
+            return 0.0;
+        }
+
+        double sum = 0.0;
+
+        for (int index = 0; index < count; index++)
+        {
+            sum += values[index];
+        }
+
+        return sum / count;
+    }
+
+    private static double Average(long[] values, int count)
+    {
+        if (count <= 0)
+        {
+            return 0.0;
+        }
+
+        double sum = 0.0;
+
+        for (int index = 0; index < count; index++)
+        {
+            sum += values[index];
+        }
+
+        return sum / count;
+    }
+
+    private static double Percentile(
+        double[] values,
+        int count,
+        double percentile)
+    {
+        if (count <= 0)
+        {
+            return 0.0;
+        }
+
+        int index = Mathf.Clamp(
+            Mathf.CeilToInt(
+                (float)(count * percentile)) - 1,
+            0,
+            count - 1);
+        return values[index];
+    }
+
+    private static double Percentile(
+        long[] values,
+        int count,
+        double percentile)
+    {
+        if (count <= 0)
+        {
+            return 0.0;
+        }
+
+        int index = Mathf.Clamp(
+            Mathf.CeilToInt(
+                (float)(count * percentile)) - 1,
+            0,
+            count - 1);
+        return values[index];
+    }
+
+    private void OnDestroy()
+    {
+        if (weapon != null)
+        {
+            weapon.ShotResolved -= CountShotResult;
+        }
+
+        if (mainThreadRecorder.Valid)
+        {
+            mainThreadRecorder.Dispose();
+        }
+
+        if (gcRecorder.Valid)
+        {
+            gcRecorder.Dispose();
+        }
+    }
+}
+
+[Serializable]
+public sealed class Issue13BenchmarkReport
+{
+    public string variant;
+    public string unityVersion;
+    public string operatingSystem;
+    public string processor;
+    public int processorCount;
+    public int systemMemoryMb;
+    public string graphicsDevice;
+    public int graphicsMemoryMb;
+    public string resolution;
+    public string screenMode;
+    public string qualityLevel;
+    public int enemyCount;
+    public double warmupSeconds;
+    public double sampleSeconds;
+    public int seed;
+    public int sampleFrames;
+    public int shots;
+    public int hits;
+    public double averageFps;
+    public double averageFrameMs;
+    public double p95FrameMs;
+    public double p99FrameMs;
+    public double onePercentLowFps;
+    public double averageMainThreadMs;
+    public double p95MainThreadMs;
+    public double averageGcBytesPerFrame;
+    public double p95GcBytesPerFrame;
+    public double gcAllocFramePercent;
+    public double peakUnityUsedMemoryMb;
+    public double peakManagedMemoryMb;
+    public bool mainThreadRecorderValid;
+    public bool gcRecorderValid;
+    public long perceptionChecks;
+    public string poolSummary;
+}

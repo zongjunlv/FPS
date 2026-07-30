@@ -11,6 +11,29 @@ public class MuzzleFlashController : MonoBehaviour
 
     private float remainingTime;
     public int PlayCount { get; private set; }
+    public int Capacity => particles?.Length ?? 0;
+    public int ActiveCount
+    {
+        get
+        {
+            int count = 0;
+
+            if (particles == null)
+            {
+                return count;
+            }
+
+            foreach (ParticleSystem particle in particles)
+            {
+                if (particle != null && particle.isPlaying)
+                {
+                    count++;
+                }
+            }
+
+            return count;
+        }
+    }
     public bool IsLightActive =>
         muzzleLight != null && muzzleLight.enabled;
 
@@ -27,9 +50,14 @@ public class MuzzleFlashController : MonoBehaviour
     // Update is called once per frame
     void Update()
     {
-        if(!muzzleLight.enabled) return;
+        if (muzzleLight == null || !muzzleLight.enabled)
+        {
+            return;
+        }
+
         remainingTime -= Time.deltaTime;
-        if(remainingTime <= 0f)
+
+        if (remainingTime <= 0f)
         {
             muzzleLight.enabled = false;
         }

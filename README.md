@@ -6,8 +6,9 @@
 
 - 玩法场景：`CityNew`
 - 玩家：移动、前向奔跑、跳跃、平滑下蹲、鼠标/手柄视角和瞄准状态
-- 战斗：AR 连续射击、射速限制、实体子弹、枪口焰和后坐力
-- 敌人：Spider 受击、生命值扣除、死亡爆炸
+- 战斗：AR/手枪 Hitscan、视觉曳光、枪口焰、弹孔、材质反馈和后坐力
+- 敌人：Spider 感知、协同警报、分散搜索、近战、受击与死亡反馈
+- 性能：固定容量对象池、感知预算分帧和可重复 Player 压力测试
 
 ## 操作
 
@@ -45,12 +46,49 @@
 - 场景包含武器和敌人。
 - 场景中不存在 Missing Script。
 - 已废弃的第三人称视角空壳组件已移除。
-- 武器能够开火并生成实体子弹，敌人受到致命伤害后会销毁。
+- 武器能够开火并生成高速视觉曳光，敌人受到致命伤害后会销毁。
 - 下蹲会平滑调整碰撞体和相机高度，且始终保持脚底对齐。
 - 低矮顶棚会阻止站起，移除障碍后可以恢复站立。
 - 斜向移动不会加速，后退不能冲刺，蹲伏会覆盖冲刺速度。
 - 暂停会冻结游戏时间并释放鼠标。
 - 鼠标与手柄使用各自的视角灵敏度，支持反转 Y 轴。
+- 对象池能够预热、拒绝超容量借出，并保护重复/外部归还。
+- 24 名敌人的视野检查由固定预算轮转调度，不会集中在同一帧。
+
+## 运行时架构
+
+- `RuntimeGameObjectPool`：固定容量预热模块。容量耗尽时返回空值，不扩容、不抢占活跃对象；正常、重复和外部归还均有明确结果。
+- `CombatEffectPool`：玩家级战斗反馈模块。统一管理 48 个混凝土弹孔/命中特效、48 个金属标记、24 个金属火花和 32 个空间音频 voice。
+- `ShotTracerPool`：固定 16 条高速视觉曳光；完成后停用并复用。
+- `MuzzleFlashController`：复用武器层级预置粒子和灯光，不逐发创建对象。
+- `EnemyPerceptionScheduler`：场景级圆环调度模块，默认每帧最多执行 4 次昂贵视野查询；敌人的状态推进和导航仍按帧运行。
+- `PerformanceDisplayBootstrap`：独立 Player 全屏时保持显示比例并限制为约 1920×1080 的像素预算，避免 4K Retina 原生渲染拖垮帧率；可用 `-native-resolution` 关闭限制。
+- 武器和敌人射线使用 `RaycastNonAlloc` 与实例级复用命中缓存；协同搜索复用 `List<Vector3>` 和 `NavMeshPath`。
+
+## Issue 13 性能压力测试
+
+先按下文生成 Development Build，再运行：
+
+```bash
+"/Users/jungle/GameProject/Unity/FPS/My project/Builds/Issue1/FPS.app/Contents/MacOS/My project" \
+  -fps-benchmark \
+  -benchmark-enemies 24 \
+  -benchmark-warmup 5 \
+  -benchmark-duration 20 \
+  -benchmark-seed 13013 \
+  -benchmark-width 1920 \
+  -benchmark-height 1080 \
+  -benchmark-fullscreen \
+  -benchmark-variant local \
+  -benchmark-output /tmp/fps-issue13-local.json \
+  -logFile /tmp/fps-issue13-local.log
+```
+
+压力场景会在 `CityNew` 创建固定 24 名高血量敌人，强制持续感知、追击和攻击；玩家自动连续开火、换弹且不会在采样期间死亡。报告记录设备、系统、Unity 版本、实际分辨率、全屏模式、画质、敌人数量、随机种子、CPU 帧时间、GC Alloc、内存、平均 FPS、P95/P99 和 1% Low。不要添加 `-nographics` 才能测量真实图形输出；添加该参数只适合隔离 CPU/GC。
+
+独立 Player 默认将高分辨率全屏限制在约 1080p 像素量。测试原生 4K 可添加 `-native-resolution`；自定义预算可添加 `-fullscreen-pixel-budget <像素数>`。敌人调试浮层在 Player 中默认关闭，可用 `-enemy-debug-overlay` 临时开启。
+
+真实性能结果与限制见 [`docs/performance/issue-13.md`](docs/performance/issue-13.md)；简历只能引用其中已有原始 JSON 支持的数据。
 
 ## macOS Development Build
 

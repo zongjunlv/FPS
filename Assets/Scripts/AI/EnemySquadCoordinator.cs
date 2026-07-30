@@ -25,6 +25,7 @@ public sealed class EnemySquadCoordinator : MonoBehaviour
     private readonly Dictionary<EnemyPerceptionController, float>
         lastBroadcastTime = new();
     private readonly List<EnemyAlertDebugRelation> debugRelations = new();
+    private readonly List<Vector3> reservedSearchPoints = new();
     private float alertRadius = 18f;
     private float broadcastCooldown = 1f;
     private float alertLifetime = 3f;
@@ -158,7 +159,7 @@ public sealed class EnemySquadCoordinator : MonoBehaviour
         BroadcastCount++;
         LastRecipientCount = 0;
         debugRelations.Clear();
-        var reservedSearchPoints = new List<Vector3>();
+        reservedSearchPoints.Clear();
         int receiverSlot = 0;
 
         for (int index = members.Count - 1; index >= 0; index--)

@@ -3,6 +3,11 @@ using UnityEngine;
 [RequireComponent(typeof(EnemyNavigationController))]
 public sealed class EnemyPerceptionController : MonoBehaviour
 {
+    private static readonly bool PlayerDebugOverlayEnabled =
+        System.Array.IndexOf(
+            System.Environment.GetCommandLineArgs(),
+            "-enemy-debug-overlay") >= 0;
+
     [Header("Vision")]
     [SerializeField, Min(1f)] private float sightDistance = 22f;
     [SerializeField, Range(1f, 360f)] private float fieldOfView = 110f;
@@ -24,7 +29,9 @@ public sealed class EnemyPerceptionController : MonoBehaviour
     private bool hasSquadSearchAssignment;
     private Vector3 squadSearchDestination;
     private float latestVisualIntelTime = float.NegativeInfinity;
-    private readonly RaycastHit[] sightHits = new RaycastHit[16];
+    private readonly RaycastHit[] sightHits = new RaycastHit[32];
+    private EnemyPerceptionScheduler perceptionScheduler;
+    private int lastSightCheckFrame = -1;
 
     public EnemyAwarenessState State =>
         awareness?.State ?? EnemyAwarenessState.Patrol;
@@ -47,6 +54,8 @@ public sealed class EnemyPerceptionController : MonoBehaviour
         squadSearchDestination;
     public EnemySquadAlert LastReceivedSquadAlert =>
         squadAlertMemory.LatestAlert;
+    public int SightCheckCount { get; private set; }
+    public int SaturatedSightQueryCount { get; private set; }
 
     private void Awake()
     {
@@ -61,6 +70,8 @@ public sealed class EnemyPerceptionController : MonoBehaviour
                 "CombatSoundEvents");
         squadAlertMemory.Configure(3f);
         squadCoordinator = EnemySquadCoordinator.Instance;
+        perceptionScheduler =
+            EnemyPerceptionScheduler.EnsureForActiveScene();
     }
 
     private void OnEnable()
@@ -71,6 +82,7 @@ public sealed class EnemyPerceptionController : MonoBehaviour
         }
 
         squadCoordinator?.Register(this);
+        perceptionScheduler?.Register(this);
     }
 
     private void Start()
@@ -91,18 +103,21 @@ public sealed class EnemyPerceptionController : MonoBehaviour
         }
 
         squadCoordinator?.Unregister(this);
+        perceptionScheduler?.Unregister(this);
     }
 
     private void Update()
     {
-        HasVisualContact = CanSeeTarget();
-
         if (HasVisualContact)
         {
             investigatingSound = false;
             hasSquadSearchAssignment = false;
             awareness.Observe(target.position, Time.deltaTime);
-            latestVisualIntelTime = Time.time;
+
+            if (lastSightCheckFrame == Time.frameCount)
+            {
+                latestVisualIntelTime = Time.time;
+            }
 
             if (awareness.State == EnemyAwarenessState.Alert)
             {
@@ -229,30 +244,39 @@ public sealed class EnemyPerceptionController : MonoBehaviour
         Vector3 targetPoint =
             target.position + Vector3.up * 0.9f;
         Vector3 toTarget = targetPoint - eye;
-        float distance = toTarget.magnitude;
+        float squaredDistance = toTarget.sqrMagnitude;
 
-        if (distance > sightDistance ||
-            distance <= 0.001f)
+        if (squaredDistance >
+                sightDistance * sightDistance ||
+            squaredDistance <= 0.000001f)
         {
             return false;
         }
 
-        float angle = Vector3.Angle(
-            transform.forward,
-            toTarget);
+        float distance = Mathf.Sqrt(squaredDistance);
+        Vector3 sightDirection = toTarget / distance;
+        float minimumDot = Mathf.Cos(
+            fieldOfView * 0.5f * Mathf.Deg2Rad);
 
-        if (angle > fieldOfView * 0.5f)
+        if (Vector3.Dot(transform.forward, sightDirection) <
+            minimumDot)
         {
             return false;
         }
 
         int hitCount = Physics.RaycastNonAlloc(
             eye,
-            toTarget.normalized,
+            sightDirection,
             sightHits,
             distance + 0.1f,
             Physics.DefaultRaycastLayers,
             QueryTriggerInteraction.Ignore);
+
+        if (hitCount >= sightHits.Length)
+        {
+            SaturatedSightQueryCount++;
+        }
+
         RaycastHit? nearestRelevantHit = null;
 
         for (int index = 0; index < hitCount; index++)
@@ -282,6 +306,13 @@ public sealed class EnemyPerceptionController : MonoBehaviour
             hitTransform.IsChildOf(target);
     }
 
+    internal void PerformScheduledSightCheck()
+    {
+        HasVisualContact = CanSeeTarget();
+        SightCheckCount++;
+        lastSightCheckFrame = Time.frameCount;
+    }
+
     private void HandleSound(SoundStimulus stimulus)
     {
         float strength = stimulus.StrengthAt(transform.position) *
@@ -299,7 +330,9 @@ public sealed class EnemyPerceptionController : MonoBehaviour
 
     private void OnGUI()
     {
-        if (!showDebugOverlay)
+        if (!Debug.isDebugBuild ||
+            !showDebugOverlay ||
+            (!Application.isEditor && !PlayerDebugOverlayEnabled))
         {
             return;
         }
@@ -327,10 +360,14 @@ public sealed class EnemyPerceptionController : MonoBehaviour
                 new Color(1f, 0.65f, 0.1f),
             _ => Color.cyan
         };
-        string squadIntel = squadAlertMemory.HasAlert
-            ? $"\n协同: {squadAlertMemory.LatestAlert.Source.name} " +
-              $"{squadAlertMemory.LatestAlert.Confidence:P0}"
-            : string.Empty;
+        EnemySquadAlert latestAlert =
+            squadAlertMemory.LatestAlert;
+        string squadIntel =
+            squadAlertMemory.HasAlert &&
+            latestAlert.Source != null
+                ? $"\n协同: {latestAlert.Source.name} " +
+                  $"{latestAlert.Confidence:P0}"
+                : string.Empty;
         GUI.Label(
             rect,
             $"{State}  {Awareness:P0}\n" +

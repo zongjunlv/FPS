@@ -60,6 +60,7 @@ public class WeaponController : MonoBehaviour
     private float aimBlend;
     private Vector2? spreadSampleOverride;
     private CombatSoundEventChannel soundEventChannel;
+    private CombatEffectPool combatEffectPool;
     private readonly RaycastHit[] hitBuffer = new RaycastHit[32];
 
     private void Awake()
@@ -109,6 +110,7 @@ public class WeaponController : MonoBehaviour
         }
 
         impactFeedback.Configure(this, impactEffect);
+        combatEffectPool = impactFeedback.EffectPool;
         weaponAnimator = GetComponent<Animator>();
 
         if (weaponAnimator != null)
@@ -160,7 +162,13 @@ public class WeaponController : MonoBehaviour
 
         if (weapon.FireSound != null)
         {
-            fireAudioSource.PlayOneShot(weapon.FireSound);
+            if (combatEffectPool == null ||
+                !combatEffectPool.PlayAudio(
+                    FirePoint.transform.position,
+                    weapon.FireSound))
+            {
+                fireAudioSource.PlayOneShot(weapon.FireSound);
+            }
         }
 
         if (weaponAnimator != null)

@@ -224,9 +224,10 @@ namespace FPS.Tests.PlayMode
 
             yield return new WaitForSeconds(0.4f);
             Assert.That(
-                impact == null,
+                impact == null || !impact.activeSelf,
                 Is.True,
-                "The impact object must be cleaned up after three seconds.");
+                "The impact object must be returned to its pool after " +
+                "three seconds.");
         }
 
         [UnityTest]

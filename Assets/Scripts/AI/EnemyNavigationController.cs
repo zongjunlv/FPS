@@ -15,6 +15,7 @@ public sealed class EnemyNavigationController : MonoBehaviour
     private bool hasDestination;
     private bool destinationIsPatrol;
     private bool movementStopped;
+    private NavMeshPath reachablePath;
 
     public Vector3 Destination { get; private set; }
     public int PatrolPointCount => patrolPoints.Count;
@@ -62,6 +63,7 @@ public sealed class EnemyNavigationController : MonoBehaviour
 
     private void Awake()
     {
+        reachablePath = new NavMeshPath();
         agent = GetComponent<NavMeshAgent>();
         ConfigureAgent();
         GeneratePatrolPoints();
@@ -176,6 +178,8 @@ public sealed class EnemyNavigationController : MonoBehaviour
         float sampleRadius,
         out Vector3 resolved)
     {
+        reachablePath ??= new NavMeshPath();
+
         if (!UsesNavMesh)
         {
             resolved = desired;
@@ -192,14 +196,12 @@ public sealed class EnemyNavigationController : MonoBehaviour
             return false;
         }
 
-        NavMeshPath path = new NavMeshPath();
-
         if (!NavMesh.CalculatePath(
                 transform.position,
                 hit.position,
                 agent.areaMask,
-                path) ||
-            path.status != NavMeshPathStatus.PathComplete)
+                reachablePath) ||
+            reachablePath.status != NavMeshPathStatus.PathComplete)
         {
             resolved = default;
             return false;

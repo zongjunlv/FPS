@@ -5,11 +5,21 @@ public sealed class MetalImpactVisualController : MonoBehaviour
     private Light impactLight;
     private float lightRemaining;
     private Material surfaceMaterial;
+    private Material silverMaterial;
+    private Material coreMaterial;
+    private bool initialized;
 
     public float Lifetime { get; private set; }
 
     public void Configure(SurfaceImpactStyle style)
     {
+        if (initialized)
+        {
+            Play();
+            return;
+        }
+
+        initialized = true;
         CombatFeedbackVisualProfile profile =
             Resources.Load<CombatFeedbackVisualProfile>(
                 "CombatFeedbackVisual");
@@ -32,8 +42,18 @@ public sealed class MetalImpactVisualController : MonoBehaviour
         impactLight.color = new Color(1f, 0.45f, 0.08f);
         impactLight.intensity = 2.8f;
         impactLight.range = 1.2f;
+        Play();
+    }
+
+    public void Play()
+    {
+        if (impactLight == null)
+        {
+            return;
+        }
+
+        impactLight.enabled = true;
         lightRemaining = 0.11f;
-        Destroy(gameObject, Lifetime);
     }
 
     private void Update()
@@ -67,7 +87,6 @@ public sealed class MetalImpactVisualController : MonoBehaviour
             new Vector3(scale, scale, 0.018f);
         Collider collider = dent.GetComponent<Collider>();
         collider.enabled = false;
-        Destroy(collider);
         Renderer renderer = dent.GetComponent<Renderer>();
         if (surfaceMaterial == null)
         {
@@ -87,5 +106,35 @@ public sealed class MetalImpactVisualController : MonoBehaviour
         }
 
         renderer.material = material;
+
+        if (emissive)
+        {
+            coreMaterial = material;
+        }
+        else
+        {
+            silverMaterial = material;
+        }
+    }
+
+    private void OnDisable()
+    {
+        if (impactLight != null)
+        {
+            impactLight.enabled = false;
+        }
+    }
+
+    private void OnDestroy()
+    {
+        if (silverMaterial != null)
+        {
+            Destroy(silverMaterial);
+        }
+
+        if (coreMaterial != null)
+        {
+            Destroy(coreMaterial);
+        }
     }
 }
