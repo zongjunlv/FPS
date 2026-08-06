@@ -10,6 +10,89 @@ namespace FPS.Tests.PlayMode
     public class Issue7FeedbackTests
     {
         [UnityTest]
+        public IEnumerator DamageTargetImpactFollowsHitObjectAndReturnsWhenDisabled()
+        {
+            Type poolType = Type.GetType(
+                "CombatEffectPool, Assembly-CSharp");
+            Type shotResultType = Type.GetType(
+                "ShotResult, Assembly-CSharp");
+            Type damageResultType = Type.GetType(
+                "DamageResult, Assembly-CSharp");
+            Type hitRegionType = Type.GetType(
+                "HitRegion, Assembly-CSharp");
+            Type surfaceType = Type.GetType(
+                "SurfaceType, Assembly-CSharp");
+            GameObject host = new GameObject("Impact Pool Host");
+            GameObject target = new GameObject("Moving Damage Target");
+            GameObject impactPrefab = new GameObject("Impact Prefab");
+
+            try
+            {
+                target.transform.position = new Vector3(2f, 1f, 3f);
+                GameObject hitObject = new GameObject("Moving Hitbox");
+                hitObject.transform.SetParent(target.transform, false);
+                hitObject.transform.localPosition = new Vector3(0f, 1f, 0f);
+                Component pool = host.AddComponent(poolType);
+                poolType.GetMethod("Configure").Invoke(
+                    pool,
+                    new object[] { impactPrefab });
+                object damage = Activator.CreateInstance(
+                    damageResultType,
+                    new object[]
+                    {
+                        true,
+                        false,
+                        10f,
+                        Enum.Parse(hitRegionType, "Body")
+                    });
+                Vector3 hitPoint = hitObject.transform.TransformPoint(
+                    new Vector3(0.2f, 0.1f, 0f));
+                object result = Activator.CreateInstance(
+                    shotResultType,
+                    new object[]
+                    {
+                        true,
+                        hitPoint,
+                        Vector3.forward,
+                        Enum.Parse(surfaceType, "Concrete"),
+                        damage,
+                        target,
+                        hitObject
+                    });
+
+                poolType.GetMethod("PresentImpact").Invoke(
+                    pool,
+                    new[] { result });
+                GameObject impact = GameObject.Find("Concrete(Clone)");
+                Assert.That(impact, Is.Not.Null);
+                Vector3 relativePosition =
+                    impact.transform.position - hitObject.transform.position;
+
+                target.transform.position += new Vector3(4f, 0f, -2f);
+                yield return null;
+
+                Assert.That(
+                    Vector3.Distance(
+                        impact.transform.position,
+                        hitObject.transform.position + relativePosition),
+                    Is.LessThan(0.001f),
+                    "怪物移动后，弹痕必须跟随实际受击部位。");
+
+                target.SetActive(false);
+                yield return null;
+
+                Assert.That(impact.activeSelf, Is.False,
+                    "受击目标失活后，绑定弹痕必须立即回收到对象池。");
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(host);
+                UnityEngine.Object.DestroyImmediate(target);
+                UnityEngine.Object.DestroyImmediate(impactPrefab);
+            }
+        }
+
+        [UnityTest]
         public IEnumerator CombatFeedbackVisualProfileKeepsBuildShaders()
         {
             Type profileType = Type.GetType(

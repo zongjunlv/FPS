@@ -22,6 +22,8 @@ public sealed class CityNewMissionController : MonoBehaviour
     private GUIStyle resultBodyStyle;
     private GUIStyle buttonStyle;
     private bool configured;
+    private GameplayLockCoordinator gameplayLocks;
+    private GameplayLockLease outcomeLock;
 
     public TerminalInteractable Terminal { get; private set; }
     public Health TargetHealth { get; private set; }
@@ -37,6 +39,7 @@ public sealed class CityNewMissionController : MonoBehaviour
         playerHealth = GetComponent<Health>();
         player = GetComponent<PlayerController>();
         combat = GetComponent<PlayerCombatController>();
+        gameplayLocks = GetComponent<GameplayLockCoordinator>();
         profile = Resources.Load<PlayerHudVisualProfile>(
             "PlayerHudVisualProfile");
     }
@@ -140,6 +143,7 @@ public sealed class CityNewMissionController : MonoBehaviour
             return false;
         }
 
+        gameplayLocks?.ResetForSceneTransition();
         Time.timeScale = 1f;
         SceneManager.LoadScene(SceneManager.GetActiveScene().name);
         return true;
@@ -157,6 +161,8 @@ public sealed class CityNewMissionController : MonoBehaviour
 
     private void OnDestroy()
     {
+        outcomeLock?.Dispose();
+        outcomeLock = null;
         Unbind();
     }
 
@@ -229,16 +235,21 @@ public sealed class CityNewMissionController : MonoBehaviour
 
     private void ApplyOutcome()
     {
-        if (player.IsPaused)
-        {
-            player.SetPaused(false);
-        }
+        GameplayLockReason reason = State == MissionFlowState.Victory
+            ? GameplayLockReason.Victory
+            : GameplayLockReason.Defeat;
+        outcomeLock ??= gameplayLocks != null
+            ? gameplayLocks.Acquire(reason)
+            : null;
 
-        player.SetGameplayInputEnabled(false);
-        combat.SetGameplayInputEnabled(false);
-        Time.timeScale = 0f;
-        Cursor.lockState = CursorLockMode.None;
-        Cursor.visible = true;
+        if (gameplayLocks == null)
+        {
+            player.SetGameplayInputEnabled(false);
+            combat.SetGameplayInputEnabled(false);
+            Time.timeScale = 0f;
+            Cursor.lockState = CursorLockMode.None;
+            Cursor.visible = true;
+        }
     }
 
     private void CreateExtractionZone(Vector3 position)

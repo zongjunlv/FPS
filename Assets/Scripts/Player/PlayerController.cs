@@ -44,6 +44,7 @@ public class PlayerController : MonoBehaviour
     private CharacterController characterController;
     private PlayerInputReader input;
     private PlayerCrosshairPresenter crosshairPresenter;
+    private GameplayLockCoordinator gameplayLocks;
     public float VerticalVelocity {get; private set; }
     public float MoveDirection { get; private set; }
     public bool IsAiming { get; private set; }
@@ -79,6 +80,13 @@ public class PlayerController : MonoBehaviour
     {
         characterController = GetComponent<CharacterController>();
         input = GetComponent<PlayerInputReader>();
+        gameplayLocks = GetComponent<GameplayLockCoordinator>();
+
+        if (gameplayLocks == null)
+        {
+            gameplayLocks =
+                gameObject.AddComponent<GameplayLockCoordinator>();
+        }
         capsuleBottom =
             characterController.center.y - characterController.height * 0.5f;
         Vector3 cameraStandingPosition = CameraPivot.localPosition;
@@ -113,6 +121,12 @@ public class PlayerController : MonoBehaviour
 
     private void Update()
     {
+        if (IsPaused)
+        {
+            HandlePauseInput();
+            return;
+        }
+
         if (!GameplayInputEnabled)
         {
             ApplyCursorState();
@@ -120,11 +134,6 @@ public class PlayerController : MonoBehaviour
         }
 
         HandlePauseInput();
-
-        if (IsPaused)
-        {
-            return;
-        }
 
         HandleAimInput();
         Rotate();
@@ -146,6 +155,20 @@ public class PlayerController : MonoBehaviour
         IsPaused = paused;
         input.ConsumeAimingPressed();
         crosshairPresenter?.SetState(AimBlend, !paused);
+
+        if (gameplayLocks != null)
+        {
+            if (paused)
+            {
+                TrySetAiming(false);
+            }
+
+            gameplayLocks.SetReasonActive(
+                GameplayLockReason.PauseMenu,
+                paused);
+            ApplyCursorState();
+            return;
+        }
 
         if (paused)
         {
@@ -169,6 +192,7 @@ public class PlayerController : MonoBehaviour
     public void SetGameplayInputEnabled(bool enabled)
     {
         GameplayInputEnabled = enabled;
+        input?.SetGameplayActionsEnabled(enabled);
 
         if (!enabled)
         {
@@ -183,6 +207,10 @@ public class PlayerController : MonoBehaviour
             }
 
             crosshairPresenter?.SetState(0f, false);
+        }
+        else
+        {
+            crosshairPresenter?.SetState(AimBlend, !IsPaused);
         }
 
         ApplyCursorState();
@@ -204,6 +232,7 @@ public class PlayerController : MonoBehaviour
             hasFocus &&
             GameplayInputEnabled &&
             !IsPaused &&
+            (gameplayLocks == null || !gameplayLocks.IsLocked) &&
             Time.timeScale > 0f;
 
         Cursor.lockState = shouldLock
@@ -220,7 +249,7 @@ public class PlayerController : MonoBehaviour
 
     private void OnDisable()
     {
-        if (IsPaused)
+        if (gameplayLocks == null && IsPaused)
         {
             IsPaused = false;
             Time.timeScale = Mathf.Max(0.01f, timeScaleBeforePause);

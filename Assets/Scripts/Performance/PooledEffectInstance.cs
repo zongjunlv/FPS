@@ -6,6 +6,10 @@ public sealed class PooledEffectInstance : MonoBehaviour
     private RuntimeGameObjectPool owner;
     private float remainingLifetime;
     private string pooledName;
+    private Transform followTarget;
+    private bool hasFollowTarget;
+    private Vector3 followLocalPosition;
+    private Quaternion followLocalRotation;
 
     public void Prepare()
     {
@@ -17,8 +21,26 @@ public sealed class PooledEffectInstance : MonoBehaviour
         RuntimeGameObjectPool sourcePool,
         float lifetime)
     {
+        Play(sourcePool, lifetime, null);
+    }
+
+    public void Play(
+        RuntimeGameObjectPool sourcePool,
+        float lifetime,
+        Transform attachmentTarget)
+    {
         owner = sourcePool;
         remainingLifetime = Mathf.Max(0.01f, lifetime);
+        followTarget = attachmentTarget;
+        hasFollowTarget = attachmentTarget != null;
+
+        if (followTarget != null)
+        {
+            followLocalPosition = followTarget.InverseTransformPoint(
+                transform.position);
+            followLocalRotation = Quaternion.Inverse(
+                followTarget.rotation) * transform.rotation;
+        }
 
         foreach (ParticleSystem particle in particles)
         {
@@ -36,6 +58,20 @@ public sealed class PooledEffectInstance : MonoBehaviour
 
     private void Update()
     {
+        if (hasFollowTarget)
+        {
+            if (followTarget == null ||
+                !followTarget.gameObject.activeInHierarchy)
+            {
+                owner?.Return(gameObject);
+                return;
+            }
+
+            transform.SetPositionAndRotation(
+                followTarget.TransformPoint(followLocalPosition),
+                followTarget.rotation * followLocalRotation);
+        }
+
         remainingLifetime -= Time.deltaTime;
 
         if (remainingLifetime <= 0f)
@@ -60,6 +96,8 @@ public sealed class PooledEffectInstance : MonoBehaviour
         }
 
         owner = null;
+        followTarget = null;
+        hasFollowTarget = false;
         remainingLifetime = 0f;
 
         if (!string.IsNullOrEmpty(pooledName))

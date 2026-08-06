@@ -1,3 +1,4 @@
+using System;
 using UnityEngine;
 
 public class AmmoHudPresenter : MonoBehaviour
@@ -10,6 +11,11 @@ public class AmmoHudPresenter : MonoBehaviour
     private GUIStyle ammoStyle;
     private GUIStyle statusStyle;
     private float emptyFeedbackUntil;
+    private string lastStatusText = string.Empty;
+
+    public event Action ViewChanged;
+
+    public bool LegacyOnGuiEnabled { get; private set; } = true;
 
     public string DisplayText { get; private set; } = "0 / 0";
     public string WeaponNameText { get; private set; } = string.Empty;
@@ -40,6 +46,7 @@ public class AmmoHudPresenter : MonoBehaviour
             DisplayText = "0 / 0";
             WeaponNameText = string.Empty;
             FireModeText = string.Empty;
+            NotifyViewChanged();
             return;
         }
 
@@ -52,6 +59,24 @@ public class AmmoHudPresenter : MonoBehaviour
     private void OnDestroy()
     {
         Unbind();
+    }
+
+    private void Update()
+    {
+        string currentStatus = StatusText;
+
+        if (currentStatus == lastStatusText)
+        {
+            return;
+        }
+
+        lastStatusText = currentStatus;
+        ViewChanged?.Invoke();
+    }
+
+    public void SetLegacyPresentation(bool enabled)
+    {
+        LegacyOnGuiEnabled = enabled;
     }
 
     private void Unbind()
@@ -77,6 +102,7 @@ public class AmmoHudPresenter : MonoBehaviour
         DisplayText = $"{weapon.CurrentAmmo} / {weapon.ReserveAmmo}";
         WeaponNameText = weapon.WeaponName;
         FireModeText = weapon.FireModeName;
+        NotifyViewChanged();
     }
 
     private void ShowEmptyFeedback()
@@ -87,6 +113,11 @@ public class AmmoHudPresenter : MonoBehaviour
 
     private void OnGUI()
     {
+        if (!LegacyOnGuiEnabled)
+        {
+            return;
+        }
+
         EnsureStyles();
 
         float width = 240f;
@@ -117,6 +148,12 @@ public class AmmoHudPresenter : MonoBehaviour
                 status,
                 statusStyle);
         }
+    }
+
+    private void NotifyViewChanged()
+    {
+        lastStatusText = StatusText;
+        ViewChanged?.Invoke();
     }
 
     private void EnsureStyles()

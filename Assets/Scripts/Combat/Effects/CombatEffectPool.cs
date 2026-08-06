@@ -298,7 +298,10 @@ public sealed class CombatEffectPool : MonoBehaviour
         effect.name = "Concrete(Clone)";
         effect.GetComponent<PooledEffectInstance>().Play(
             concretePool,
-            style.UniqueMarkerLifetime);
+            style.UniqueMarkerLifetime,
+            result.HitObject != null
+                ? result.HitObject.transform
+                : null);
     }
 
     private void PlayMetalImpact(
@@ -316,7 +319,10 @@ public sealed class CombatEffectPool : MonoBehaviour
             effect.GetComponent<MetalImpactVisualController>().Play();
             effect.GetComponent<PooledEffectInstance>().Play(
                 metalPool,
-                style.UniqueMarkerLifetime);
+                style.UniqueMarkerLifetime,
+                result.HitObject != null
+                    ? result.HitObject.transform
+                    : null);
         }
 
         GameObject sparks = sparkPool.Rent();

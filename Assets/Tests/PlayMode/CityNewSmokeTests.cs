@@ -1443,40 +1443,17 @@ namespace FPS.Tests.PlayMode
         }
 
         [UnityTest]
-        public IEnumerator SceneBuildsFixedCombatFeedbackTestRange()
+        public IEnumerator SceneExcludesCombatFeedbackTestRange()
         {
             yield return LoadCityNew();
             yield return null;
 
             GameObject range =
                 GameObject.Find("Combat Feedback Test Range");
-            System.Type surfaceType =
-                System.Type.GetType("SurfaceDescriptor, Assembly-CSharp");
-            System.Type hitboxType =
-                System.Type.GetType("DamageHitbox, Assembly-CSharp");
-            System.Type damagePadType =
-                System.Type.GetType(
-                    "PlayerDamageTestPad, Assembly-CSharp");
-
-            Assert.That(range, Is.Not.Null);
             Assert.That(
-                range.GetComponentsInChildren(surfaceType, true).Length,
-                Is.GreaterThanOrEqualTo(2));
-            Assert.That(
-                range.GetComponentsInChildren(hitboxType, true).Length,
-                Is.GreaterThanOrEqualTo(2));
-            Assert.That(
-                range.GetComponentsInChildren(damagePadType, true).Length,
-                Is.EqualTo(1));
-            foreach (TextMesh label in
-                     range.GetComponentsInChildren<TextMesh>(true))
-            {
-                Assert.That(
-                    Mathf.DeltaAngle(
-                        label.transform.localEulerAngles.y,
-                        180f),
-                    Is.EqualTo(0f).Within(0.1f));
-            }
+                range,
+                Is.Null,
+                "正式场景不得生成材质、命中或玩家受击演示区。");
 
             GameObject player = FindObjectWithComponent(
                 GetSceneObjects(SceneManager.GetActiveScene()),

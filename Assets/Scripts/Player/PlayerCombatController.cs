@@ -14,6 +14,7 @@ public class PlayerCombatController : MonoBehaviour
     public bool IsSwitching => loadout.IsSwitching;
     public bool GameplayInputEnabled { get; private set; } = true;
     public event Action<ShotResult> ShotResolved;
+    public event Action<WeaponController> EquippedWeaponChanged;
 
     private PlayerRecoilController playerRecoil;
     private PlayerController playerController;
@@ -61,9 +62,9 @@ public class PlayerCombatController : MonoBehaviour
             gameObject.AddComponent<CityNewTerminalMissionBootstrap>();
         }
 
-        if (GetComponent<FeedbackTestRangeController>() == null)
+        if (GetComponent<UnifiedGameHudBootstrap>() == null)
         {
-            gameObject.AddComponent<FeedbackTestRangeController>();
+            gameObject.AddComponent<UnifiedGameHudBootstrap>();
         }
 
         loadout.SwitchStarted += HandleSwitchStarted;
@@ -241,6 +242,7 @@ public class PlayerCombatController : MonoBehaviour
             transform,
             tracerPool);
         ammoHud.Bind(EquippedWeapon);
+        EquippedWeaponChanged?.Invoke(EquippedWeapon);
     }
 
     private void HandleShotResolved(ShotResult result)

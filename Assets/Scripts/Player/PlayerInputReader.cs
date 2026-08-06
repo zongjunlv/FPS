@@ -46,6 +46,27 @@ public class PlayerInputReader : MonoBehaviour
     public bool LookUsesPointerDelta =>
         lookAction.action.activeControl?.device is Pointer;
 
+    public void SetGameplayActionsEnabled(bool enabled)
+    {
+        SetActionEnabled(moveAction?.action, enabled);
+        SetActionEnabled(jumpAction?.action, enabled);
+        SetActionEnabled(lookAction?.action, enabled);
+        SetActionEnabled(sprintAction?.action, enabled);
+        SetActionEnabled(interactAction?.action, enabled);
+        SetActionEnabled(attackAction?.action, enabled);
+        SetActionEnabled(aimingAction?.action, enabled);
+        SetActionEnabled(crouchAction, enabled);
+        SetActionEnabled(reloadAction, enabled);
+        SetActionEnabled(weaponSlot1Action, enabled);
+        SetActionEnabled(weaponSlot2Action, enabled);
+        SetActionEnabled(cycleWeaponAction, enabled);
+
+        if (!enabled)
+        {
+            ClearBufferedGameplayInput();
+        }
+    }
+
     public bool ConsumeAimingPressed()
     {
         bool wasPressed = aimingPressed;
@@ -103,19 +124,8 @@ public class PlayerInputReader : MonoBehaviour
         weaponSlot1Action.performed += OnWeaponSlot1Performed;
         weaponSlot2Action.performed += OnWeaponSlot2Performed;
         cycleWeaponAction.performed += OnCycleWeaponPerformed;
-        moveAction.action.Enable();
-        jumpAction.action.Enable();
-        lookAction.action.Enable();
-        sprintAction.action.Enable();
-        interactAction.action.Enable();
-        attackAction.action.Enable();
-        aimingAction.action.Enable();
-        crouchAction?.Enable();
+        SetGameplayActionsEnabled(true);
         pauseAction?.Enable();
-        reloadAction?.Enable();
-        weaponSlot1Action?.Enable();
-        weaponSlot2Action?.Enable();
-        cycleWeaponAction?.Enable();
     }
 
     private void OnDisable()
@@ -125,10 +135,7 @@ public class PlayerInputReader : MonoBehaviour
         weaponSlot1Action.performed -= OnWeaponSlot1Performed;
         weaponSlot2Action.performed -= OnWeaponSlot2Performed;
         cycleWeaponAction.performed -= OnCycleWeaponPerformed;
-        aimingPressed = false;
-        reloadPressed = false;
-        weaponSelection = -1;
-        weaponCycleDirection = 0;
+        ClearBufferedGameplayInput();
         moveAction.action.Disable();
         jumpAction.action.Disable();
         lookAction.action.Disable();
@@ -142,6 +149,33 @@ public class PlayerInputReader : MonoBehaviour
         weaponSlot1Action?.Disable();
         weaponSlot2Action?.Disable();
         cycleWeaponAction?.Disable();
+    }
+
+    private void ClearBufferedGameplayInput()
+    {
+        aimingPressed = false;
+        reloadPressed = false;
+        weaponSelection = -1;
+        weaponCycleDirection = 0;
+    }
+
+    private static void SetActionEnabled(
+        InputAction action,
+        bool enabled)
+    {
+        if (action == null)
+        {
+            return;
+        }
+
+        if (enabled)
+        {
+            action.Enable();
+        }
+        else
+        {
+            action.Disable();
+        }
     }
 
     private void OnAimingPerformed(InputAction.CallbackContext context)

@@ -1,3 +1,4 @@
+using System;
 using UnityEngine;
 
 public enum DamageIndicatorSide
@@ -18,6 +19,10 @@ public sealed class PlayerCombatFeedbackController : MonoBehaviour
     private Health health;
     private AudioSource damageAudioSource;
     private AudioClip playerDamagedClip;
+
+    public event Action ViewChanged;
+
+    public bool LegacyOnGuiEnabled { get; private set; } = true;
 
     public int DamageFeedbackCount { get; private set; }
     public DamageIndicatorSide LastDamageSide { get; private set; }
@@ -70,10 +75,16 @@ public sealed class PlayerCombatFeedbackController : MonoBehaviour
 
     private void Update()
     {
+        float previousAlpha = DamageFlashAlpha;
         DamageFlashAlpha = Mathf.MoveTowards(
             DamageFlashAlpha,
             0f,
             Time.unscaledDeltaTime * 1.8f);
+
+        if (!Mathf.Approximately(previousAlpha, DamageFlashAlpha))
+        {
+            ViewChanged?.Invoke();
+        }
 
         if (crosshair != null && player != null && input != null)
         {
@@ -81,6 +92,11 @@ public sealed class PlayerCombatFeedbackController : MonoBehaviour
                 input.Move.magnitude,
                 player.IsSprinting);
         }
+    }
+
+    public void SetLegacyPresentation(bool enabled)
+    {
+        LegacyOnGuiEnabled = enabled;
     }
 
     private void OnDestroy()
@@ -116,6 +132,7 @@ public sealed class PlayerCombatFeedbackController : MonoBehaviour
         DamageFeedbackCount++;
         DamageFlashAlpha = 1f;
         LastDamageSide = ResolveDamageSide(damage);
+        ViewChanged?.Invoke();
 
         if (playerDamagedClip != null)
         {
@@ -153,7 +170,7 @@ public sealed class PlayerCombatFeedbackController : MonoBehaviour
 
     private void OnGUI()
     {
-        if (DamageFlashAlpha <= 0f)
+        if (!LegacyOnGuiEnabled || DamageFlashAlpha <= 0f)
         {
             return;
         }

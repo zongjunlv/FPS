@@ -15,6 +15,8 @@ public sealed class PlayerFailureFlowController : MonoBehaviour
     private GUIStyle titleStyle;
     private GUIStyle bodyStyle;
     private GUIStyle buttonStyle;
+    private GameplayLockCoordinator gameplayLocks;
+    private GameplayLockLease defeatLock;
 
     public bool IsFailed { get; private set; }
     public bool IsRestarting { get; private set; }
@@ -25,6 +27,7 @@ public sealed class PlayerFailureFlowController : MonoBehaviour
         health = GetComponent<Health>();
         player = GetComponent<PlayerController>();
         combat = GetComponent<PlayerCombatController>();
+        gameplayLocks = GetComponent<GameplayLockCoordinator>();
         profile = Resources.Load<PlayerHudVisualProfile>(
             "PlayerHudVisualProfile");
         health.Died += HandleDeath;
@@ -48,6 +51,8 @@ public sealed class PlayerFailureFlowController : MonoBehaviour
         {
             health.Died -= HandleDeath;
         }
+
+        defeatLock?.Dispose();
     }
 
     public bool RestartLevel()
@@ -58,6 +63,7 @@ public sealed class PlayerFailureFlowController : MonoBehaviour
         }
 
         IsRestarting = true;
+        gameplayLocks?.ResetForSceneTransition();
         Time.timeScale = 1f;
         Scene activeScene = SceneManager.GetActiveScene();
         SceneManager.LoadScene(activeScene.name);
@@ -77,11 +83,18 @@ public sealed class PlayerFailureFlowController : MonoBehaviour
         }
 
         IsFailed = true;
-        player.SetGameplayInputEnabled(false);
-        combat.SetGameplayInputEnabled(false);
-        Time.timeScale = 0f;
-        Cursor.lockState = CursorLockMode.None;
-        Cursor.visible = true;
+        defeatLock ??= gameplayLocks != null
+            ? gameplayLocks.Acquire(GameplayLockReason.Defeat)
+            : null;
+
+        if (gameplayLocks == null)
+        {
+            player.SetGameplayInputEnabled(false);
+            combat.SetGameplayInputEnabled(false);
+            Time.timeScale = 0f;
+            Cursor.lockState = CursorLockMode.None;
+            Cursor.visible = true;
+        }
     }
 
     private void OnGUI()

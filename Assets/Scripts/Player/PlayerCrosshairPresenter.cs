@@ -1,3 +1,4 @@
+using System;
 using UnityEngine;
 
 public class PlayerCrosshairPresenter : MonoBehaviour
@@ -35,15 +36,22 @@ public class PlayerCrosshairPresenter : MonoBehaviour
     private float fireBloom;
     private float hitFeedbackRemaining;
 
+    public event Action ViewChanged;
+
+    public bool LegacyOnGuiEnabled { get; private set; } = true;
+
     public float CurrentGap { get; private set; }
     public HitFeedbackKind CurrentHitFeedback { get; private set; }
     public int HitFeedbackCount { get; private set; }
+    public float AimBlend => aimBlend;
+    public bool IsVisible => isVisible;
 
     public void SetState(float blend, bool visible)
     {
         aimBlend = Mathf.Clamp01(blend);
         isVisible = visible;
         RecalculateGap();
+        ViewChanged?.Invoke();
     }
 
     public void SetMotionState(float moveAmount, bool isSprinting)
@@ -73,6 +81,12 @@ public class PlayerCrosshairPresenter : MonoBehaviour
         hitFeedbackRemaining = kind == HitFeedbackKind.Kill
             ? killMarkerDuration
             : hitMarkerDuration;
+        ViewChanged?.Invoke();
+    }
+
+    public void SetLegacyPresentation(bool enabled)
+    {
+        LegacyOnGuiEnabled = enabled;
     }
 
     private void Update()
@@ -85,7 +99,12 @@ public class PlayerCrosshairPresenter : MonoBehaviour
 
         if (hitFeedbackRemaining <= 0f)
         {
-            CurrentHitFeedback = HitFeedbackKind.None;
+            if (CurrentHitFeedback != HitFeedbackKind.None)
+            {
+                CurrentHitFeedback = HitFeedbackKind.None;
+                ViewChanged?.Invoke();
+            }
+
             return;
         }
 
@@ -94,7 +113,9 @@ public class PlayerCrosshairPresenter : MonoBehaviour
 
     private void OnGUI()
     {
-        if (!isVisible || Event.current.type != EventType.Repaint)
+        if (!LegacyOnGuiEnabled ||
+            !isVisible ||
+            Event.current.type != EventType.Repaint)
         {
             return;
         }
@@ -222,9 +243,17 @@ public class PlayerCrosshairPresenter : MonoBehaviour
     private void RecalculateGap()
     {
         float easedBlend = Mathf.SmoothStep(0f, 1f, aimBlend);
-        CurrentGap = Mathf.Lerp(hipGap, adsGap, easedBlend) +
+        float nextGap = Mathf.Lerp(hipGap, adsGap, easedBlend) +
             movementGapBonus * movementAmount +
             (sprinting ? sprintGapBonus : 0f) +
             fireBloom;
+
+        if (Mathf.Approximately(CurrentGap, nextGap))
+        {
+            return;
+        }
+
+        CurrentGap = nextGap;
+        ViewChanged?.Invoke();
     }
 }

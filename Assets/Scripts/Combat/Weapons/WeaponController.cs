@@ -416,7 +416,8 @@ public class WeaponController : MonoBehaviour
             hit.normal,
             SurfaceResolver.Resolve(hit.collider),
             damageResult,
-            damageTarget);
+            damageTarget,
+            hit.collider.gameObject);
     }
 
     private bool TryGetFirstValidHit(

@@ -39,6 +39,25 @@ public readonly struct ShotResult
         SurfaceType surface,
         DamageResult damage,
         GameObject damageTarget)
+        : this(
+            didHit,
+            point,
+            normal,
+            surface,
+            damage,
+            damageTarget,
+            damageTarget)
+    {
+    }
+
+    public ShotResult(
+        bool didHit,
+        Vector3 point,
+        Vector3 normal,
+        SurfaceType surface,
+        DamageResult damage,
+        GameObject damageTarget,
+        GameObject hitObject)
     {
         DidHit = didHit;
         Point = point;
@@ -46,6 +65,7 @@ public readonly struct ShotResult
         Surface = surface;
         Damage = damage;
         DamageTarget = damageTarget;
+        HitObject = hitObject;
     }
 
     public bool DidHit { get; }
@@ -54,6 +74,7 @@ public readonly struct ShotResult
     public SurfaceType Surface { get; }
     public DamageResult Damage { get; }
     public GameObject DamageTarget { get; }
+    public GameObject HitObject { get; }
 
     public HitFeedbackKind FeedbackKind
     {

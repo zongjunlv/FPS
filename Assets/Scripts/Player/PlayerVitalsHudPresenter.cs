@@ -1,3 +1,4 @@
+using System;
 using UnityEngine;
 
 public sealed class PlayerVitalsHudPresenter : MonoBehaviour
@@ -8,6 +9,10 @@ public sealed class PlayerVitalsHudPresenter : MonoBehaviour
     private GUIStyle valueStyle;
     private float trailingHealth = 1f;
     private float trailingArmor = 1f;
+
+    public event Action ViewChanged;
+
+    public bool LegacyOnGuiEnabled { get; private set; } = true;
 
     public float DisplayedHealth =>
         health != null ? health.CurrentHealth : 0f;
@@ -21,6 +26,8 @@ public sealed class PlayerVitalsHudPresenter : MonoBehaviour
         health != null && health.MaxArmor > 0f
             ? health.CurrentArmor / health.MaxArmor
             : 0f;
+    public float TrailingHealthNormalized => trailingHealth;
+    public float TrailingArmorNormalized => trailingArmor;
 
     public void Bind(Health target)
     {
@@ -39,6 +46,13 @@ public sealed class PlayerVitalsHudPresenter : MonoBehaviour
         {
             health.VitalsChanged += HandleVitalsChanged;
         }
+
+        ViewChanged?.Invoke();
+    }
+
+    public void SetLegacyPresentation(bool enabled)
+    {
+        LegacyOnGuiEnabled = enabled;
     }
 
     private void OnDestroy()
@@ -51,6 +65,8 @@ public sealed class PlayerVitalsHudPresenter : MonoBehaviour
 
     private void Update()
     {
+        float previousHealth = trailingHealth;
+        float previousArmor = trailingArmor;
         trailingHealth = Mathf.MoveTowards(
             trailingHealth,
             HealthNormalized,
@@ -59,6 +75,12 @@ public sealed class PlayerVitalsHudPresenter : MonoBehaviour
             trailingArmor,
             ArmorNormalized,
             Time.unscaledDeltaTime * 0.75f);
+
+        if (!Mathf.Approximately(previousHealth, trailingHealth) ||
+            !Mathf.Approximately(previousArmor, trailingArmor))
+        {
+            ViewChanged?.Invoke();
+        }
     }
 
     private void HandleVitalsChanged()
@@ -69,11 +91,12 @@ public sealed class PlayerVitalsHudPresenter : MonoBehaviour
         trailingArmor = Mathf.Max(
             trailingArmor,
             ArmorNormalized);
+        ViewChanged?.Invoke();
     }
 
     private void OnGUI()
     {
-        if (health == null)
+        if (!LegacyOnGuiEnabled || health == null)
         {
             return;
         }
