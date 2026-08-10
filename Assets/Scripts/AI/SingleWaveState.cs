@@ -1,6 +1,14 @@
 using System;
 using System.Collections.Generic;
 
+public enum WavePresentationCue
+{
+    None,
+    WaveStarted,
+    WaveCleared,
+    RunCompleted
+}
+
 public readonly struct WaveProgressSnapshot
 {
     public WaveProgressSnapshot(
@@ -8,19 +16,54 @@ public readonly struct WaveProgressSnapshot
         int spawnedCount,
         int aliveCount,
         int settledCount)
+        : this(
+            1,
+            1,
+            WaveRunPhase.Spawning,
+            totalCount,
+            spawnedCount,
+            aliveCount,
+            settledCount,
+            0f,
+            WavePresentationCue.None,
+            0)
     {
+    }
+
+    public WaveProgressSnapshot(
+        int currentWave,
+        int totalWaves,
+        WaveRunPhase phase,
+        int totalCount,
+        int spawnedCount,
+        int aliveCount,
+        int settledCount,
+        float intermissionRemaining,
+        WavePresentationCue presentationCue,
+        int presentationWave)
+    {
+        CurrentWave = Math.Max(0, currentWave);
+        TotalWaves = Math.Max(0, totalWaves);
+        Phase = phase;
         TotalCount = Math.Max(0, totalCount);
         SpawnedCount = Math.Max(0, spawnedCount);
         AliveCount = Math.Max(0, aliveCount);
         SettledCount = Math.Max(0, settledCount);
+        IntermissionRemaining = Math.Max(0f, intermissionRemaining);
+        PresentationCue = presentationCue;
+        PresentationWave = Math.Max(0, presentationWave);
     }
 
-    public int CurrentWave => 1;
-    public int TotalWaves => 1;
+    public int CurrentWave { get; }
+    public int TotalWaves { get; }
+    public WaveRunPhase Phase { get; }
     public int TotalCount { get; }
     public int SpawnedCount { get; }
     public int AliveCount { get; }
     public int SettledCount { get; }
+    public float IntermissionRemaining { get; }
+    public WavePresentationCue PresentationCue { get; }
+    public int PresentationWave { get; }
     public int RemainingCount => Math.Max(0, TotalCount - SettledCount);
 }
 

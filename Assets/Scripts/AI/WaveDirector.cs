@@ -2,74 +2,124 @@ using System;
 using System.Collections.Generic;
 using UnityEngine;
 
+public enum WaveStopReason
+{
+    None,
+    PlayerDied,
+    Reconfigured,
+    Disabled,
+    Destroyed
+}
+
 public sealed class WaveDirector : MonoBehaviour, IWaveProgressSource
 {
+    private const float CueDuration = 1.6f;
+
     private readonly Dictionary<int, EnemySpawnHandle> activeEnemies = new();
     private readonly List<Vector3> occupiedPositions = new();
+    private readonly List<WaveStageDefinition> stages = new();
+    private readonly List<int> completedWaveSpawnCounts = new();
+    private readonly List<int> peakAliveByWave = new();
 
-    private WaveDefinition definition;
     private IEnemyFactory enemyFactory;
     private IEnemySpawnPointResolver spawnPointResolver;
     private Transform player;
-    private SingleWaveState state;
+    private Health playerHealth;
+    private MultiWaveFlowState flow;
     private float spawnCooldown;
+    private float cueRemaining;
     private int nextSpawnId = 1;
+    private int lastPublishedCountdown = -1;
     private bool configured;
+    private bool destroying;
+    private WavePresentationCue presentationCue;
+    private int presentationWave;
 
     public static WaveDirector Active { get; private set; }
 
     public event Action<WaveProgressSnapshot> ProgressChanged;
+    public event Action<int> WaveStarted;
+    public event Action<int> WaveEnded;
     public event Action WaveCompleted;
 
-    public WaveProgressSnapshot CurrentProgress =>
-        state != null
-            ? state.Progress
-            : new WaveProgressSnapshot(0, 0, 0, 0);
-    public bool IsRunning { get; private set; }
-    public bool IsCompleted => state != null && state.IsComplete;
+    public WaveProgressSnapshot CurrentProgress => CreateProgress();
+    public WaveRunPhase Phase => flow != null
+        ? flow.Phase
+        : WaveRunPhase.Idle;
+    public bool IsRunning => flow != null && flow.IsRunning;
+    public bool IsCompleted => flow != null && flow.IsCompleted;
     public int PeakAliveCount { get; private set; }
     public int SpawnAttemptCount { get; private set; }
     public int CompletionEventCount { get; private set; }
+    public int WaveStartedEventCount { get; private set; }
+    public int WaveEndedEventCount { get; private set; }
+    public int CompletedWaveCount => completedWaveSpawnCounts.Count;
     public float MinimumSpawnSafetyDistanceObserved { get; private set; }
     public float MinimumSpawnEnemySpacingObserved { get; private set; }
+    public WaveStopReason StopReason { get; private set; }
     public IReadOnlyDictionary<int, EnemySpawnHandle> ActiveEnemies =>
         activeEnemies;
+    public IReadOnlyList<int> CompletedWaveSpawnCounts =>
+        completedWaveSpawnCounts;
+    public IReadOnlyList<int> PeakAliveByWave => peakAliveByWave;
+
+    private WaveDefinition CurrentDefinition =>
+        flow != null && flow.CurrentWave > 0 && flow.CurrentWave <= stages.Count
+            ? stages[flow.CurrentWave - 1].Wave
+            : null;
 
     private void Awake()
     {
+        if (Active != null && Active != this)
+        {
+            enabled = false;
+            return;
+        }
+
         Active = this;
     }
 
     private void Update()
     {
-        if (!configured || !IsRunning || !state.CanSpawn)
+        if (!configured || flow == null)
+        {
+            return;
+        }
+
+        UpdatePresentationCue();
+
+        if (flow.Phase == WaveRunPhase.Intermission)
+        {
+            UpdateIntermission();
+            return;
+        }
+
+        if (!flow.CanSpawn)
         {
             return;
         }
 
         spawnCooldown -= Time.deltaTime;
 
-        if (spawnCooldown > 0f)
+        if (spawnCooldown <= 0f)
         {
-            return;
+            TrySpawnNext();
         }
+    }
 
-        TrySpawnNext();
+    private void OnDisable()
+    {
+        if (!destroying && configured && IsRunning)
+        {
+            StopRun(WaveStopReason.Disabled);
+        }
     }
 
     private void OnDestroy()
     {
-        if (state != null)
-        {
-            state.Completed -= HandleCompleted;
-        }
-
-        foreach (EnemySpawnHandle handle in activeEnemies.Values)
-        {
-            handle.Lifecycle?.Disarm();
-        }
-
-        activeEnemies.Clear();
+        destroying = true;
+        StopRunInternal(WaveStopReason.Destroyed, false);
+        UnbindPlayerHealth();
 
         if (Active == this)
         {
@@ -88,40 +138,188 @@ public sealed class WaveDirector : MonoBehaviour, IWaveProgressSource
             throw new ArgumentNullException(nameof(waveDefinition));
         }
 
-        definition = waveDefinition;
+        ConfigureCore(
+            new[] { new WaveStageDefinition(waveDefinition, 0f) },
+            factory,
+            resolver,
+            playerTarget);
+    }
+
+    public void Configure(
+        WaveSequenceDefinition sequence,
+        IEnemyFactory factory,
+        IEnemySpawnPointResolver resolver,
+        Transform playerTarget)
+    {
+        if (sequence == null || sequence.WaveCount == 0)
+        {
+            throw new ArgumentException(
+                "A configured wave sequence is required.",
+                nameof(sequence));
+        }
+
+        ConfigureCore(sequence.Stages, factory, resolver, playerTarget);
+    }
+
+    public bool StartRun()
+    {
+        if (!configured || flow == null || !flow.StartRun())
+        {
+            return false;
+        }
+
+        StopReason = WaveStopReason.None;
+        BeginCurrentWavePresentation();
+        return true;
+    }
+
+    public bool StopRun(WaveStopReason reason)
+    {
+        return StopRunInternal(reason, true);
+    }
+
+    private void ConfigureCore(
+        IReadOnlyList<WaveStageDefinition> configuredStages,
+        IEnemyFactory factory,
+        IEnemySpawnPointResolver resolver,
+        Transform playerTarget)
+    {
+        if (configuredStages == null || configuredStages.Count == 0)
+        {
+            throw new ArgumentException(
+                "At least one wave stage is required.",
+                nameof(configuredStages));
+        }
+
+        StopRunInternal(WaveStopReason.Reconfigured, false);
+        UnbindPlayerHealth();
         enemyFactory = factory ??
             throw new ArgumentNullException(nameof(factory));
         spawnPointResolver = resolver ??
             throw new ArgumentNullException(nameof(resolver));
         player = playerTarget ??
             throw new ArgumentNullException(nameof(playerTarget));
+        stages.Clear();
+        var rules = new WaveStageRules[configuredStages.Count];
 
-        if (state != null)
+        for (int index = 0; index < configuredStages.Count; index++)
         {
-            state.Completed -= HandleCompleted;
+            WaveStageDefinition stage = configuredStages[index];
+
+            if (stage?.Wave == null)
+            {
+                throw new ArgumentException(
+                    $"Wave stage {index + 1} has no definition.",
+                    nameof(configuredStages));
+            }
+
+            stages.Add(stage);
+            rules[index] = new WaveStageRules(
+                stage.Wave.TotalEnemyCount,
+                stage.Wave.MaximumAliveCount,
+                stage.IntermissionAfterSeconds);
         }
 
-        state = new SingleWaveState(
-            definition.TotalEnemyCount,
-            definition.MaximumAliveCount);
-        state.Completed += HandleCompleted;
-        activeEnemies.Clear();
+        flow = new MultiWaveFlowState(rules);
+        completedWaveSpawnCounts.Clear();
+        peakAliveByWave.Clear();
+
+        for (int index = 0; index < stages.Count; index++)
+        {
+            peakAliveByWave.Add(0);
+        }
+
         nextSpawnId = 1;
         PeakAliveCount = 0;
         SpawnAttemptCount = 0;
         CompletionEventCount = 0;
+        WaveStartedEventCount = 0;
+        WaveEndedEventCount = 0;
         MinimumSpawnSafetyDistanceObserved = float.PositiveInfinity;
         MinimumSpawnEnemySpacingObserved = float.PositiveInfinity;
         spawnCooldown = 0f;
+        cueRemaining = 0f;
+        presentationCue = WavePresentationCue.None;
+        presentationWave = 0;
+        lastPublishedCountdown = -1;
+        StopReason = WaveStopReason.None;
+        playerHealth = player.GetComponent<Health>();
+
+        if (playerHealth != null)
+        {
+            playerHealth.Died += HandlePlayerDied;
+        }
+
         configured = true;
-        IsRunning = true;
-        PublishProgress();
         UnityEngine.Object.FindAnyObjectByType<UnifiedGameHud>()
             ?.BindWave(this);
+        PublishProgress();
+    }
+
+    private void UpdatePresentationCue()
+    {
+        if (presentationCue == WavePresentationCue.None)
+        {
+            return;
+        }
+
+        cueRemaining -= Time.unscaledDeltaTime;
+
+        if (cueRemaining > 0f)
+        {
+            return;
+        }
+
+        presentationCue = WavePresentationCue.None;
+        presentationWave = 0;
+        cueRemaining = 0f;
+        PublishProgress();
+    }
+
+    private void UpdateIntermission()
+    {
+        int previousCountdown = Mathf.CeilToInt(
+            flow.IntermissionRemaining);
+        bool startedNextWave = flow.Tick(Time.deltaTime);
+        int currentCountdown = Mathf.CeilToInt(
+            flow.IntermissionRemaining);
+
+        if (startedNextWave)
+        {
+            BeginCurrentWavePresentation();
+            return;
+        }
+
+        if (currentCountdown != previousCountdown ||
+            currentCountdown != lastPublishedCountdown)
+        {
+            lastPublishedCountdown = currentCountdown;
+            PublishProgress();
+        }
+    }
+
+    private void BeginCurrentWavePresentation()
+    {
+        WaveDefinition definition = CurrentDefinition;
+        spawnPointResolver.Configure(definition);
+        spawnCooldown = 0f;
+        lastPublishedCountdown = -1;
+        SetCue(WavePresentationCue.WaveStarted, flow.CurrentWave);
+        WaveStartedEventCount++;
+        PublishProgress();
+        WaveStarted?.Invoke(flow.CurrentWave);
     }
 
     private void TrySpawnNext()
     {
+        WaveDefinition definition = CurrentDefinition;
+
+        if (definition == null)
+        {
+            StopRun(WaveStopReason.Disabled);
+            return;
+        }
+
         SpawnAttemptCount++;
         occupiedPositions.Clear();
 
@@ -142,7 +340,7 @@ public sealed class WaveDirector : MonoBehaviour, IWaveProgressSource
             return;
         }
 
-        WaveEnemyEntry entry = definition.GetEntry(state.SpawnedCount);
+        WaveEnemyEntry entry = definition.GetEntry(flow.SpawnedCount);
         int spawnId = nextSpawnId;
         Vector3 facing = player.position - spawnPoint;
         facing.y = 0f;
@@ -165,7 +363,7 @@ public sealed class WaveDirector : MonoBehaviour, IWaveProgressSource
             return;
         }
 
-        if (!state.TryRegisterSpawn(spawnId))
+        if (!flow.TryRegisterSpawn(spawnId))
         {
             enemyFactory.Release(handle);
             spawnCooldown = definition.RetryInterval;
@@ -175,7 +373,11 @@ public sealed class WaveDirector : MonoBehaviour, IWaveProgressSource
         activeEnemies.Add(spawnId, handle);
         RecordSpawnClearances(spawnPoint);
         nextSpawnId++;
-        PeakAliveCount = Mathf.Max(PeakAliveCount, state.AliveCount);
+        PeakAliveCount = Mathf.Max(PeakAliveCount, flow.AliveCount);
+        int waveIndex = flow.CurrentWave - 1;
+        peakAliveByWave[waveIndex] = Mathf.Max(
+            peakAliveByWave[waveIndex],
+            flow.AliveCount);
         spawnCooldown = definition.SpawnInterval;
         PublishProgress();
     }
@@ -202,31 +404,136 @@ public sealed class WaveDirector : MonoBehaviour, IWaveProgressSource
         EnemySpawnHandle handle,
         EnemyExitReason reason)
     {
-        if (state == null || !state.TrySettle(handle.SpawnId))
+        if (flow == null || !flow.IsRunning)
         {
             return;
         }
 
+        int endingWave = flow.CurrentWave;
+
+        if (!flow.TrySettle(handle.SpawnId))
+        {
+            return;
+        }
+
+        WaveRunPhase phaseAfterSettle = flow.Phase;
         activeEnemies.Remove(handle.SpawnId);
         enemyFactory.Release(handle);
-        PublishProgress();
-        spawnCooldown = Mathf.Min(spawnCooldown, definition.SpawnInterval);
-    }
 
-    private void HandleCompleted()
-    {
-        if (!IsRunning)
+        if (phaseAfterSettle == WaveRunPhase.Intermission ||
+            phaseAfterSettle == WaveRunPhase.Completed ||
+            (phaseAfterSettle == WaveRunPhase.Spawning &&
+             endingWave != flow.CurrentWave))
         {
+            completedWaveSpawnCounts.Add(
+                stages[endingWave - 1].Wave.TotalEnemyCount);
+            WaveEndedEventCount++;
+            SetCue(
+                phaseAfterSettle == WaveRunPhase.Completed
+                    ? WavePresentationCue.RunCompleted
+                    : WavePresentationCue.WaveCleared,
+                endingWave);
+            PublishProgress();
+            WaveEnded?.Invoke(endingWave);
+
+            if (phaseAfterSettle == WaveRunPhase.Completed)
+            {
+                CompletionEventCount++;
+                WaveCompleted?.Invoke();
+                return;
+            }
+
+            if (phaseAfterSettle == WaveRunPhase.Spawning)
+            {
+                BeginCurrentWavePresentation();
+            }
+
             return;
         }
 
-        IsRunning = false;
-        CompletionEventCount++;
-        WaveCompleted?.Invoke();
+        PublishProgress();
+        spawnCooldown = Mathf.Min(
+            spawnCooldown,
+            CurrentDefinition.SpawnInterval);
+    }
+
+    private void HandlePlayerDied()
+    {
+        StopRun(WaveStopReason.PlayerDied);
+    }
+
+    private bool StopRunInternal(
+        WaveStopReason reason,
+        bool publish)
+    {
+        bool stopped = flow != null && flow.StopRun();
+
+        if (!stopped && activeEnemies.Count == 0)
+        {
+            return false;
+        }
+
+        var handles = new List<EnemySpawnHandle>(activeEnemies.Values);
+
+        foreach (EnemySpawnHandle handle in handles)
+        {
+            handle.Lifecycle?.Disarm();
+            enemyFactory?.Release(handle);
+        }
+
+        activeEnemies.Clear();
+        spawnCooldown = 0f;
+        cueRemaining = 0f;
+        presentationCue = WavePresentationCue.None;
+        presentationWave = 0;
+        StopReason = reason;
+
+        if (publish)
+        {
+            PublishProgress();
+        }
+
+        return true;
+    }
+
+    private void UnbindPlayerHealth()
+    {
+        if (playerHealth != null)
+        {
+            playerHealth.Died -= HandlePlayerDied;
+            playerHealth = null;
+        }
+    }
+
+    private void SetCue(WavePresentationCue cue, int waveNumber)
+    {
+        presentationCue = cue;
+        presentationWave = waveNumber;
+        cueRemaining = CueDuration;
+    }
+
+    private WaveProgressSnapshot CreateProgress()
+    {
+        if (flow == null)
+        {
+            return new WaveProgressSnapshot(0, 0, 0, 0);
+        }
+
+        return new WaveProgressSnapshot(
+            flow.CurrentWave,
+            flow.TotalWaves,
+            flow.Phase,
+            flow.TotalEnemyCount,
+            flow.SpawnedCount,
+            flow.AliveCount,
+            flow.SettledCount,
+            flow.IntermissionRemaining,
+            presentationCue,
+            presentationWave);
     }
 
     private void PublishProgress()
     {
-        ProgressChanged?.Invoke(CurrentProgress);
+        ProgressChanged?.Invoke(CreateProgress());
     }
 }

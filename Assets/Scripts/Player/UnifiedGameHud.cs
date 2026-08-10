@@ -45,6 +45,9 @@ public sealed class UnifiedGameHud : MonoBehaviour
     private TMP_Text waveTitleText;
     private TMP_Text waveSpawnedText;
     private TMP_Text waveRemainingText;
+    private TMP_Text wavePhaseText;
+    private TMP_Text waveCountdownText;
+    private TMP_Text waveCueText;
 
     public Canvas RootCanvas { get; private set; }
     public RectTransform SafeArea { get; private set; }
@@ -68,6 +71,16 @@ public sealed class UnifiedGameHud : MonoBehaviour
         waveSpawnedText != null ? waveSpawnedText.text : string.Empty;
     public string RemainingEnemiesText =>
         waveRemainingText != null ? waveRemainingText.text : string.Empty;
+    public string WavePhaseText =>
+        wavePhaseText != null ? wavePhaseText.text : string.Empty;
+    public string WaveCountdownText =>
+        waveCountdownText != null ? waveCountdownText.text : string.Empty;
+    public string WaveCueText =>
+        waveCueText != null ? waveCueText.text : string.Empty;
+    public bool IsWaveCountdownVisible =>
+        waveCountdownText != null && waveCountdownText.gameObject.activeSelf;
+    public bool IsWaveCueVisible =>
+        waveCueText != null && waveCueText.gameObject.activeSelf;
     public bool IsWaveBound => waveSource != null;
     public bool LegacyPresentationsDisabled =>
         ammoPresenter != null && !ammoPresenter.LegacyOnGuiEnabled &&
@@ -158,6 +171,9 @@ public sealed class UnifiedGameHud : MonoBehaviour
         }
 
         waveSource = null;
+        waveHudRoot?.gameObject.SetActive(false);
+        waveCountdownText?.gameObject.SetActive(false);
+        waveCueText?.gameObject.SetActive(false);
     }
 
     private void Unbind()
@@ -201,12 +217,45 @@ public sealed class UnifiedGameHud : MonoBehaviour
 
     private void RefreshWave(WaveProgressSnapshot progress)
     {
-        waveTitleText.text =
-            $"WAVE {progress.CurrentWave}/{progress.TotalWaves}";
+        waveTitleText.text = progress.CurrentWave > 0
+            ? $"WAVE {progress.CurrentWave}/{progress.TotalWaves}"
+            : $"WAVE READY  ·  {progress.TotalWaves}";
         waveSpawnedText.text =
             $"SPAWNED {progress.SpawnedCount}/{progress.TotalCount}";
         waveRemainingText.text =
             $"REMAINING {progress.RemainingCount}";
+        wavePhaseText.text = progress.Phase switch
+        {
+            WaveRunPhase.Idle => "READY",
+            WaveRunPhase.Spawning => "SPAWNING",
+            WaveRunPhase.Fighting => "FIGHTING",
+            WaveRunPhase.Intermission => "INTERMISSION",
+            WaveRunPhase.Completed => "COMPLETED",
+            WaveRunPhase.Stopped => "STOPPED",
+            _ => string.Empty
+        };
+        bool showCountdown =
+            progress.Phase == WaveRunPhase.Intermission;
+        waveCountdownText.gameObject.SetActive(showCountdown);
+        waveCountdownText.text = showCountdown
+            ? $"NEXT WAVE  {Mathf.CeilToInt(progress.IntermissionRemaining)}"
+            : string.Empty;
+        bool showCue =
+            progress.PresentationCue != WavePresentationCue.None;
+        waveCueText.gameObject.SetActive(showCue);
+        int cueWave = progress.PresentationWave > 0
+            ? progress.PresentationWave
+            : progress.CurrentWave;
+        waveCueText.text = progress.PresentationCue switch
+        {
+            WavePresentationCue.WaveStarted =>
+                $"WAVE {cueWave} START",
+            WavePresentationCue.WaveCleared =>
+                $"WAVE {cueWave} CLEARED",
+            WavePresentationCue.RunCompleted =>
+                "ALL WAVES CLEARED",
+            _ => string.Empty
+        };
         WaveRefreshCount++;
     }
 
@@ -373,7 +422,7 @@ public sealed class UnifiedGameHud : MonoBehaviour
             new Vector2(0.5f, 1f),
             new Vector2(0.5f, 1f),
             new Vector2(0.5f, 1f),
-            new Vector2(332f, 76f),
+            new Vector2(360f, 106f),
             new Vector2(0f, -24f));
         Image accentStrip = CreateImage(
             "WaveAccent", waveHudRoot, accent);
@@ -386,20 +435,46 @@ public sealed class UnifiedGameHud : MonoBehaviour
         waveTitleText = CreateText(
             "WaveTitle", waveHudRoot, 20f,
             TextAlignmentOptions.Center,
-            new Vector2(16f, 41f),
-            new Vector2(300f, 28f));
+            new Vector2(16f, 70f),
+            new Vector2(328f, 28f));
         waveTitleText.color = accent;
         waveTitleText.fontStyle = FontStyles.Bold;
         waveSpawnedText = CreateText(
             "WaveSpawned", waveHudRoot, 13f,
             TextAlignmentOptions.MidlineLeft,
-            new Vector2(18f, 12f),
-            new Vector2(160f, 24f));
+            new Vector2(18f, 40f),
+            new Vector2(174f, 24f));
         waveRemainingText = CreateText(
             "WaveRemaining", waveHudRoot, 13f,
             TextAlignmentOptions.MidlineRight,
-            new Vector2(172f, 12f),
-            new Vector2(142f, 24f));
+            new Vector2(190f, 40f),
+            new Vector2(152f, 24f));
+        wavePhaseText = CreateText(
+            "WavePhase", waveHudRoot, 11f,
+            TextAlignmentOptions.MidlineLeft,
+            new Vector2(18f, 10f),
+            new Vector2(140f, 22f));
+        wavePhaseText.color = new Color(0.74f, 0.8f, 0.82f, 1f);
+        waveCountdownText = CreateText(
+            "WaveCountdown", waveHudRoot, 13f,
+            TextAlignmentOptions.MidlineRight,
+            new Vector2(158f, 10f),
+            new Vector2(184f, 22f));
+        waveCountdownText.color = accent;
+        waveCountdownText.gameObject.SetActive(false);
+        waveCueText = CreateText(
+            "WaveCue", OverlayLayer, 28f,
+            TextAlignmentOptions.Center,
+            Vector2.zero,
+            new Vector2(520f, 44f));
+        RectTransform cueRect = waveCueText.rectTransform;
+        cueRect.anchorMin = new Vector2(0.5f, 1f);
+        cueRect.anchorMax = new Vector2(0.5f, 1f);
+        cueRect.pivot = new Vector2(0.5f, 1f);
+        cueRect.anchoredPosition = new Vector2(0f, -145f);
+        waveCueText.color = accent;
+        waveCueText.fontStyle = FontStyles.Bold;
+        waveCueText.gameObject.SetActive(false);
         waveHudRoot.gameObject.SetActive(false);
     }
 

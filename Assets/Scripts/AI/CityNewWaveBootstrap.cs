@@ -1,4 +1,5 @@
 using System.Collections;
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 
@@ -10,7 +11,8 @@ public sealed class CityNewWaveBootstrap : MonoBehaviour
     private SceneEnemyFactory factory;
     private NavMeshEnemySpawnPointResolver resolver;
     private WaveDirector director;
-    private WaveDefinition runtimeDefinition;
+    private readonly List<WaveDefinition> runtimeDefinitions = new();
+    private WaveSequenceDefinition runtimeSequence;
 
     public static bool IsWaveModeActive => instance != null;
     public WaveDirector Director => director;
@@ -60,33 +62,78 @@ public sealed class CityNewWaveBootstrap : MonoBehaviour
             yield break;
         }
 
-        runtimeDefinition = ScriptableObject.CreateInstance<WaveDefinition>();
-        runtimeDefinition.name = "CityNew Single Wave Runtime Definition";
-        runtimeDefinition.Configure(
+        WaveDefinition waveOne = CreateWave(
+            "CityNew Wave 1",
+            4,
+            3,
+            0.8f);
+        WaveDefinition waveTwo = CreateWave(
+            "CityNew Wave 2",
             6,
             3,
-            0.75f,
-            new[] { new WaveEnemyEntry(sceneTemplate) });
+            0.65f);
+        WaveDefinition waveThree = CreateWave(
+            "CityNew Wave 3",
+            8,
+            4,
+            0.5f);
+        runtimeSequence =
+            ScriptableObject.CreateInstance<WaveSequenceDefinition>();
+        runtimeSequence.name = "CityNew Three Wave Runtime Sequence";
+        runtimeSequence.Configure(new[]
+        {
+            new WaveStageDefinition(waveOne, 3f),
+            new WaveStageDefinition(waveTwo, 3f),
+            new WaveStageDefinition(waveThree, 0f)
+        });
         factory.Configure(sceneTemplate);
-        resolver.Configure(runtimeDefinition);
         director.Configure(
-            runtimeDefinition,
+            runtimeSequence,
             factory,
             resolver,
             playerObject.transform);
+        director.StartRun();
     }
 
     private void OnDestroy()
     {
-        if (runtimeDefinition != null)
+        foreach (WaveDefinition definition in runtimeDefinitions)
         {
-            Destroy(runtimeDefinition);
+            if (definition != null)
+            {
+                Destroy(definition);
+            }
+        }
+
+        runtimeDefinitions.Clear();
+
+        if (runtimeSequence != null)
+        {
+            Destroy(runtimeSequence);
         }
 
         if (instance == this)
         {
             instance = null;
         }
+    }
+
+    private WaveDefinition CreateWave(
+        string definitionName,
+        int totalCount,
+        int maximumAlive,
+        float spawnInterval)
+    {
+        WaveDefinition definition =
+            ScriptableObject.CreateInstance<WaveDefinition>();
+        definition.name = definitionName;
+        definition.Configure(
+            totalCount,
+            maximumAlive,
+            spawnInterval,
+            new[] { new WaveEnemyEntry(sceneTemplate) });
+        runtimeDefinitions.Add(definition);
+        return definition;
     }
 
     private static EnemyController FindSceneTemplate()

@@ -4,6 +4,8 @@ using UnityEngine.AI;
 
 public interface IEnemySpawnPointResolver
 {
+    void Configure(WaveDefinition definition);
+
     bool TryResolve(
         Transform player,
         IReadOnlyList<Vector3> occupiedPositions,

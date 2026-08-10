@@ -130,7 +130,7 @@ namespace FPS.Tests.PlayMode
         }
 
         [UnityTest]
-        public IEnumerator CityNewRunsOneExactFactoryWave()
+        public IEnumerator CityNewRunsOneExactFactoryWaveStage()
         {
             if (SystemInfo.graphicsDeviceType == GraphicsDeviceType.Null)
             {
@@ -173,7 +173,7 @@ namespace FPS.Tests.PlayMode
             }
 
             Assert.That(director, Is.Not.Null,
-                "CityNew 必须启用单波 WaveDirector。");
+                "CityNew 必须启用 WaveDirector。");
             Assert.That(
                 GetProgressCount(
                     directorType,
@@ -218,21 +218,21 @@ namespace FPS.Tests.PlayMode
                 Is.True);
             Assert.That(
                 hudType.GetProperty("WaveText").GetValue(hud),
-                Is.EqualTo("WAVE 1/1"));
+                Is.EqualTo("WAVE 1/3"));
             Assert.That(
                 hudType.GetProperty("SpawnedText").GetValue(hud),
-                Is.EqualTo("SPAWNED 3/6"));
+                Is.EqualTo("SPAWNED 3/4"));
             Assert.That(
                 hudType.GetProperty("RemainingEnemiesText")
                     .GetValue(hud),
-                Is.EqualTo("REMAINING 6"));
+                Is.EqualTo("REMAINING 4"));
 
             deadline = Time.realtimeSinceStartup + 30f;
             Type damageInfoType = Type.GetType(
                 "DamageInfo, Assembly-CSharp");
 
-            while (!(bool)directorType.GetProperty("IsCompleted")
-                       .GetValue(director) &&
+            while ((int)directorType.GetProperty("CompletedWaveCount")
+                       .GetValue(director) < 1 &&
                    Time.realtimeSinceStartup < deadline)
             {
                 foreach (Component enemy in
@@ -265,15 +265,16 @@ namespace FPS.Tests.PlayMode
             }
 
             Assert.That(
-                directorType.GetProperty("IsCompleted").GetValue(director),
-                Is.True,
-                "单波必须在超时前完整生成并结算。");
+                directorType.GetProperty("CompletedWaveCount")
+                    .GetValue(director),
+                Is.EqualTo(1),
+                "第一波必须在超时前完整生成并结算。");
             Assert.That(
                 GetProgressCount(
                     directorType,
                     director,
                     "SpawnedCount"),
-                Is.EqualTo(6));
+                Is.EqualTo(4));
             Assert.That(
                 GetProgressCount(
                     directorType,
@@ -289,10 +290,11 @@ namespace FPS.Tests.PlayMode
             Assert.That(
                 directorType.GetProperty("CompletionEventCount")
                     .GetValue(director),
-                Is.EqualTo(1));
+                Is.Zero,
+                "普通波结束不得发布整局完成事件。");
             Assert.That(
                 hudType.GetProperty("SpawnedText").GetValue(hud),
-                Is.EqualTo("SPAWNED 6/6"));
+                Is.EqualTo("SPAWNED 4/4"));
             Assert.That(
                 hudType.GetProperty("RemainingEnemiesText")
                     .GetValue(hud),
