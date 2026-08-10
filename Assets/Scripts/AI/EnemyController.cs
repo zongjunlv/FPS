@@ -9,11 +9,17 @@ public class EnemyController : MonoBehaviour
 
     private Health health;
     private bool deathPresentationTriggered;
+    private bool factoryManaged;
 
     public float AttackDamage =>
         currentEnemy != null
             ? Mathf.Max(1f, currentEnemy.Attack)
             : 20f;
+
+    public void SetFactoryManaged(bool managed)
+    {
+        factoryManaged = managed;
+    }
 
     private void Awake()
     {
@@ -83,7 +89,10 @@ public class EnemyController : MonoBehaviour
             controller.Configure();
         }
 
-        Destroy(gameObject);
+        if (!factoryManaged)
+        {
+            Destroy(gameObject);
+        }
     }
 
     private void EnsureHitboxes()

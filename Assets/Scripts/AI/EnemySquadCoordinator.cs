@@ -67,6 +67,12 @@ public sealed class EnemySquadCoordinator : MonoBehaviour
         }
 
         if (SceneManager.GetActiveScene().name == "CityNew" &&
+            GetComponent<CityNewWaveBootstrap>() == null)
+        {
+            gameObject.AddComponent<CityNewWaveBootstrap>();
+        }
+
+        if (SceneManager.GetActiveScene().name == "CityNew" &&
             GetComponent<CityNewEnemySquadBootstrap>() == null)
         {
             gameObject.AddComponent<CityNewEnemySquadBootstrap>();

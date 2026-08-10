@@ -24,6 +24,7 @@ public sealed class CityNewMissionController : MonoBehaviour
     private bool configured;
     private GameplayLockCoordinator gameplayLocks;
     private GameplayLockLease outcomeLock;
+    private WaveDirector waveDirector;
 
     public TerminalInteractable Terminal { get; private set; }
     public Health TargetHealth { get; private set; }
@@ -112,6 +113,53 @@ public sealed class CityNewMissionController : MonoBehaviour
         HandleStateChanged(flow.State);
     }
 
+    public void ConfigureWave(
+        TerminalInteractable terminal,
+        WaveDirector configuredWaveDirector,
+        Vector3 extractionPosition)
+    {
+        Unbind();
+        Terminal = terminal;
+        TargetHealth = null;
+        waveDirector = configuredWaveDirector;
+        statistics.Reset();
+        flow.Configure(1);
+        QuitRequested = false;
+        CreateExtractionZone(extractionPosition);
+
+        if (Terminal != null)
+        {
+            Terminal.Completed += HandleTerminalCompleted;
+
+            if (Terminal.State == TerminalInteractionState.Completed)
+            {
+                flow.CompleteTerminal();
+            }
+        }
+
+        if (waveDirector != null)
+        {
+            waveDirector.WaveCompleted += HandleWaveCompleted;
+
+            if (waveDirector.IsCompleted)
+            {
+                flow.RegisterTargetEliminated();
+            }
+        }
+
+        playerHealth.Damaged += HandlePlayerDamaged;
+        playerHealth.Died += HandlePlayerDied;
+        combat.ShotResolved += HandleShotResolved;
+        flow.StateChanged += HandleStateChanged;
+        failure = GetComponent<PlayerFailureFlowController>();
+        failure?.SetExternalPresentation(true);
+        TerminalMissionHudPresenter legacyHud =
+            GetComponent<TerminalMissionHudPresenter>();
+        legacyHud?.SetVisible(false);
+        configured = true;
+        HandleStateChanged(flow.State);
+    }
+
     public bool TryEnterExtraction(GameObject actor)
     {
         if (!configured ||
@@ -178,6 +226,12 @@ public sealed class CityNewMissionController : MonoBehaviour
             TargetHealth.Died -= HandleTargetEliminated;
         }
 
+        if (waveDirector != null)
+        {
+            waveDirector.WaveCompleted -= HandleWaveCompleted;
+            waveDirector = null;
+        }
+
         if (playerHealth != null)
         {
             playerHealth.Damaged -= HandlePlayerDamaged;
@@ -199,6 +253,11 @@ public sealed class CityNewMissionController : MonoBehaviour
     }
 
     private void HandleTargetEliminated()
+    {
+        flow.RegisterTargetEliminated();
+    }
+
+    private void HandleWaveCompleted()
     {
         flow.RegisterTargetEliminated();
     }

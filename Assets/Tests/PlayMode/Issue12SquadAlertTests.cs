@@ -400,8 +400,9 @@ namespace FPS.Tests.PlayMode
             Type coordinatorType = Type.GetType(
                 "EnemySquadCoordinator, Assembly-CSharp");
             Component[] perceptions = Array.Empty<Component>();
+            float spawnDeadline = Time.realtimeSinceStartup + 15f;
 
-            for (int frame = 0; frame < 240; frame++)
+            while (Time.realtimeSinceStartup < spawnDeadline)
             {
                 perceptions = FindComponents(perceptionType);
 
@@ -423,7 +424,7 @@ namespace FPS.Tests.PlayMode
             Assert.That(
                 perceptions.Length,
                 Is.GreaterThanOrEqualTo(3),
-                "CityNew 应在运行时提供可验证协同的三人敌人小队。");
+                "CityNew 波次应生成可验证协同的三名敌人。");
 
             foreach (Component perception in perceptions)
             {

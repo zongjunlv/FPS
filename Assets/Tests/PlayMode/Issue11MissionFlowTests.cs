@@ -251,21 +251,66 @@ namespace FPS.Tests.PlayMode
                     .ToString(),
                 Is.EqualTo("EliminateTargets"));
 
-            Component targetHealth = (Component)missionType
-                .GetProperty("TargetHealth")
-                .GetValue(mission);
-            object lethalDamage = Activator.CreateInstance(
-                damageInfoType,
-                new object[]
+            Type directorType = Type.GetType(
+                "WaveDirector, Assembly-CSharp");
+            Component director = (Component)UnityEngine.Object
+                .FindAnyObjectByType(directorType);
+            Assert.That(director, Is.Not.Null);
+            float deadline = Time.realtimeSinceStartup + 30f;
+
+            while (!(bool)directorType.GetProperty("IsCompleted")
+                       .GetValue(director) &&
+                   Time.realtimeSinceStartup < deadline)
+            {
+                object activeEnemies = directorType
+                    .GetProperty("ActiveEnemies").GetValue(director);
+                var controllers = new ArrayList();
+
+                foreach (object pair in (IEnumerable)activeEnemies)
                 {
-                    999f,
-                    targetHealth.transform.position,
-                    Vector3.forward,
-                    player
-                });
-            healthType.GetMethod("ApplyDamage")
-                .Invoke(targetHealth, new[] { lethalDamage });
-            yield return null;
+                    object handle = pair.GetType().GetProperty("Value")
+                        .GetValue(pair);
+                    Component controller = (Component)handle.GetType()
+                        .GetProperty("Controller").GetValue(handle);
+
+                    if (controller != null)
+                    {
+                        controllers.Add(controller);
+                    }
+                }
+
+                foreach (Component controller in controllers)
+                {
+                    Component targetHealth =
+                        controller.GetComponent(healthType);
+
+                    if ((bool)healthType.GetProperty("IsDead")
+                        .GetValue(targetHealth))
+                    {
+                        continue;
+                    }
+
+                    object lethalDamage = Activator.CreateInstance(
+                        damageInfoType,
+                        new object[]
+                        {
+                            999f,
+                            targetHealth.transform.position,
+                            Vector3.forward,
+                            player
+                        });
+                    healthType.GetMethod("ApplyDamage")
+                        .Invoke(targetHealth, new[] { lethalDamage });
+                }
+
+                yield return null;
+                yield return null;
+            }
+
+            Assert.That(
+                directorType.GetProperty("IsCompleted").GetValue(director),
+                Is.True,
+                "任务撤离必须等待整波敌人清除完成。");
 
             Assert.That(
                 missionType.GetProperty("State").GetValue(mission)

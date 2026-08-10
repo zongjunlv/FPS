@@ -17,6 +17,7 @@ public sealed class UnifiedGameHud : MonoBehaviour
     private PlayerVitalsHudPresenter vitalsPresenter;
     private PlayerCrosshairPresenter crosshairPresenter;
     private PlayerCombatFeedbackController feedbackPresenter;
+    private IWaveProgressSource waveSource;
 
     private Image healthFill;
     private Image healthTrail;
@@ -40,6 +41,10 @@ public sealed class UnifiedGameHud : MonoBehaviour
     private TMP_Text weaponSlotText;
     private TMP_Text weaponStatusText;
     private TMP_Text hitFeedbackText;
+    private RectTransform waveHudRoot;
+    private TMP_Text waveTitleText;
+    private TMP_Text waveSpawnedText;
+    private TMP_Text waveRemainingText;
 
     public Canvas RootCanvas { get; private set; }
     public RectTransform SafeArea { get; private set; }
@@ -51,11 +56,19 @@ public sealed class UnifiedGameHud : MonoBehaviour
     public int WeaponRefreshCount { get; private set; }
     public int CrosshairRefreshCount { get; private set; }
     public int DamageRefreshCount { get; private set; }
+    public int WaveRefreshCount { get; private set; }
     public string HealthText => healthText != null ? healthText.text : string.Empty;
     public string ArmorText => armorText != null ? armorText.text : string.Empty;
     public string AmmoText => ammoText != null && reserveAmmoText != null
         ? $"{ammoText.text} / {reserveAmmoText.text}"
         : string.Empty;
+    public string WaveText =>
+        waveTitleText != null ? waveTitleText.text : string.Empty;
+    public string SpawnedText =>
+        waveSpawnedText != null ? waveSpawnedText.text : string.Empty;
+    public string RemainingEnemiesText =>
+        waveRemainingText != null ? waveRemainingText.text : string.Empty;
+    public bool IsWaveBound => waveSource != null;
     public bool LegacyPresentationsDisabled =>
         ammoPresenter != null && !ammoPresenter.LegacyOnGuiEnabled &&
         vitalsPresenter != null && !vitalsPresenter.LegacyOnGuiEnabled &&
@@ -75,6 +88,7 @@ public sealed class UnifiedGameHud : MonoBehaviour
 
     private void OnDestroy()
     {
+        UnbindWave();
         Unbind();
     }
 
@@ -113,6 +127,37 @@ public sealed class UnifiedGameHud : MonoBehaviour
         RefreshCrosshair();
         RefreshDamage();
         IsBound = true;
+
+        if (WaveDirector.Active != null)
+        {
+            BindWave(WaveDirector.Active);
+        }
+    }
+
+    public void BindWave(IWaveProgressSource source)
+    {
+        UnbindWave();
+        waveSource = source;
+
+        if (waveSource == null)
+        {
+            waveHudRoot?.gameObject.SetActive(false);
+            return;
+        }
+
+        waveSource.ProgressChanged += RefreshWave;
+        waveHudRoot.gameObject.SetActive(true);
+        RefreshWave(waveSource.CurrentProgress);
+    }
+
+    public void UnbindWave()
+    {
+        if (waveSource != null)
+        {
+            waveSource.ProgressChanged -= RefreshWave;
+        }
+
+        waveSource = null;
     }
 
     private void Unbind()
@@ -152,6 +197,17 @@ public sealed class UnifiedGameHud : MonoBehaviour
     {
         weapon = nextWeapon;
         RefreshWeapon();
+    }
+
+    private void RefreshWave(WaveProgressSnapshot progress)
+    {
+        waveTitleText.text =
+            $"WAVE {progress.CurrentWave}/{progress.TotalWaves}";
+        waveSpawnedText.text =
+            $"SPAWNED {progress.SpawnedCount}/{progress.TotalCount}";
+        waveRemainingText.text =
+            $"REMAINING {progress.RemainingCount}";
+        WaveRefreshCount++;
     }
 
     private void RefreshVitals()
@@ -298,8 +354,53 @@ public sealed class UnifiedGameHud : MonoBehaviour
         Stretch(OverlayLayer);
         BuildVitalsHud();
         BuildWeaponHud();
+        BuildWaveHud();
         BuildCrosshair();
         BuildDamageOverlay();
+    }
+
+    private void BuildWaveHud()
+    {
+        Color panel = profile != null
+            ? profile.PanelColor
+            : new Color(0.02f, 0.03f, 0.04f, 0.82f);
+        panel.a = Mathf.Min(panel.a, 0.72f);
+        Color accent = new Color(0.38f, 0.92f, 0.86f, 1f);
+        waveHudRoot = CreatePanel(
+            "WaveHud",
+            HudLayer,
+            panel,
+            new Vector2(0.5f, 1f),
+            new Vector2(0.5f, 1f),
+            new Vector2(0.5f, 1f),
+            new Vector2(332f, 76f),
+            new Vector2(0f, -24f));
+        Image accentStrip = CreateImage(
+            "WaveAccent", waveHudRoot, accent);
+        RectTransform accentRect = accentStrip.rectTransform;
+        accentRect.anchorMin = new Vector2(0f, 1f);
+        accentRect.anchorMax = new Vector2(1f, 1f);
+        accentRect.pivot = new Vector2(0.5f, 1f);
+        accentRect.anchoredPosition = Vector2.zero;
+        accentRect.sizeDelta = new Vector2(0f, 3f);
+        waveTitleText = CreateText(
+            "WaveTitle", waveHudRoot, 20f,
+            TextAlignmentOptions.Center,
+            new Vector2(16f, 41f),
+            new Vector2(300f, 28f));
+        waveTitleText.color = accent;
+        waveTitleText.fontStyle = FontStyles.Bold;
+        waveSpawnedText = CreateText(
+            "WaveSpawned", waveHudRoot, 13f,
+            TextAlignmentOptions.MidlineLeft,
+            new Vector2(18f, 12f),
+            new Vector2(160f, 24f));
+        waveRemainingText = CreateText(
+            "WaveRemaining", waveHudRoot, 13f,
+            TextAlignmentOptions.MidlineRight,
+            new Vector2(172f, 12f),
+            new Vector2(142f, 24f));
+        waveHudRoot.gameObject.SetActive(false);
     }
 
     private void BuildVitalsHud()

@@ -61,34 +61,6 @@ public sealed class CityNewTerminalMissionBootstrap : MonoBehaviour
     private IEnumerator BootstrapMission()
     {
         yield return null;
-        EnemyController[] enemies =
-            FindObjectsByType<EnemyController>(
-                FindObjectsInactive.Exclude,
-                FindObjectsSortMode.None);
-
-        if (enemies.Length == 0)
-        {
-            yield break;
-        }
-
-        EnemyController targetEnemy = enemies[0];
-
-        foreach (EnemyController enemy in enemies)
-        {
-            if (enemy.name == "SPIDER_BOT")
-            {
-                targetEnemy = enemy;
-                break;
-            }
-        }
-
-        Health targetHealth = targetEnemy.GetComponent<Health>();
-
-        if (targetHealth == null)
-        {
-            yield break;
-        }
-
         Vector3 extractionPosition =
             new Vector3(48.414f, 0.05f, 41.41f);
         GameObject extractionAnchor = GameObject.Find("Point light (1)");
@@ -116,6 +88,43 @@ public sealed class CityNewTerminalMissionBootstrap : MonoBehaviour
         if (mission == null)
         {
             mission = gameObject.AddComponent<CityNewMissionController>();
+        }
+
+        if (WaveDirector.Active != null)
+        {
+            mission.ConfigureWave(
+                Terminal,
+                WaveDirector.Active,
+                extractionPosition);
+            yield break;
+        }
+
+        EnemyController[] enemies =
+            FindObjectsByType<EnemyController>(
+                FindObjectsInactive.Exclude,
+                FindObjectsSortMode.None);
+
+        if (enemies.Length == 0)
+        {
+            yield break;
+        }
+
+        EnemyController targetEnemy = enemies[0];
+
+        foreach (EnemyController enemy in enemies)
+        {
+            if (enemy.name == "SPIDER_BOT")
+            {
+                targetEnemy = enemy;
+                break;
+            }
+        }
+
+        Health targetHealth = targetEnemy.GetComponent<Health>();
+
+        if (targetHealth == null)
+        {
+            yield break;
         }
 
         mission.Configure(Terminal, targetHealth, extractionPosition);

@@ -18,6 +18,11 @@ public sealed class CityNewEnemySquadBootstrap : MonoBehaviour
             yield break;
         }
 
+        if (CityNewWaveBootstrap.IsWaveModeActive)
+        {
+            yield break;
+        }
+
         for (int frame = 0;
              frame < 240 && !RuntimeNavMeshBootstrap.IsSceneReady;
              frame++)
@@ -26,6 +31,11 @@ public sealed class CityNewEnemySquadBootstrap : MonoBehaviour
         }
 
         if (!RuntimeNavMeshBootstrap.IsSceneReady)
+        {
+            yield break;
+        }
+
+        if (CityNewWaveBootstrap.IsWaveModeActive)
         {
             yield break;
         }
