@@ -2,6 +2,12 @@ using System;
 using UnityEngine;
 using UnityEngine.Serialization;
 
+public enum WeaponAmmoType
+{
+    Rifle,
+    Handgun
+}
+
 [CreateAssetMenu(fileName = "Weapon", menuName = "Scriptable Objects/Weapon")]
 public class WeaponDefinition : ScriptableObject
 {
@@ -9,6 +15,8 @@ public class WeaponDefinition : ScriptableObject
     [FormerlySerializedAs("MagazineCapcity")]
     [Min(1)] public int MagazineCapacity = 30;
     [Min(0)] public int InitialReserveAmmo = 120;
+    [Min(0)] public int MaximumReserveAmmo = 240;
+    public WeaponAmmoType AmmoType = WeaponAmmoType.Rifle;
     [Min(0.01f)] public float ReloadDuration = 2.4f;
     [Min(0f)] public float Damage = 10f;
     public AudioClip FireSound;

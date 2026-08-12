@@ -10,6 +10,8 @@ public sealed class WorldItemPickup : MonoBehaviour, IInteractable
 
     public bool IsClaimed { get; private set; }
     public int SettlementCount { get; private set; }
+    public int RemainingQuantity => quantity;
+    public int TotalAccepted { get; private set; }
     public ItemDefinition Definition => definition;
     public InteractionView View => new(
         IsClaimed
@@ -27,6 +29,7 @@ public sealed class WorldItemPickup : MonoBehaviour, IInteractable
         attempted = false;
         IsClaimed = false;
         SettlementCount = 0;
+        TotalAccepted = 0;
     }
 
     public bool TryBegin(GameObject actor)
@@ -52,13 +55,21 @@ public sealed class WorldItemPickup : MonoBehaviour, IInteractable
         attempted = true;
         PlayerInventoryController inventory =
             actor.GetComponent<PlayerInventoryController>();
-        bool added = inventory != null && inventory.TryAdd(definition, quantity);
+        InventoryAddResult result = inventory != null
+            ? inventory.Add(definition, quantity)
+            : new InventoryAddResult(quantity, 0);
+        quantity = result.Remaining;
         activeActor = null;
 
-        if (added)
+        if (result.Accepted > 0)
+        {
+            SettlementCount++;
+            TotalAccepted += result.Accepted;
+        }
+
+        if (quantity <= 0)
         {
             IsClaimed = true;
-            SettlementCount++;
             Collider pickupCollider = GetComponent<Collider>();
 
             if (pickupCollider != null)

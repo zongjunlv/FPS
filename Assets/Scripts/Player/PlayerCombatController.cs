@@ -16,6 +16,11 @@ public class PlayerCombatController : MonoBehaviour
     public event Action<ShotResult> ShotResolved;
     public event Action<WeaponController> EquippedWeaponChanged;
 
+    public WeaponController GetWeapon(int index)
+    {
+        return loadout != null ? loadout.GetWeapon(index) : null;
+    }
+
     private PlayerRecoilController playerRecoil;
     private PlayerController playerController;
     private PlayerAnimatorController playerAnimator;

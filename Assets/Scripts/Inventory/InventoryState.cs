@@ -35,6 +35,20 @@ public readonly struct InventorySlot
     public bool IsEmpty => string.IsNullOrEmpty(StableId) || Quantity <= 0;
 }
 
+public readonly struct InventoryAddResult
+{
+    public InventoryAddResult(int requested, int accepted)
+    {
+        Requested = Math.Max(0, requested);
+        Accepted = Math.Max(0, Math.Min(Requested, accepted));
+    }
+
+    public int Requested { get; }
+    public int Accepted { get; }
+    public int Remaining => Requested - Accepted;
+    public bool Changed => Accepted > 0;
+}
+
 public sealed class InventoryState
 {
     private readonly List<InventorySlot> slots;
@@ -114,7 +128,38 @@ public sealed class InventoryState
             return false;
         }
 
-        int remainingCapacity = 0;
+        int remainingCapacity = GetAvailableCapacity(item, out bool valid);
+        return valid && remainingCapacity >= quantity;
+    }
+
+    public InventoryAddResult Add(
+        InventoryItemSpec item,
+        int quantity = 1)
+    {
+        if (string.IsNullOrWhiteSpace(item.StableId) || quantity <= 0)
+        {
+            return new InventoryAddResult(quantity, 0);
+        }
+
+        int capacity = GetAvailableCapacity(item, out bool valid);
+
+        if (!valid || capacity <= 0)
+        {
+            return new InventoryAddResult(quantity, 0);
+        }
+
+        int accepted = Math.Min(quantity, capacity);
+        ApplyAdd(item, accepted);
+        Changed?.Invoke();
+        return new InventoryAddResult(quantity, accepted);
+    }
+
+    private int GetAvailableCapacity(
+        InventoryItemSpec item,
+        out bool valid)
+    {
+        valid = true;
+        long remainingCapacity = 0;
 
         for (int index = 0; index < slots.Count; index++)
         {
@@ -131,7 +176,8 @@ public sealed class InventoryState
             {
                 if (slot.MaximumStack != item.MaximumStack)
                 {
-                    return false;
+                    valid = false;
+                    return 0;
                 }
 
                 remainingCapacity += Math.Max(
@@ -139,13 +185,10 @@ public sealed class InventoryState
                     item.MaximumStack - slot.Quantity);
             }
 
-            if (remainingCapacity >= quantity)
-            {
-                return true;
-            }
+            remainingCapacity = Math.Min(int.MaxValue, remainingCapacity);
         }
 
-        return false;
+        return (int)remainingCapacity;
     }
 
     public bool TryAdd(InventoryItemSpec item, int quantity = 1)
@@ -155,6 +198,13 @@ public sealed class InventoryState
             return false;
         }
 
+        ApplyAdd(item, quantity);
+        Changed?.Invoke();
+        return true;
+    }
+
+    private void ApplyAdd(InventoryItemSpec item, int quantity)
+    {
         int remaining = quantity;
 
         for (int index = 0; index < slots.Count && remaining > 0; index++)
@@ -194,8 +244,6 @@ public sealed class InventoryState
             remaining -= added;
         }
 
-        Changed?.Invoke();
-        return true;
     }
 
     public bool TryRemove(string stableId, int quantity = 1)

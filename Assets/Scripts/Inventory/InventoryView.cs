@@ -28,6 +28,7 @@ public sealed class InventoryView : MonoBehaviour
     private TMP_Text useButtonText;
     private InventoryState inventory;
     private Func<string, ItemDefinition> resolveDefinition;
+    private Func<int, ItemUseResult> resolveAvailability;
     private Func<int, bool> onUse;
     private Action onClose;
     private int selectedIndex = -1;
@@ -46,6 +47,12 @@ public sealed class InventoryView : MonoBehaviour
         : string.Empty;
     public bool DetailIconVisible =>
         detailIcon != null && detailIcon.gameObject.activeSelf;
+    public string DetailEffect => effectText != null
+        ? effectText.text
+        : string.Empty;
+    public string UseFailureReason { get; private set; } = string.Empty;
+    public bool UseButtonInteractable =>
+        useButton != null && useButton.interactable;
 
     public void Initialize(RectTransform modalLayer)
     {
@@ -93,12 +100,14 @@ public sealed class InventoryView : MonoBehaviour
     public void Show(
         InventoryState source,
         Func<string, ItemDefinition> definitionResolver,
+        Func<int, ItemUseResult> availabilityResolver,
         Func<int, bool> useHandler,
         Action closeHandler)
     {
         Unbind();
         inventory = source;
         resolveDefinition = definitionResolver;
+        resolveAvailability = availabilityResolver;
         onUse = useHandler;
         onClose = closeHandler;
 
@@ -144,6 +153,16 @@ public sealed class InventoryView : MonoBehaviour
         {
             messageText.text = message ?? string.Empty;
         }
+    }
+
+    public void RefreshRuntimeState()
+    {
+        Refresh();
+    }
+
+    public void SelectSlot(int index)
+    {
+        Select(index);
     }
 
     private void OnDestroy()
@@ -298,7 +317,7 @@ public sealed class InventoryView : MonoBehaviour
                 : null;
             slotIcons[index].gameObject.SetActive(definition != null);
             slotIcons[index].sprite = definition != null
-                ? definition.Icon ?? icons.Get(HudIconId.Health)
+                ? ResolveIcon(definition)
                 : null;
             slotCounts[index].text = slot.Quantity > 1
                 ? $"×{slot.Quantity}"
@@ -315,17 +334,26 @@ public sealed class InventoryView : MonoBehaviour
         bool hasItem = item != null;
         detailIcon.gameObject.SetActive(hasItem);
         detailIcon.sprite = hasItem
-            ? item.Icon ?? icons.Get(HudIconId.Health)
+            ? ResolveIcon(item)
             : null;
         itemNameText.text = hasItem ? item.DisplayName : "空物品格";
         itemTypeText.text = hasItem ? "消耗品" : string.Empty;
         descriptionText.text = hasItem ? item.Description : "选择一个物品查看详情。";
         effectText.text = hasItem
-            ? $"恢复 {Mathf.RoundToInt(item.EffectAmount)} 点生命值"
+            ? ItemUsePresentation.GetEffectText(item)
             : string.Empty;
         heldText.text = hasItem ? $"持有数量：{selected.Quantity}" : string.Empty;
-        useButton.interactable = hasItem;
-        useButtonText.text = hasItem ? "使用" : "无法使用";
+        ItemUseResult availability = hasItem && resolveAvailability != null
+            ? resolveAvailability(selectedIndex)
+            : ItemUseResult.Failure(ItemUseFailureReason.InvalidItem);
+        UseFailureReason = hasItem && !availability.Succeeded
+            ? ItemUsePresentation.GetFailureText(availability.FailureReason)
+            : string.Empty;
+        useButton.interactable = hasItem && availability.Succeeded;
+        useButtonText.text = hasItem && availability.Succeeded
+            ? "使用"
+            : "无法使用";
+        messageText.text = UseFailureReason;
     }
 
     private int FindFirstOccupiedSlot()
@@ -350,8 +378,25 @@ public sealed class InventoryView : MonoBehaviour
 
         inventory = null;
         resolveDefinition = null;
+        resolveAvailability = null;
         onUse = null;
         onClose = null;
+    }
+
+    private Sprite ResolveIcon(ItemDefinition definition)
+    {
+        if (definition.Icon != null)
+        {
+            return definition.Icon;
+        }
+
+        return definition.EffectType switch
+        {
+            ItemEffectType.RestoreArmor => icons.Get(HudIconId.Armor),
+            ItemEffectType.AddRifleAmmo => icons.Get(HudIconId.Rifle),
+            ItemEffectType.AddHandgunAmmo => icons.Get(HudIconId.Handgun),
+            _ => icons.Get(HudIconId.Health)
+        };
     }
 
     private TMP_FontAsset CreateChineseFontAsset()

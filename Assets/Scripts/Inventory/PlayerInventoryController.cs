@@ -13,6 +13,7 @@ public sealed class PlayerInventoryController : MonoBehaviour
     private readonly ItemEffectRegistry effects = new();
     private PlayerInputReader input;
     private Health health;
+    private WeaponLoadoutController loadout;
     private GameplayLockCoordinator gameplayLocks;
     private GameplayLockLease inventoryLock;
     private InventoryView view;
@@ -26,8 +27,32 @@ public sealed class PlayerInventoryController : MonoBehaviour
     {
         input = GetComponent<PlayerInputReader>();
         health = GetComponent<Health>();
+        loadout = GetComponent<WeaponLoadoutController>();
         gameplayLocks = GetComponent<GameplayLockCoordinator>();
         Inventory = new InventoryState(capacity);
+    }
+
+    private void Start()
+    {
+        if (health != null)
+        {
+            health.VitalsChanged += HandleRuntimeStateChanged;
+        }
+
+        if (loadout == null)
+        {
+            return;
+        }
+
+        for (int index = 0; index < loadout.WeaponCount; index++)
+        {
+            WeaponController weapon = loadout.GetWeapon(index);
+
+            if (weapon != null)
+            {
+                weapon.AmmoChanged += HandleRuntimeStateChanged;
+            }
+        }
     }
 
     private void Update()
@@ -52,6 +77,29 @@ public sealed class PlayerInventoryController : MonoBehaviour
         Close();
     }
 
+    private void OnDestroy()
+    {
+        if (health != null)
+        {
+            health.VitalsChanged -= HandleRuntimeStateChanged;
+        }
+
+        if (loadout == null)
+        {
+            return;
+        }
+
+        for (int index = 0; index < loadout.WeaponCount; index++)
+        {
+            WeaponController weapon = loadout.GetWeapon(index);
+
+            if (weapon != null)
+            {
+                weapon.AmmoChanged -= HandleRuntimeStateChanged;
+            }
+        }
+    }
+
     public void ConfigureInventory(int configuredCapacity)
     {
         if (Inventory != null && Inventory.OccupiedSlotCount > 0)
@@ -72,6 +120,17 @@ public sealed class PlayerInventoryController : MonoBehaviour
             return;
         }
 
+        if (catalog.TryGetValue(
+                definition.StableId,
+                out ItemDefinition existing) &&
+            existing != null &&
+            (existing.MaximumStack != definition.MaximumStack ||
+             existing.EffectType != definition.EffectType))
+        {
+            throw new InvalidOperationException(
+                $"Item ID '{definition.StableId}' has conflicting definitions.");
+        }
+
         catalog[definition.StableId] = definition;
     }
 
@@ -85,6 +144,36 @@ public sealed class PlayerInventoryController : MonoBehaviour
 
         RegisterItem(definition);
         return Inventory.TryAdd(definition.ToSpec(), quantity);
+    }
+
+    public InventoryAddResult Add(
+        ItemDefinition definition,
+        int quantity = 1)
+    {
+        if (definition == null ||
+            string.IsNullOrWhiteSpace(definition.StableId))
+        {
+            return new InventoryAddResult(quantity, 0);
+        }
+
+        RegisterItem(definition);
+        return Inventory.Add(definition.ToSpec(), quantity);
+    }
+
+    public ItemUseResult GetUseAvailability(int slotIndex)
+    {
+        InventorySlot slot = Inventory.GetSlot(slotIndex);
+
+        if (slot.IsEmpty ||
+            !catalog.TryGetValue(slot.StableId, out ItemDefinition definition))
+        {
+            return ItemUseResult.Failure(
+                ItemUseFailureReason.InvalidItem);
+        }
+
+        return effects.Evaluate(
+            definition,
+            new ItemUseContext(health, loadout));
     }
 
     public bool TryUse(int slotIndex)
@@ -106,9 +195,15 @@ public sealed class PlayerInventoryController : MonoBehaviour
 
         try
         {
-            if (!effects.TryApply(definition, health))
+            ItemUseResult result = effects.Apply(
+                definition,
+                new ItemUseContext(health, loadout));
+
+            if (!result.Succeeded)
             {
-                view?.ShowMessage("当前无法使用该物品");
+                view?.ShowMessage(
+                    ItemUsePresentation.GetFailureText(
+                        result.FailureReason));
                 return false;
             }
 
@@ -116,7 +211,8 @@ public sealed class PlayerInventoryController : MonoBehaviour
 
             if (removed)
             {
-                view?.ShowMessage("医疗包使用成功");
+                view?.ShowMessage(
+                    GetSuccessMessage(definition.EffectType));
             }
 
             return removed;
@@ -146,7 +242,12 @@ public sealed class PlayerInventoryController : MonoBehaviour
 
         inventoryLock ??= gameplayLocks?.Acquire(
             GameplayLockReason.Inventory);
-        view.Show(Inventory, ResolveDefinition, TryUse, Close);
+        view.Show(
+            Inventory,
+            ResolveDefinition,
+            GetUseAvailability,
+            TryUse,
+            Close);
         return true;
     }
 
@@ -177,6 +278,23 @@ public sealed class PlayerInventoryController : MonoBehaviour
                catalog.TryGetValue(stableId, out ItemDefinition definition)
             ? definition
             : null;
+    }
+
+    private void HandleRuntimeStateChanged()
+    {
+        view?.RefreshRuntimeState();
+    }
+
+    private static string GetSuccessMessage(ItemEffectType effectType)
+    {
+        return effectType switch
+        {
+            ItemEffectType.RestoreHealth => "医疗包使用成功",
+            ItemEffectType.RestoreArmor => "护甲包使用成功",
+            ItemEffectType.AddRifleAmmo => "已补充步枪备弹",
+            ItemEffectType.AddHandgunAmmo => "已补充手枪备弹",
+            _ => "物品使用成功"
+        };
     }
 
     private bool EnsureView()

@@ -15,6 +15,8 @@ MonoBehaviour:
   WeaponName: Pistol
   MagazineCapacity: 12
   InitialReserveAmmo: 60
+  MaximumReserveAmmo: 120
+  AmmoType: 1
   ReloadDuration: 2.2
   Damage: 20
   FireSound: {fileID: 8300000, guid: 9e9480b4d07646942b555fd43f2a0f71, type: 3}

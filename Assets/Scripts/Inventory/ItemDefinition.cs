@@ -8,7 +8,10 @@ public enum ItemType
 
 public enum ItemEffectType
 {
-    RestoreHealth
+    RestoreHealth,
+    RestoreArmor,
+    AddRifleAmmo,
+    AddHandgunAmmo
 }
 
 [CreateAssetMenu(

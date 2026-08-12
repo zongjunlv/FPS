@@ -45,6 +45,8 @@ public class WeaponController : MonoBehaviour
         : BaseDamage;
     public int CurrentAmmo => ammoState.CurrentAmmo;
     public int ReserveAmmo => ammoState.ReserveAmmo;
+    public int MaximumReserveAmmo => ammoState.MaximumReserveAmmo;
+    public WeaponAmmoType AmmoType => weapon.AmmoType;
     public int MagazineCapacity => ammoState.MagazineCapacity;
     public float FireInterval => runtimeCombatStats != null
         ? runtimeCombatStats.ApplyFireInterval(weapon.FireIntervel)
@@ -84,7 +86,10 @@ public class WeaponController : MonoBehaviour
     {
         ammoState = new WeaponAmmoState(
             weapon.MagazineCapacity,
-            weapon.InitialReserveAmmo);
+            weapon.InitialReserveAmmo,
+            Mathf.Max(
+                weapon.InitialReserveAmmo,
+                weapon.MaximumReserveAmmo));
         audioSource = GetComponent<AudioSource>();
 
         if (audioSource == null)
@@ -266,6 +271,18 @@ public class WeaponController : MonoBehaviour
 
         ReloadStateChanged?.Invoke();
         return true;
+    }
+
+    public int AddReserveAmmo(int amount)
+    {
+        int accepted = ammoState.AddReserveAmmo(amount);
+
+        if (accepted > 0)
+        {
+            AmmoChanged?.Invoke();
+        }
+
+        return accepted;
     }
 
     public bool CancelReload()
