@@ -5,6 +5,7 @@ using UnityEngine.UI;
 public sealed class UnifiedGameHud : MonoBehaviour
 {
     private const float VitalsBarWidth = 290f;
+    private const float ExperienceBarWidth = 238f;
 
     private HudIconCatalog iconCatalog;
 
@@ -18,6 +19,7 @@ public sealed class UnifiedGameHud : MonoBehaviour
     private PlayerCrosshairPresenter crosshairPresenter;
     private PlayerCombatFeedbackController feedbackPresenter;
     private IWaveProgressSource waveSource;
+    private IRunProgressionSource progressionSource;
 
     private Image healthFill;
     private Image healthTrail;
@@ -48,6 +50,10 @@ public sealed class UnifiedGameHud : MonoBehaviour
     private TMP_Text wavePhaseText;
     private TMP_Text waveCountdownText;
     private TMP_Text waveCueText;
+    private RectTransform progressionHudRoot;
+    private Image experienceFill;
+    private TMP_Text levelText;
+    private TMP_Text experienceText;
 
     public Canvas RootCanvas { get; private set; }
     public RectTransform SafeArea { get; private set; }
@@ -60,6 +66,7 @@ public sealed class UnifiedGameHud : MonoBehaviour
     public int CrosshairRefreshCount { get; private set; }
     public int DamageRefreshCount { get; private set; }
     public int WaveRefreshCount { get; private set; }
+    public int ProgressionRefreshCount { get; private set; }
     public string HealthText => healthText != null ? healthText.text : string.Empty;
     public string ArmorText => armorText != null ? armorText.text : string.Empty;
     public string AmmoText => ammoText != null && reserveAmmoText != null
@@ -77,6 +84,15 @@ public sealed class UnifiedGameHud : MonoBehaviour
         waveCountdownText != null ? waveCountdownText.text : string.Empty;
     public string WaveCueText =>
         waveCueText != null ? waveCueText.text : string.Empty;
+    public string LevelText =>
+        levelText != null ? levelText.text : string.Empty;
+    public string ExperienceText =>
+        experienceText != null ? experienceText.text : string.Empty;
+    public float ExperienceNormalized =>
+        experienceFill != null
+            ? experienceFill.rectTransform.sizeDelta.x /
+              ExperienceBarWidth
+            : 0f;
     public bool IsWaveCountdownVisible =>
         waveCountdownText != null && waveCountdownText.gameObject.activeSelf;
     public bool IsWaveCueVisible =>
@@ -102,6 +118,7 @@ public sealed class UnifiedGameHud : MonoBehaviour
     private void OnDestroy()
     {
         UnbindWave();
+        UnbindProgression();
         Unbind();
     }
 
@@ -116,6 +133,8 @@ public sealed class UnifiedGameHud : MonoBehaviour
             playerRoot.GetComponent<PlayerCrosshairPresenter>();
         feedbackPresenter =
             playerRoot.GetComponent<PlayerCombatFeedbackController>();
+        PlayerRunProgression progression =
+            playerRoot.GetComponent<PlayerRunProgression>();
 
         if (health == null || combat == null ||
             ammoPresenter == null || vitalsPresenter == null ||
@@ -139,12 +158,40 @@ public sealed class UnifiedGameHud : MonoBehaviour
         RefreshVitals();
         RefreshCrosshair();
         RefreshDamage();
+        BindProgression(progression);
         IsBound = true;
 
         if (WaveDirector.Active != null)
         {
             BindWave(WaveDirector.Active);
         }
+    }
+
+    public void BindProgression(IRunProgressionSource source)
+    {
+        UnbindProgression();
+        progressionSource = source;
+
+        if (progressionSource == null)
+        {
+            progressionHudRoot?.gameObject.SetActive(false);
+            return;
+        }
+
+        progressionSource.ProgressChanged += RefreshProgression;
+        progressionHudRoot.gameObject.SetActive(true);
+        RefreshProgression(progressionSource.CurrentProgress);
+    }
+
+    public void UnbindProgression()
+    {
+        if (progressionSource != null)
+        {
+            progressionSource.ProgressChanged -= RefreshProgression;
+        }
+
+        progressionSource = null;
+        progressionHudRoot?.gameObject.SetActive(false);
     }
 
     public void BindWave(IWaveProgressSource source)
@@ -203,10 +250,26 @@ public sealed class UnifiedGameHud : MonoBehaviour
             feedbackPresenter.ViewChanged -= RefreshDamage;
         }
 
+        UnbindProgression();
+
         health = null;
         combat = null;
         weapon = null;
         IsBound = false;
+    }
+
+    private void RefreshProgression(RunExperienceSnapshot progress)
+    {
+        levelText.text = $"LV {progress.Level:00}";
+        experienceText.text = progress.IsMaxLevel
+            ? $"{progress.TotalExperience} XP  ·  MAX"
+            : $"{progress.CurrentExperience} / " +
+              $"{progress.ExperienceToNextLevel} XP";
+        RectTransform rect = experienceFill.rectTransform;
+        Vector2 dimensions = rect.sizeDelta;
+        dimensions.x = ExperienceBarWidth * progress.ProgressNormalized;
+        rect.sizeDelta = dimensions;
+        ProgressionRefreshCount++;
     }
 
     private void BindWeapon(WeaponController nextWeapon)
@@ -402,10 +465,66 @@ public sealed class UnifiedGameHud : MonoBehaviour
         OverlayLayer = CreateRect("OverlayLayer", canvasRect);
         Stretch(OverlayLayer);
         BuildVitalsHud();
+        BuildProgressionHud();
         BuildWeaponHud();
         BuildWaveHud();
         BuildCrosshair();
         BuildDamageOverlay();
+    }
+
+    private void BuildProgressionHud()
+    {
+        Color panel = profile != null
+            ? profile.PanelColor
+            : new Color(0.02f, 0.03f, 0.04f, 0.82f);
+        panel.a = Mathf.Min(panel.a, 0.76f);
+        Color accent = new Color(0.38f, 0.92f, 0.86f, 1f);
+        progressionHudRoot = CreatePanel(
+            "ProgressionHud",
+            HudLayer,
+            panel,
+            Vector2.zero,
+            Vector2.zero,
+            Vector2.zero,
+            new Vector2(360f, 58f),
+            new Vector2(28f, 154f));
+        Image accentStrip = CreateImage(
+            "ProgressionAccent",
+            progressionHudRoot,
+            accent);
+        SetBottomLeftRect(
+            accentStrip.rectTransform,
+            Vector2.zero,
+            new Vector2(4f, 58f));
+        levelText = CreateText(
+            "LevelText",
+            progressionHudRoot,
+            18f,
+            TextAlignmentOptions.Center,
+            new Vector2(12f, 13f),
+            new Vector2(76f, 32f));
+        levelText.color = accent;
+        levelText.fontStyle = FontStyles.Bold;
+        CreateBarBackground(
+            progressionHudRoot,
+            new Vector2(102f, 28f),
+            new Vector2(ExperienceBarWidth, 10f));
+        experienceFill = CreateFilledBar(
+            "ExperienceFill",
+            progressionHudRoot,
+            accent,
+            new Vector2(102f, 28f),
+            new Vector2(0f, 10f));
+        experienceText = CreateText(
+            "ExperienceText",
+            progressionHudRoot,
+            11f,
+            TextAlignmentOptions.MidlineRight,
+            new Vector2(102f, 6f),
+            new Vector2(238f, 20f));
+        experienceText.color =
+            new Color(0.8f, 0.86f, 0.88f, 1f);
+        progressionHudRoot.gameObject.SetActive(false);
     }
 
     private void BuildWaveHud()

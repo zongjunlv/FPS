@@ -9,4 +9,7 @@ public class EnemyDefinition : ScriptableObject
     [SerializeField] public float HP;
     [SerializeField] public float Attack;
     [SerializeField] public float Defend;
+    [SerializeField, Min(0)] private int rewardExperience = 40;
+
+    public int RewardExperience => Mathf.Max(0, rewardExperience);
 }

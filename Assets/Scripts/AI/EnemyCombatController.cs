@@ -127,7 +127,8 @@ public sealed class EnemyCombatController : MonoBehaviour
                 enemy != null ? enemy.AttackDamage : 20f,
                 target.position,
                 direction,
-                gameObject));
+                gameObject,
+                DamageType.Melee));
         SuccessfulAttackCount++;
         PlayAttackPresentation();
     }

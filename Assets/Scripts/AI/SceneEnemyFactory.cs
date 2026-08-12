@@ -95,9 +95,14 @@ public sealed class SceneEnemyFactory : MonoBehaviour, IEnemyFactory
                 instance.gameObject.AddComponent<WaveEnemyLifecycle>();
         }
 
-        lifecycle.Arm(request.SpawnId, instance, onEnded);
+        lifecycle.Arm(
+            request.SpawnId,
+            request.WaveNumber,
+            instance,
+            onEnded);
         handle = new EnemySpawnHandle(
             request.SpawnId,
+            request.WaveNumber,
             instance,
             lifecycle);
         sceneTemplateAdopted |= adoptSceneTemplate;

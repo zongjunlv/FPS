@@ -407,7 +407,8 @@ public class WeaponController : MonoBehaviour
                     shotDirection,
                     shooterRoot != null
                         ? shooterRoot.gameObject
-                        : gameObject));
+                        : gameObject,
+                    DamageType.Hitscan));
         }
 
         return new ShotResult(

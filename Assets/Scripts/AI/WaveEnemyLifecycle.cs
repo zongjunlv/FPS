@@ -11,6 +11,7 @@ public sealed class WaveEnemyLifecycle : MonoBehaviour
     private bool subscribed;
 
     public int SpawnId => handle.SpawnId;
+    public int WaveNumber => handle.WaveNumber;
     public bool IsSettled => settled;
 
     public void Arm(
@@ -18,8 +19,21 @@ public sealed class WaveEnemyLifecycle : MonoBehaviour
         EnemyController controller,
         Action<EnemySpawnHandle, EnemyExitReason> ended)
     {
+        Arm(spawnId, 0, controller, ended);
+    }
+
+    public void Arm(
+        int spawnId,
+        int waveNumber,
+        EnemyController controller,
+        Action<EnemySpawnHandle, EnemyExitReason> ended)
+    {
         Disarm();
-        handle = new EnemySpawnHandle(spawnId, controller, this);
+        handle = new EnemySpawnHandle(
+            spawnId,
+            waveNumber,
+            controller,
+            this);
         onEnded = ended;
         settled = false;
         armed = true;

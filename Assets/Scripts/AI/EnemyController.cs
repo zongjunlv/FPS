@@ -15,6 +15,10 @@ public class EnemyController : MonoBehaviour
         currentEnemy != null
             ? Mathf.Max(1f, currentEnemy.Attack)
             : 20f;
+    public int RewardExperience =>
+        currentEnemy != null && currentEnemy.RewardExperience > 0
+            ? currentEnemy.RewardExperience
+            : 40;
 
     public void SetFactoryManaged(bool managed)
     {

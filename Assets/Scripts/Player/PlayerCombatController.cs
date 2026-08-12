@@ -62,6 +62,11 @@ public class PlayerCombatController : MonoBehaviour
             gameObject.AddComponent<CityNewTerminalMissionBootstrap>();
         }
 
+        if (GetComponent<PlayerRunProgression>() == null)
+        {
+            gameObject.AddComponent<PlayerRunProgression>();
+        }
+
         if (GetComponent<UnifiedGameHudBootstrap>() == null)
         {
             gameObject.AddComponent<UnifiedGameHudBootstrap>();

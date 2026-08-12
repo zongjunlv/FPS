@@ -7,6 +7,7 @@ public sealed class Health : MonoBehaviour, IDamageable
     [SerializeField, Min(0f)] private float maxArmor;
 
     public event Action<DamageInfo> Damaged;
+    public event Action<DamageInfo> Killed;
     public event Action Died;
     public event Action VitalsChanged;
 
@@ -15,6 +16,8 @@ public sealed class Health : MonoBehaviour, IDamageable
     public float MaxArmor { get; private set; }
     public float CurrentArmor { get; private set; }
     public bool IsDead { get; private set; }
+    public bool HasLastAppliedDamage { get; private set; }
+    public DamageInfo LastAppliedDamage { get; private set; }
 
     private void Awake()
     {
@@ -35,6 +38,8 @@ public sealed class Health : MonoBehaviour, IDamageable
         MaxArmor = Mathf.Max(0f, newMaxArmor);
         CurrentArmor = MaxArmor;
         IsDead = false;
+        HasLastAppliedDamage = false;
+        LastAppliedDamage = default;
         VitalsChanged?.Invoke();
     }
 
@@ -55,6 +60,8 @@ public sealed class Health : MonoBehaviour, IDamageable
         CurrentHealth = Mathf.Max(
             0f,
             CurrentHealth - healthDamage);
+        LastAppliedDamage = damage;
+        HasLastAppliedDamage = true;
         Damaged?.Invoke(damage);
         VitalsChanged?.Invoke();
         float appliedAmount =
@@ -71,6 +78,7 @@ public sealed class Health : MonoBehaviour, IDamageable
         }
 
         IsDead = true;
+        Killed?.Invoke(damage);
         Died?.Invoke();
         return new DamageResult(
             true,

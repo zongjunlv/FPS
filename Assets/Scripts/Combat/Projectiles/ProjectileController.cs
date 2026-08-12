@@ -34,7 +34,8 @@ public class ProjectileController : MonoBehaviour
                     bullet.Damage,
                     contact.point,
                     transform.forward,
-                    gameObject));
+                    gameObject,
+                    DamageType.Projectile));
         }
 
         Destroy(gameObject);

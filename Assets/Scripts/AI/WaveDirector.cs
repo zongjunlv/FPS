@@ -41,6 +41,7 @@ public sealed class WaveDirector : MonoBehaviour, IWaveProgressSource
     public event Action<int> WaveStarted;
     public event Action<int> WaveEnded;
     public event Action WaveCompleted;
+    public event Action<EnemyDeathEvent> EnemyDied;
 
     public WaveProgressSnapshot CurrentProgress => CreateProgress();
     public WaveRunPhase Phase => flow != null
@@ -53,6 +54,8 @@ public sealed class WaveDirector : MonoBehaviour, IWaveProgressSource
     public int CompletionEventCount { get; private set; }
     public int WaveStartedEventCount { get; private set; }
     public int WaveEndedEventCount { get; private set; }
+    public int EnemyDeathEventCount { get; private set; }
+    public EnemyDeathEvent LastEnemyDeath { get; private set; }
     public int CompletedWaveCount => completedWaveSpawnCounts.Count;
     public float MinimumSpawnSafetyDistanceObserved { get; private set; }
     public float MinimumSpawnEnemySpacingObserved { get; private set; }
@@ -235,6 +238,8 @@ public sealed class WaveDirector : MonoBehaviour, IWaveProgressSource
         CompletionEventCount = 0;
         WaveStartedEventCount = 0;
         WaveEndedEventCount = 0;
+        EnemyDeathEventCount = 0;
+        LastEnemyDeath = default;
         MinimumSpawnSafetyDistanceObserved = float.PositiveInfinity;
         MinimumSpawnEnemySpacingObserved = float.PositiveInfinity;
         spawnCooldown = 0f;
@@ -251,6 +256,8 @@ public sealed class WaveDirector : MonoBehaviour, IWaveProgressSource
         }
 
         configured = true;
+        player.GetComponent<PlayerRunProgression>()
+            ?.BindKillSource(this);
         UnityEngine.Object.FindAnyObjectByType<UnifiedGameHud>()
             ?.BindWave(this);
         PublishProgress();
@@ -349,6 +356,7 @@ public sealed class WaveDirector : MonoBehaviour, IWaveProgressSource
             : Quaternion.identity;
         var request = new EnemySpawnRequest(
             spawnId,
+            flow.CurrentWave,
             entry,
             spawnPoint,
             rotation,
@@ -418,6 +426,7 @@ public sealed class WaveDirector : MonoBehaviour, IWaveProgressSource
 
         WaveRunPhase phaseAfterSettle = flow.Phase;
         activeEnemies.Remove(handle.SpawnId);
+        PublishEnemyDeath(handle, reason, endingWave);
         enemyFactory.Release(handle);
 
         if (phaseAfterSettle == WaveRunPhase.Intermission ||
@@ -455,6 +464,35 @@ public sealed class WaveDirector : MonoBehaviour, IWaveProgressSource
         spawnCooldown = Mathf.Min(
             spawnCooldown,
             CurrentDefinition.SpawnInterval);
+    }
+
+    private void PublishEnemyDeath(
+        EnemySpawnHandle handle,
+        EnemyExitReason reason,
+        int endingWave)
+    {
+        if (reason != EnemyExitReason.Died || handle.Controller == null)
+        {
+            return;
+        }
+
+        Health enemyHealth = handle.Controller.GetComponent<Health>();
+
+        if (enemyHealth == null || !enemyHealth.HasLastAppliedDamage)
+        {
+            return;
+        }
+
+        LastEnemyDeath = new EnemyDeathEvent(
+            handle.Controller,
+            handle.SpawnId,
+            handle.WaveNumber > 0
+                ? handle.WaveNumber
+                : endingWave,
+            enemyHealth.LastAppliedDamage,
+            handle.Controller.RewardExperience);
+        EnemyDeathEventCount++;
+        EnemyDied?.Invoke(LastEnemyDeath);
     }
 
     private void HandlePlayerDied()
