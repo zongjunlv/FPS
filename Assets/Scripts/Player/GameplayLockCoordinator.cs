@@ -15,6 +15,8 @@ public sealed class GameplayLockCoordinator : MonoBehaviour
     private PlayerController player;
     private PlayerCombatController combat;
     private float timeScaleBeforeFirstLock = 1f;
+    private CursorLockMode cursorLockBeforeFirstLock;
+    private bool cursorVisibleBeforeFirstLock;
     private bool lockApplied;
 
     public event Action<bool> LockStateChanged;
@@ -102,6 +104,8 @@ public sealed class GameplayLockCoordinator : MonoBehaviour
             timeScaleBeforeFirstLock = Time.timeScale > 0f
                 ? Time.timeScale
                 : 1f;
+            cursorLockBeforeFirstLock = Cursor.lockState;
+            cursorVisibleBeforeFirstLock = Cursor.visible;
             lockApplied = true;
             player.SetGameplayInputEnabled(false);
             combat.SetGameplayInputEnabled(false);
@@ -127,5 +131,7 @@ public sealed class GameplayLockCoordinator : MonoBehaviour
         lockApplied = false;
         player.SetGameplayInputEnabled(true);
         combat.SetGameplayInputEnabled(true);
+        Cursor.lockState = cursorLockBeforeFirstLock;
+        Cursor.visible = cursorVisibleBeforeFirstLock;
     }
 }

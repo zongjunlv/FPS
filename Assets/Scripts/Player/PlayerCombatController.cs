@@ -67,6 +67,16 @@ public class PlayerCombatController : MonoBehaviour
             gameObject.AddComponent<PlayerRunProgression>();
         }
 
+        if (GetComponent<PlayerRuntimeCombatStats>() == null)
+        {
+            gameObject.AddComponent<PlayerRuntimeCombatStats>();
+        }
+
+        if (GetComponent<PlayerUpgradeController>() == null)
+        {
+            gameObject.AddComponent<PlayerUpgradeController>();
+        }
+
         if (GetComponent<UnifiedGameHudBootstrap>() == null)
         {
             gameObject.AddComponent<UnifiedGameHudBootstrap>();

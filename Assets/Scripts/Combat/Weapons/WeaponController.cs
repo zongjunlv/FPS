@@ -33,7 +33,10 @@ public class WeaponController : MonoBehaviour
         Mathf.Lerp(1f, weapon.AdsRecoilMultiplier, aimBlend);
     public float CurrentSpreadDegrees =>
         spreadState.CurrentSpreadDegrees;
-    public float Damage => weapon.Damage;
+    public float BaseDamage => weapon.Damage;
+    public float Damage => runtimeCombatStats != null
+        ? runtimeCombatStats.ApplyWeaponDamage(BaseDamage)
+        : BaseDamage;
     public int CurrentAmmo => ammoState.CurrentAmmo;
     public int ReserveAmmo => ammoState.ReserveAmmo;
     public int MagazineCapacity => ammoState.MagazineCapacity;
@@ -61,6 +64,7 @@ public class WeaponController : MonoBehaviour
     private Vector2? spreadSampleOverride;
     private CombatSoundEventChannel soundEventChannel;
     private CombatEffectPool combatEffectPool;
+    private PlayerRuntimeCombatStats runtimeCombatStats;
     private readonly RaycastHit[] hitBuffer = new RaycastHit[32];
 
     private void Awake()
@@ -215,6 +219,9 @@ public class WeaponController : MonoBehaviour
         aimCamera = camera;
         shooterRoot = ownerRoot;
         tracerPool = sharedTracerPool;
+        runtimeCombatStats = ownerRoot != null
+            ? ownerRoot.GetComponent<PlayerRuntimeCombatStats>()
+            : null;
     }
 
     public bool TryStartReload()
@@ -402,7 +409,7 @@ public class WeaponController : MonoBehaviour
                 : hit.collider.gameObject;
             damageResult = damageable.ApplyDamage(
                 new DamageInfo(
-                    weapon.Damage,
+                    Damage,
                     hit.point,
                     shotDirection,
                     shooterRoot != null

@@ -31,6 +31,7 @@ public sealed class PlayerRunProgression : MonoBehaviour, IRunProgressionSource
     private bool subscribed;
 
     public event Action<RunExperienceSnapshot> ProgressChanged;
+    public event Action<int> LevelsGained;
 
     public RunExperienceSnapshot CurrentProgress => State.Current;
     public int RewardedKillCount { get; private set; }
@@ -114,7 +115,13 @@ public sealed class PlayerRunProgression : MonoBehaviour, IRunProgressionSource
 
         rewardedSpawnIds.Add(death.SpawnId);
         RewardedKillCount++;
-        State.GrantExperience(death.RewardExperience);
+        int levelsGained = State.GrantExperience(death.RewardExperience);
+
+        if (levelsGained > 0)
+        {
+            LevelsGained?.Invoke(levelsGained);
+        }
+
         return true;
     }
 
