@@ -55,6 +55,11 @@ public sealed class EnemyCombatController : MonoBehaviour
 
     private void Update()
     {
+        if (Time.timeScale <= 0f)
+        {
+            return;
+        }
+
         Transform target = perception.Target;
 
         if (target == null ||

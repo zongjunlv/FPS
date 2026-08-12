@@ -14,6 +14,7 @@ public class PlayerInputReader : MonoBehaviour
 
     private InputAction crouchAction;
     private InputAction pauseAction;
+    private InputAction inventoryAction;
     private InputAction reloadAction;
     private InputAction weaponSlot1Action;
     private InputAction weaponSlot2Action;
@@ -40,6 +41,10 @@ public class PlayerInputReader : MonoBehaviour
         crouchAction != null && crouchAction.WasPressedThisFrame();
     public bool PausePressed =>
         pauseAction != null && pauseAction.WasPressedThisFrame();
+    public bool InventoryPressed =>
+        inventoryAction != null && inventoryAction.WasPressedThisFrame();
+    public bool InventoryActionEnabled =>
+        inventoryAction != null && inventoryAction.enabled;
     public bool ReloadPressed => reloadPressed;
     public int WeaponSelection => weaponSelection;
     public int WeaponCycleDirection => weaponCycleDirection;
@@ -103,6 +108,9 @@ public class PlayerInputReader : MonoBehaviour
         pauseAction = moveAction.action.actionMap.FindAction(
             "Pause",
             true);
+        inventoryAction = moveAction.action.actionMap.FindAction(
+            "Inventory",
+            true);
         reloadAction = moveAction.action.actionMap.FindAction(
             "Reload",
             true);
@@ -126,6 +134,7 @@ public class PlayerInputReader : MonoBehaviour
         cycleWeaponAction.performed += OnCycleWeaponPerformed;
         SetGameplayActionsEnabled(true);
         pauseAction?.Enable();
+        inventoryAction?.Enable();
     }
 
     private void OnDisable()
@@ -145,6 +154,7 @@ public class PlayerInputReader : MonoBehaviour
         aimingAction.action.Disable();
         crouchAction?.Disable();
         pauseAction?.Disable();
+        inventoryAction?.Disable();
         reloadAction?.Disable();
         weaponSlot1Action?.Disable();
         weaponSlot2Action?.Disable();

@@ -40,10 +40,15 @@ public sealed class EnemyAwarenessStateMachine
 
     public void Observe(Vector3 position, float deltaTime)
     {
+        if (deltaTime <= 0f)
+        {
+            return;
+        }
+
         LastKnownPosition = position;
         lostSightElapsed = 0f;
         Awareness = Mathf.Clamp01(
-            Awareness + Mathf.Max(0f, deltaTime) * alertSpeed);
+            Awareness + deltaTime * alertSpeed);
         State = Awareness >= 1f
             ? EnemyAwarenessState.Alert
             : EnemyAwarenessState.Suspicious;

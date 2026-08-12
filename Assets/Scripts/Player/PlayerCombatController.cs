@@ -80,9 +80,19 @@ public class PlayerCombatController : MonoBehaviour
             gameObject.AddComponent<PlayerUpgradeController>();
         }
 
+        if (GetComponent<PlayerInventoryController>() == null)
+        {
+            gameObject.AddComponent<PlayerInventoryController>();
+        }
+
         if (GetComponent<UnifiedGameHudBootstrap>() == null)
         {
             gameObject.AddComponent<UnifiedGameHudBootstrap>();
+        }
+
+        if (GetComponent<CityNewInventoryBootstrap>() == null)
+        {
+            gameObject.AddComponent<CityNewInventoryBootstrap>();
         }
 
         for (int index = 0; index < loadout.WeaponCount; index++)

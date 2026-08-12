@@ -83,6 +83,12 @@ public sealed class EnemyPerceptionScheduler : MonoBehaviour
     private void Update()
     {
         LastFrameCheckCount = 0;
+
+        if (Time.timeScale <= 0f)
+        {
+            return;
+        }
+
         RemoveDestroyedMembers();
 
         int scheduledCount = Mathf.Min(

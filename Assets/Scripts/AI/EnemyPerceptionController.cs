@@ -108,6 +108,11 @@ public sealed class EnemyPerceptionController : MonoBehaviour
 
     private void Update()
     {
+        if (Time.timeScale <= 0f)
+        {
+            return;
+        }
+
         if (HasVisualContact)
         {
             investigatingSound = false;
