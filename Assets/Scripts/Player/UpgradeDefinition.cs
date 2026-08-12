@@ -15,7 +15,12 @@ public enum UpgradeEffectType
     WeaponMagazineCapacity,
     WeaponReloadSpeed,
     WeaponRecoilControl,
-    WeaponAccuracy
+    WeaponAccuracy,
+    MaximumHealth,
+    MaximumArmor,
+    HealthRestore,
+    ArmorRestore,
+    MovementSpeed
 }
 
 [CreateAssetMenu(
@@ -41,7 +46,10 @@ public sealed class UpgradeDefinition : ScriptableObject
     public UpgradeEffectType EffectType => effectType;
     public float EffectAmount => Mathf.Max(0f, effectAmount);
     public string EffectValueText =>
-        $"{GetEffectLabel(effectType)} +{Mathf.RoundToInt(EffectAmount * 100f)}%";
+        effectType == UpgradeEffectType.HealthRestore ||
+        effectType == UpgradeEffectType.ArmorRestore
+            ? $"{GetEffectLabel(effectType)} +{Mathf.RoundToInt(EffectAmount)}"
+            : $"{GetEffectLabel(effectType)} +{Mathf.RoundToInt(EffectAmount * 100f)}%";
 
     public void Configure(
         string id,
@@ -76,26 +84,31 @@ public sealed class UpgradeDefinition : ScriptableObject
 
         if (level >= MaximumLevel)
         {
-            return $"MAX LEVEL  {MaximumLevel} / {MaximumLevel}";
+            return $"已满级  {MaximumLevel} / {MaximumLevel}";
         }
 
         int nextLevel = level + 1;
         return nextLevel >= MaximumLevel
-            ? $"LEVEL {level}  →  MAX  ({MaximumLevel} / {MaximumLevel})"
-            : $"LEVEL {level}  →  {nextLevel} / {MaximumLevel}";
+            ? $"等级 {level}  →  满级  ({MaximumLevel} / {MaximumLevel})"
+            : $"等级 {level}  →  {nextLevel} / {MaximumLevel}";
     }
 
     private static string GetEffectLabel(UpgradeEffectType type)
     {
         return type switch
         {
-            UpgradeEffectType.WeaponDamage => "DAMAGE",
-            UpgradeEffectType.WeaponFireRate => "FIRE RATE",
-            UpgradeEffectType.WeaponMagazineCapacity => "MAGAZINE",
-            UpgradeEffectType.WeaponReloadSpeed => "RELOAD SPEED",
-            UpgradeEffectType.WeaponRecoilControl => "RECOIL CONTROL",
-            UpgradeEffectType.WeaponAccuracy => "ACCURACY",
-            _ => "WEAPON"
+            UpgradeEffectType.WeaponDamage => "武器伤害",
+            UpgradeEffectType.WeaponFireRate => "射击速度",
+            UpgradeEffectType.WeaponMagazineCapacity => "弹匣容量",
+            UpgradeEffectType.WeaponReloadSpeed => "换弹速度",
+            UpgradeEffectType.WeaponRecoilControl => "后坐力控制",
+            UpgradeEffectType.WeaponAccuracy => "射击精准度",
+            UpgradeEffectType.MaximumHealth => "最大生命值",
+            UpgradeEffectType.MaximumArmor => "最大护甲值",
+            UpgradeEffectType.HealthRestore => "生命恢复",
+            UpgradeEffectType.ArmorRestore => "护甲恢复",
+            UpgradeEffectType.MovementSpeed => "移动速度",
+            _ => "武器"
         };
     }
 }

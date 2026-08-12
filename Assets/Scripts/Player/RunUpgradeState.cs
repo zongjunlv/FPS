@@ -15,6 +15,9 @@ public sealed class RunUpgradeState
     private float weaponReloadSpeedBonus;
     private float weaponRecoilControlBonus;
     private float weaponAccuracyBonus;
+    private float maximumHealthBonus;
+    private float maximumArmorBonus;
+    private float movementSpeedBonus;
 
     public WeaponRuntimeModifiers WeaponModifiers =>
         new WeaponRuntimeModifiers(
@@ -26,6 +29,11 @@ public sealed class RunUpgradeState
             1f + weaponAccuracyBonus);
     public float WeaponDamageMultiplier =>
         WeaponModifiers.DamageMultiplier;
+    public SurvivalRuntimeModifiers SurvivalModifiers =>
+        new SurvivalRuntimeModifiers(
+            1f + maximumHealthBonus,
+            1f + maximumArmorBonus,
+            1f + movementSpeedBonus);
 
     public int GetLevel(string stableId)
     {
@@ -74,10 +82,39 @@ public sealed class RunUpgradeState
             case UpgradeEffectType.WeaponAccuracy:
                 weaponAccuracyBonus += definition.EffectAmount;
                 break;
+            case UpgradeEffectType.MaximumHealth:
+                maximumHealthBonus += definition.EffectAmount;
+                break;
+            case UpgradeEffectType.MaximumArmor:
+                maximumArmorBonus += definition.EffectAmount;
+                break;
+            case UpgradeEffectType.MovementSpeed:
+                movementSpeedBonus += definition.EffectAmount;
+                break;
         }
 
         return true;
     }
+}
+
+public readonly struct SurvivalRuntimeModifiers
+{
+    public static SurvivalRuntimeModifiers Identity =>
+        new SurvivalRuntimeModifiers(1f, 1f, 1f);
+
+    public SurvivalRuntimeModifiers(
+        float maximumHealthMultiplier,
+        float maximumArmorMultiplier,
+        float movementSpeedMultiplier)
+    {
+        MaximumHealthMultiplier = Math.Max(0.01f, maximumHealthMultiplier);
+        MaximumArmorMultiplier = Math.Max(0.01f, maximumArmorMultiplier);
+        MovementSpeedMultiplier = Math.Max(0.01f, movementSpeedMultiplier);
+    }
+
+    public float MaximumHealthMultiplier { get; }
+    public float MaximumArmorMultiplier { get; }
+    public float MovementSpeedMultiplier { get; }
 }
 
 public readonly struct WeaponRuntimeModifiers

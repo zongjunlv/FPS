@@ -549,16 +549,32 @@ namespace FPS.Tests.PlayMode
                 yield return null;
 
                 Transform card = GameObject.Find("UpgradeCard1").transform;
-                Assert.That(ReadText(card, "Rarity"), Is.EqualTo("RARE"));
+                Assert.That(ReadText(card, "Rarity"), Is.EqualTo("稀有"));
                 Assert.That(
                     ReadText(card, "Effect"),
-                    Is.EqualTo("FIRE RATE +15%"));
+                    Is.EqualTo("射击速度 +15%"));
                 Assert.That(
                     ReadText(card, "Stack"),
-                    Does.Contain("MAX"));
+                    Does.Contain("满级"));
                 Assert.That(
                     ReadText(card, "Stack"),
                     Does.Contain("1 / 1"));
+                Type textType = Type.GetType(
+                    "TMPro.TMP_Text, Unity.TextMeshPro");
+                Component effectText = card.Find("Effect")
+                    .GetComponent(textType);
+                object cardFont = textType.GetProperty("font")
+                    .GetValue(effectText);
+                bool supportsChinese = (bool)cardFont.GetType()
+                    .GetMethod(
+                        "HasCharacter",
+                        new[]
+                        {
+                            typeof(char), typeof(bool), typeof(bool)
+                        })
+                    .Invoke(cardFont, new object[] { '中', false, true });
+                Assert.That(supportsChinese, Is.True,
+                    "升级卡字体必须包含中文字形，不能显示方框乱码。");
             }
             finally
             {

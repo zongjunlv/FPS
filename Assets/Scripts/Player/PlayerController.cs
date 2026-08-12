@@ -45,6 +45,7 @@ public class PlayerController : MonoBehaviour
     private PlayerInputReader input;
     private PlayerCrosshairPresenter crosshairPresenter;
     private GameplayLockCoordinator gameplayLocks;
+    private PlayerRuntimeCombatStats runtimeStats;
     public float VerticalVelocity {get; private set; }
     public float MoveDirection { get; private set; }
     public bool IsAiming { get; private set; }
@@ -81,6 +82,7 @@ public class PlayerController : MonoBehaviour
         characterController = GetComponent<CharacterController>();
         input = GetComponent<PlayerInputReader>();
         gameplayLocks = GetComponent<GameplayLockCoordinator>();
+        runtimeStats = GetComponent<PlayerRuntimeCombatStats>();
 
         if (gameplayLocks == null)
         {
@@ -445,7 +447,15 @@ public class PlayerController : MonoBehaviour
             transform.right * clampedInput.x +
             transform.forward * clampedInput.y;
 
-        return direction * targetSpeed;
+        float effectiveSpeed = runtimeStats != null
+            ? runtimeStats.ApplyMovementSpeed(targetSpeed)
+            : targetSpeed;
+        return direction * effectiveSpeed;
+    }
+
+    public void SetRuntimeStats(PlayerRuntimeCombatStats stats)
+    {
+        runtimeStats = stats;
     }
 
     private bool CanSprint(Vector2 moveInput, bool sprintRequested)

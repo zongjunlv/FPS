@@ -86,4 +86,87 @@ public sealed class Health : MonoBehaviour, IDamageable
             appliedAmount,
             HitRegion.Generic);
     }
+
+    public float RestoreHealth(float amount)
+    {
+        return RestoreValue(
+            amount,
+            CurrentHealth,
+            MaxHealth,
+            value => CurrentHealth = value);
+    }
+
+    public float RestoreArmor(float amount)
+    {
+        return RestoreValue(
+            amount,
+            CurrentArmor,
+            MaxArmor,
+            value => CurrentArmor = value);
+    }
+
+    public bool SetMaximumHealth(float value)
+    {
+        if (IsDead || !IsFinite(value))
+        {
+            return false;
+        }
+
+        float nextMaximum = Mathf.Max(0.01f, value);
+
+        if (Mathf.Approximately(nextMaximum, MaxHealth))
+        {
+            return false;
+        }
+
+        float delta = nextMaximum - MaxHealth;
+        MaxHealth = nextMaximum;
+        CurrentHealth = Mathf.Clamp(CurrentHealth + delta, 0f, MaxHealth);
+        VitalsChanged?.Invoke();
+        return true;
+    }
+
+    public bool SetMaximumArmor(float value)
+    {
+        if (IsDead || !IsFinite(value))
+        {
+            return false;
+        }
+
+        float nextMaximum = Mathf.Max(0f, value);
+
+        if (Mathf.Approximately(nextMaximum, MaxArmor))
+        {
+            return false;
+        }
+
+        float delta = nextMaximum - MaxArmor;
+        MaxArmor = nextMaximum;
+        CurrentArmor = Mathf.Clamp(CurrentArmor + delta, 0f, MaxArmor);
+        VitalsChanged?.Invoke();
+        return true;
+    }
+
+    private float RestoreValue(
+        float amount,
+        float current,
+        float maximum,
+        Action<float> assign)
+    {
+        if (IsDead || !IsFinite(amount) || amount <= 0f ||
+            current >= maximum)
+        {
+            return 0f;
+        }
+
+        float restored = Mathf.Min(amount, maximum - current);
+        assign(current + restored);
+        VitalsChanged?.Invoke();
+        return restored;
+    }
+
+    private static bool IsFinite(float value)
+    {
+        return !float.IsNaN(value) && !float.IsInfinity(value);
+    }
 }

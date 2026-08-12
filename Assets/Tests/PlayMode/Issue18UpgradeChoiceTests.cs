@@ -391,6 +391,28 @@ namespace FPS.Tests.PlayMode
             LogAssert.ignoreFailingMessages = true;
             yield return LoadRuntime();
             RuntimeContext context = FindRuntimeContext();
+            Type definitionType = Type.GetType(
+                "UpgradeDefinition, Assembly-CSharp");
+            Type rarityType = Type.GetType(
+                "UpgradeRarity, Assembly-CSharp");
+            Type effectType = Type.GetType(
+                "UpgradeEffectType, Assembly-CSharp");
+            ScriptableObject definition = ScriptableObject.CreateInstance(
+                definitionType);
+            ConfigureDefinition(
+                definitionType,
+                rarityType,
+                effectType,
+                definition,
+                "submit_damage_once",
+                1);
+            context.UpgradeType.GetMethod("ConfigureRun").Invoke(
+                context.UpgradeController,
+                new object[]
+                {
+                    18018,
+                    CreateDefinitionList(definitionType, definition)
+                });
             float assetDamage = (float)context.WeaponType
                 .GetProperty("BaseDamage")
                 .GetValue(context.Weapon);
@@ -432,6 +454,7 @@ namespace FPS.Tests.PlayMode
                 context.UpgradeType.GetProperty("SelectedUpgradeCount")
                     .GetValue(context.UpgradeController),
                 Is.EqualTo(1));
+            UnityEngine.Object.DestroyImmediate(definition);
         }
 
         [UnityTest]

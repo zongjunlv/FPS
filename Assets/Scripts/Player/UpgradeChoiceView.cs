@@ -12,6 +12,7 @@ public sealed class UpgradeChoiceView : MonoBehaviour
     private RectTransform root;
     private RectTransform cardsRoot;
     private TMP_FontAsset fontAsset;
+    private TMP_FontAsset runtimeChineseFontAsset;
     private Func<int, bool> onSelected;
     private bool selectionCommitted;
 
@@ -26,8 +27,7 @@ public sealed class UpgradeChoiceView : MonoBehaviour
             return;
         }
 
-        fontAsset = Resources.Load<TMP_FontAsset>(
-            "Fonts & Materials/LiberationSans SDF");
+        fontAsset = CreateChineseFontAsset();
         root = CreateRect("UpgradeChoicePanel", modalLayer);
         Stretch(root);
         Image blocker = root.gameObject.AddComponent<Image>();
@@ -36,7 +36,7 @@ public sealed class UpgradeChoiceView : MonoBehaviour
         TMP_Text heading = CreateText(
             "UpgradeHeading",
             root,
-            "CHOOSE AN UPGRADE",
+            "选择一项升级",
             34f,
             TextAlignmentOptions.Center);
         SetRect(
@@ -51,7 +51,7 @@ public sealed class UpgradeChoiceView : MonoBehaviour
         TMP_Text instruction = CreateText(
             "UpgradeInstruction",
             root,
-            "SELECT WITH MOUSE  ·  MOVE WITH ARROWS / STICK  ·  CONFIRM",
+            "鼠标选择  ·  方向键或摇杆切换  ·  确认键选择",
             15f,
             TextAlignmentOptions.Center);
         SetRect(
@@ -136,6 +136,15 @@ public sealed class UpgradeChoiceView : MonoBehaviour
         selectionCommitted = false;
     }
 
+    private void OnDestroy()
+    {
+        if (runtimeChineseFontAsset != null)
+        {
+            Destroy(runtimeChineseFontAsset);
+        }
+
+    }
+
     private void Update()
     {
         if (!IsVisible || selectionCommitted || Keyboard.current == null)
@@ -211,7 +220,7 @@ public sealed class UpgradeChoiceView : MonoBehaviour
         TMP_Text rarity = CreateText(
             "Rarity",
             cardRect,
-            definition.Rarity.ToString().ToUpperInvariant(),
+            GetRarityText(definition.Rarity),
             14f,
             TextAlignmentOptions.Center);
         SetRect(
@@ -416,6 +425,53 @@ public sealed class UpgradeChoiceView : MonoBehaviour
             UpgradeRarity.Rare => new Color(0.2f, 0.58f, 1f, 1f),
             UpgradeRarity.Epic => new Color(0.76f, 0.34f, 1f, 1f),
             _ => new Color(0.38f, 0.92f, 0.86f, 1f)
+        };
+    }
+
+    private TMP_FontAsset CreateChineseFontAsset()
+    {
+        string[] preferredFonts =
+        {
+            "PingFang SC",
+            "Microsoft YaHei",
+            "Noto Sans CJK SC",
+            "Source Han Sans SC",
+            "Arial Unicode MS"
+        };
+        for (int index = 0; index < preferredFonts.Length; index++)
+        {
+            runtimeChineseFontAsset = TMP_FontAsset.CreateFontAsset(
+                preferredFonts[index],
+                "Regular",
+                48);
+
+            if (runtimeChineseFontAsset != null &&
+                runtimeChineseFontAsset.HasCharacter('中', false, true))
+            {
+                runtimeChineseFontAsset.name = "升级卡中文动态字体";
+                return runtimeChineseFontAsset;
+            }
+
+            if (runtimeChineseFontAsset != null)
+            {
+                Destroy(runtimeChineseFontAsset);
+                runtimeChineseFontAsset = null;
+            }
+        }
+
+        Debug.LogWarning(
+            "未找到可用的中文系统字体，升级卡将使用默认字体。");
+        return Resources.Load<TMP_FontAsset>(
+            "Fonts & Materials/LiberationSans SDF");
+    }
+
+    private static string GetRarityText(UpgradeRarity rarity)
+    {
+        return rarity switch
+        {
+            UpgradeRarity.Rare => "稀有",
+            UpgradeRarity.Epic => "史诗",
+            _ => "普通"
         };
     }
 }

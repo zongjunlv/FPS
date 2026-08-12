@@ -18,6 +18,7 @@ public sealed class UnifiedGameHud : MonoBehaviour
     private PlayerVitalsHudPresenter vitalsPresenter;
     private PlayerCrosshairPresenter crosshairPresenter;
     private PlayerCombatFeedbackController feedbackPresenter;
+    private PlayerRuntimeCombatStats runtimeStats;
     private IWaveProgressSource waveSource;
     private IRunProgressionSource progressionSource;
 
@@ -35,6 +36,7 @@ public sealed class UnifiedGameHud : MonoBehaviour
     private Image damageIndicator;
     private TMP_Text healthText;
     private TMP_Text armorText;
+    private TMP_Text movementText;
     private TMP_Text weaponText;
     private TMP_Text fireModeText;
     private Text ammoText;
@@ -69,6 +71,8 @@ public sealed class UnifiedGameHud : MonoBehaviour
     public int ProgressionRefreshCount { get; private set; }
     public string HealthText => healthText != null ? healthText.text : string.Empty;
     public string ArmorText => armorText != null ? armorText.text : string.Empty;
+    public string MovementText =>
+        movementText != null ? movementText.text : string.Empty;
     public string AmmoText => ammoText != null && reserveAmmoText != null
         ? $"{ammoText.text} / {reserveAmmoText.text}"
         : string.Empty;
@@ -133,6 +137,7 @@ public sealed class UnifiedGameHud : MonoBehaviour
             playerRoot.GetComponent<PlayerCrosshairPresenter>();
         feedbackPresenter =
             playerRoot.GetComponent<PlayerCombatFeedbackController>();
+        runtimeStats = playerRoot.GetComponent<PlayerRuntimeCombatStats>();
         PlayerRunProgression progression =
             playerRoot.GetComponent<PlayerRunProgression>();
 
@@ -150,6 +155,10 @@ public sealed class UnifiedGameHud : MonoBehaviour
         vitalsPresenter.ViewChanged += RefreshVitals;
         crosshairPresenter.ViewChanged += RefreshCrosshair;
         feedbackPresenter.ViewChanged += RefreshDamage;
+        if (runtimeStats != null)
+        {
+            runtimeStats.ModifiersChanged += RefreshVitals;
+        }
         ammoPresenter.SetLegacyPresentation(false);
         vitalsPresenter.SetLegacyPresentation(false);
         crosshairPresenter.SetLegacyPresentation(false);
@@ -250,9 +259,15 @@ public sealed class UnifiedGameHud : MonoBehaviour
             feedbackPresenter.ViewChanged -= RefreshDamage;
         }
 
+        if (runtimeStats != null)
+        {
+            runtimeStats.ModifiersChanged -= RefreshVitals;
+        }
+
         UnbindProgression();
 
         health = null;
+        runtimeStats = null;
         combat = null;
         weapon = null;
         IsBound = false;
@@ -338,9 +353,19 @@ public sealed class UnifiedGameHud : MonoBehaviour
             armorTrail,
             vitalsPresenter.TrailingArmorNormalized);
         healthText.text =
-            $"HEALTH  {Mathf.CeilToInt(health.CurrentHealth):000}";
+            $"HEALTH  {Mathf.RoundToInt(health.CurrentHealth):000} / " +
+            $"{Mathf.RoundToInt(health.MaxHealth):000}";
         armorText.text =
-            $"ARMOR   {Mathf.CeilToInt(health.CurrentArmor):000}";
+            $"ARMOR   {Mathf.RoundToInt(health.CurrentArmor):000} / " +
+            $"{Mathf.RoundToInt(health.MaxArmor):000}";
+        if (movementText != null)
+        {
+            float multiplier = runtimeStats != null
+                ? runtimeStats.SurvivalModifiers.MovementSpeedMultiplier
+                : 1f;
+            movementText.text =
+                $"MOVE  {Mathf.RoundToInt(multiplier * 100f)}%";
+        }
         VitalsRefreshCount++;
     }
 
@@ -487,7 +512,7 @@ public sealed class UnifiedGameHud : MonoBehaviour
             Vector2.zero,
             Vector2.zero,
             new Vector2(360f, 58f),
-            new Vector2(28f, 154f));
+            new Vector2(28f, 180f));
         Image accentStrip = CreateImage(
             "ProgressionAccent",
             progressionHudRoot,
@@ -618,34 +643,38 @@ public sealed class UnifiedGameHud : MonoBehaviour
             new Vector2(0f, 0f),
             new Vector2(0f, 0f),
             new Vector2(0f, 0f),
-            new Vector2(360f, 116f),
+            new Vector2(360f, 142f),
             new Vector2(28f, 28f));
         CreateIcon("ArmorIcon", root, iconCatalog.Get(HudIconId.Armor),
-            armorColor, new Vector2(14f, 68f), new Vector2(28f, 28f));
-        CreateBarBackground(root, new Vector2(52f, 72f),
+            armorColor, new Vector2(14f, 92f), new Vector2(28f, 28f));
+        CreateBarBackground(root, new Vector2(52f, 96f),
             new Vector2(290f, 20f));
         armorTrail = CreateFilledBar(
-            "ArmorTrail", root, trail, new Vector2(52f, 72f),
+            "ArmorTrail", root, trail, new Vector2(52f, 96f),
             new Vector2(290f, 20f));
         armorFill = CreateFilledBar(
-            "ArmorFill", root, armorColor, new Vector2(52f, 72f),
+            "ArmorFill", root, armorColor, new Vector2(52f, 96f),
             new Vector2(290f, 20f));
         armorText = CreateText(
             "ArmorText", root, 15f, TextAlignmentOptions.MidlineLeft,
-            new Vector2(58f, 70f), new Vector2(278f, 24f));
+            new Vector2(58f, 94f), new Vector2(278f, 24f));
         CreateIcon("HealthIcon", root, iconCatalog.Get(HudIconId.Health),
-            healthColor, new Vector2(14f, 22f), new Vector2(30f, 30f));
-        CreateBarBackground(root, new Vector2(52f, 24f),
+            healthColor, new Vector2(14f, 46f), new Vector2(30f, 30f));
+        CreateBarBackground(root, new Vector2(52f, 48f),
             new Vector2(290f, 28f));
         healthTrail = CreateFilledBar(
-            "HealthTrail", root, trail, new Vector2(52f, 24f),
+            "HealthTrail", root, trail, new Vector2(52f, 48f),
             new Vector2(290f, 28f));
         healthFill = CreateFilledBar(
-            "HealthFill", root, healthColor, new Vector2(52f, 24f),
+            "HealthFill", root, healthColor, new Vector2(52f, 48f),
             new Vector2(290f, 28f));
         healthText = CreateText(
             "HealthText", root, 17f, TextAlignmentOptions.MidlineLeft,
-            new Vector2(58f, 23f), new Vector2(278f, 30f));
+            new Vector2(58f, 47f), new Vector2(278f, 30f));
+        movementText = CreateText(
+            "MovementText", root, 13f, TextAlignmentOptions.MidlineRight,
+            new Vector2(52f, 10f), new Vector2(290f, 24f));
+        movementText.color = new Color(0.38f, 0.92f, 0.86f, 1f);
     }
 
     private void BuildWeaponHud()

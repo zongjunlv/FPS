@@ -12,6 +12,10 @@ public sealed class PlayerUpgradeController : MonoBehaviour
     private readonly List<UpgradeDefinition> runtimeDefinitions = new();
     private PlayerRunProgression progression;
     private PlayerRuntimeCombatStats combatStats;
+    private Health health;
+    private float baseMaximumHealth;
+    private float baseMaximumArmor;
+    private bool survivalBaselineCaptured;
     private GameplayLockCoordinator gameplayLocks;
     private UpgradeCandidateGenerator generator;
     private GameplayLockLease choiceLock;
@@ -36,6 +40,7 @@ public sealed class PlayerUpgradeController : MonoBehaviour
     {
         progression = GetComponent<PlayerRunProgression>();
         combatStats = GetComponent<PlayerRuntimeCombatStats>();
+        health = GetComponent<Health>();
         gameplayLocks = GetComponent<GameplayLockCoordinator>();
         generator = new UpgradeCandidateGenerator(runSeed);
         EnsureDefinitions();
@@ -111,12 +116,18 @@ public sealed class PlayerUpgradeController : MonoBehaviour
 
         UpgradeDefinition selected = currentCandidates[candidateIndex];
 
+        if (!CanApplyRuntimeEffect(selected))
+        {
+            return false;
+        }
+
         if (!state.TryApply(selected))
         {
             return false;
         }
 
         combatStats?.SetWeaponModifiers(state.WeaponModifiers);
+        ApplySurvivalEffect(selected);
         pendingChoices = Mathf.Max(0, pendingChoices - 1);
 
         if (pendingChoices > 0)
@@ -244,8 +255,8 @@ public sealed class PlayerUpgradeController : MonoBehaviour
         {
             CreateRuntimeDefinition(
                 "damage_hardened_rounds",
-                "HARDENED ROUNDS",
-                "Weapon damage +25% per level.",
+                "强化弹头",
+                "每层使武器伤害提高 25%。",
                 UpgradeRarity.Common,
                 3,
                 UpgradeEffectType.WeaponDamage,
@@ -253,8 +264,8 @@ public sealed class PlayerUpgradeController : MonoBehaviour
                 HudIconId.Ammo),
             CreateRuntimeDefinition(
                 "damage_weakpoint_analysis",
-                "WEAKPOINT ANALYSIS",
-                "Weapon damage +20% per level.",
+                "弱点分析",
+                "每层使武器伤害提高 20%。",
                 UpgradeRarity.Rare,
                 2,
                 UpgradeEffectType.WeaponDamage,
@@ -262,8 +273,8 @@ public sealed class PlayerUpgradeController : MonoBehaviour
                 HudIconId.Rifle),
             CreateRuntimeDefinition(
                 "damage_overcharged_core",
-                "OVERCHARGED CORE",
-                "Weapon damage +35% per level.",
+                "过载核心",
+                "使武器伤害提高 35%。",
                 UpgradeRarity.Epic,
                 1,
                 UpgradeEffectType.WeaponDamage,
@@ -271,8 +282,8 @@ public sealed class PlayerUpgradeController : MonoBehaviour
                 HudIconId.Handgun),
             CreateRuntimeDefinition(
                 "fire_rate_rapid_cycling",
-                "RAPID CYCLING",
-                "Fire rate +15% per level.",
+                "快速枪机",
+                "每层使武器射速提高 15%。",
                 UpgradeRarity.Common,
                 3,
                 UpgradeEffectType.WeaponFireRate,
@@ -280,8 +291,8 @@ public sealed class PlayerUpgradeController : MonoBehaviour
                 HudIconId.Rifle),
             CreateRuntimeDefinition(
                 "magazine_extended_capacity",
-                "EXTENDED MAGAZINE",
-                "Magazine capacity +20% per level.",
+                "扩容弹匣",
+                "每层使弹匣容量提高 20%。",
                 UpgradeRarity.Rare,
                 3,
                 UpgradeEffectType.WeaponMagazineCapacity,
@@ -289,8 +300,8 @@ public sealed class PlayerUpgradeController : MonoBehaviour
                 HudIconId.Ammo),
             CreateRuntimeDefinition(
                 "reload_quick_hands",
-                "QUICK HANDS",
-                "Reload speed +20% per level.",
+                "快速换弹",
+                "每层使换弹速度提高 20%。",
                 UpgradeRarity.Common,
                 3,
                 UpgradeEffectType.WeaponReloadSpeed,
@@ -298,8 +309,8 @@ public sealed class PlayerUpgradeController : MonoBehaviour
                 HudIconId.Handgun),
             CreateRuntimeDefinition(
                 "recoil_dampening",
-                "RECOIL DAMPENER",
-                "Recoil control +18% per level.",
+                "后坐力抑制",
+                "每层使后坐力控制提高 18%。",
                 UpgradeRarity.Rare,
                 3,
                 UpgradeEffectType.WeaponRecoilControl,
@@ -307,13 +318,58 @@ public sealed class PlayerUpgradeController : MonoBehaviour
                 HudIconId.Rifle),
             CreateRuntimeDefinition(
                 "accuracy_tight_grouping",
-                "TIGHT GROUPING",
-                "Accuracy +20% per level.",
+                "精准射击",
+                "每层使射击精准度提高 20%。",
                 UpgradeRarity.Epic,
                 2,
                 UpgradeEffectType.WeaponAccuracy,
                 0.2f,
-                HudIconId.Ammo)
+                HudIconId.Ammo),
+            CreateRuntimeDefinition(
+                "survival_vitality_reinforcement",
+                "生命强化",
+                "每层使最大生命值提高 20%。",
+                UpgradeRarity.Common,
+                3,
+                UpgradeEffectType.MaximumHealth,
+                0.2f,
+                HudIconId.Health),
+            CreateRuntimeDefinition(
+                "survival_reinforced_plating",
+                "强化护甲",
+                "每层使最大护甲值提高 20%。",
+                UpgradeRarity.Rare,
+                3,
+                UpgradeEffectType.MaximumArmor,
+                0.2f,
+                HudIconId.Armor),
+            CreateRuntimeDefinition(
+                "survival_emergency_treatment",
+                "紧急治疗",
+                "立即恢复 30 点生命值。",
+                UpgradeRarity.Common,
+                5,
+                UpgradeEffectType.HealthRestore,
+                30f,
+                HudIconId.Health),
+            CreateRuntimeDefinition(
+                "survival_field_armor_repair",
+                "战地护甲修复",
+                "立即恢复 30 点护甲值。",
+                UpgradeRarity.Common,
+                5,
+                UpgradeEffectType.ArmorRestore,
+                30f,
+                HudIconId.Armor),
+            CreateRuntimeDefinition(
+                "survival_mobility_training",
+                "机动训练",
+                "每层使移动速度提高 10%。",
+                UpgradeRarity.Rare,
+                3,
+                UpgradeEffectType.MovementSpeed,
+                0.1f,
+                HudIconId.Health)
         };
     }
 
@@ -341,5 +397,60 @@ public sealed class PlayerUpgradeController : MonoBehaviour
             amount);
         runtimeDefinitions.Add(definition);
         return definition;
+    }
+
+    private bool CanApplyRuntimeEffect(UpgradeDefinition definition)
+    {
+        if (definition == null || health == null)
+        {
+            return definition != null;
+        }
+
+        return definition.EffectType switch
+        {
+            UpgradeEffectType.HealthRestore =>
+                !health.IsDead && health.CurrentHealth < health.MaxHealth,
+            UpgradeEffectType.ArmorRestore =>
+                !health.IsDead && health.CurrentArmor < health.MaxArmor,
+            _ => !health.IsDead
+        };
+    }
+
+    private void ApplySurvivalEffect(UpgradeDefinition selected)
+    {
+        CaptureSurvivalBaseline();
+        combatStats?.SetSurvivalModifiers(state.SurvivalModifiers);
+
+        switch (selected.EffectType)
+        {
+            case UpgradeEffectType.MaximumHealth:
+                health?.SetMaximumHealth(
+                    baseMaximumHealth *
+                    state.SurvivalModifiers.MaximumHealthMultiplier);
+                break;
+            case UpgradeEffectType.MaximumArmor:
+                health?.SetMaximumArmor(
+                    baseMaximumArmor *
+                    state.SurvivalModifiers.MaximumArmorMultiplier);
+                break;
+            case UpgradeEffectType.HealthRestore:
+                health?.RestoreHealth(selected.EffectAmount);
+                break;
+            case UpgradeEffectType.ArmorRestore:
+                health?.RestoreArmor(selected.EffectAmount);
+                break;
+        }
+    }
+
+    private void CaptureSurvivalBaseline()
+    {
+        if (survivalBaselineCaptured || health == null)
+        {
+            return;
+        }
+
+        baseMaximumHealth = health.MaxHealth;
+        baseMaximumArmor = health.MaxArmor;
+        survivalBaselineCaptured = true;
     }
 }

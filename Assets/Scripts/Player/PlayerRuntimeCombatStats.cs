@@ -6,6 +6,8 @@ public sealed class PlayerRuntimeCombatStats : MonoBehaviour
 
     public WeaponRuntimeModifiers WeaponModifiers { get; private set; } =
         WeaponRuntimeModifiers.Identity;
+    public SurvivalRuntimeModifiers SurvivalModifiers { get; private set; } =
+        SurvivalRuntimeModifiers.Identity;
     public float WeaponDamageMultiplier =>
         WeaponModifiers.DamageMultiplier;
 
@@ -48,6 +50,21 @@ public sealed class PlayerRuntimeCombatStats : MonoBehaviour
                WeaponModifiers.AccuracyMultiplier;
     }
 
+    public float ApplyMovementSpeed(float baseSpeed)
+    {
+        return Mathf.Max(0f, baseSpeed) *
+               SurvivalModifiers.MovementSpeedMultiplier;
+    }
+
+    public void SetSurvivalModifiers(SurvivalRuntimeModifiers modifiers)
+    {
+        SurvivalModifiers = new SurvivalRuntimeModifiers(
+            modifiers.MaximumHealthMultiplier,
+            modifiers.MaximumArmorMultiplier,
+            modifiers.MovementSpeedMultiplier);
+        ModifiersChanged?.Invoke();
+    }
+
     public void SetWeaponDamageMultiplier(float multiplier)
     {
         SetWeaponModifiers(new WeaponRuntimeModifiers(
@@ -74,5 +91,6 @@ public sealed class PlayerRuntimeCombatStats : MonoBehaviour
     public void ResetRuntimeModifiers()
     {
         SetWeaponModifiers(WeaponRuntimeModifiers.Identity);
+        SetSurvivalModifiers(SurvivalRuntimeModifiers.Identity);
     }
 }
