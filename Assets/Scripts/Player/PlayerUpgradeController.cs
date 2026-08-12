@@ -29,6 +29,7 @@ public sealed class PlayerUpgradeController : MonoBehaviour
     public IReadOnlyList<string> SelectionHistory => state.SelectionHistory;
     public IReadOnlyList<UpgradeDefinition> CurrentCandidates =>
         currentCandidates;
+    public IReadOnlyList<UpgradeDefinition> AvailableUpgrades => definitions;
     public UpgradeCandidateStatus LastCandidateStatus { get; private set; }
 
     private void Awake()
@@ -115,8 +116,7 @@ public sealed class PlayerUpgradeController : MonoBehaviour
             return false;
         }
 
-        combatStats?.SetWeaponDamageMultiplier(
-            state.WeaponDamageMultiplier);
+        combatStats?.SetWeaponModifiers(state.WeaponModifiers);
         pendingChoices = Mathf.Max(0, pendingChoices - 1);
 
         if (pendingChoices > 0)
@@ -248,6 +248,7 @@ public sealed class PlayerUpgradeController : MonoBehaviour
                 "Weapon damage +25% per level.",
                 UpgradeRarity.Common,
                 3,
+                UpgradeEffectType.WeaponDamage,
                 0.25f,
                 HudIconId.Ammo),
             CreateRuntimeDefinition(
@@ -256,6 +257,7 @@ public sealed class PlayerUpgradeController : MonoBehaviour
                 "Weapon damage +20% per level.",
                 UpgradeRarity.Rare,
                 2,
+                UpgradeEffectType.WeaponDamage,
                 0.2f,
                 HudIconId.Rifle),
             CreateRuntimeDefinition(
@@ -264,8 +266,54 @@ public sealed class PlayerUpgradeController : MonoBehaviour
                 "Weapon damage +35% per level.",
                 UpgradeRarity.Epic,
                 1,
+                UpgradeEffectType.WeaponDamage,
                 0.35f,
-                HudIconId.Handgun)
+                HudIconId.Handgun),
+            CreateRuntimeDefinition(
+                "fire_rate_rapid_cycling",
+                "RAPID CYCLING",
+                "Fire rate +15% per level.",
+                UpgradeRarity.Common,
+                3,
+                UpgradeEffectType.WeaponFireRate,
+                0.15f,
+                HudIconId.Rifle),
+            CreateRuntimeDefinition(
+                "magazine_extended_capacity",
+                "EXTENDED MAGAZINE",
+                "Magazine capacity +20% per level.",
+                UpgradeRarity.Rare,
+                3,
+                UpgradeEffectType.WeaponMagazineCapacity,
+                0.2f,
+                HudIconId.Ammo),
+            CreateRuntimeDefinition(
+                "reload_quick_hands",
+                "QUICK HANDS",
+                "Reload speed +20% per level.",
+                UpgradeRarity.Common,
+                3,
+                UpgradeEffectType.WeaponReloadSpeed,
+                0.2f,
+                HudIconId.Handgun),
+            CreateRuntimeDefinition(
+                "recoil_dampening",
+                "RECOIL DAMPENER",
+                "Recoil control +18% per level.",
+                UpgradeRarity.Rare,
+                3,
+                UpgradeEffectType.WeaponRecoilControl,
+                0.18f,
+                HudIconId.Rifle),
+            CreateRuntimeDefinition(
+                "accuracy_tight_grouping",
+                "TIGHT GROUPING",
+                "Accuracy +20% per level.",
+                UpgradeRarity.Epic,
+                2,
+                UpgradeEffectType.WeaponAccuracy,
+                0.2f,
+                HudIconId.Ammo)
         };
     }
 
@@ -275,6 +323,7 @@ public sealed class PlayerUpgradeController : MonoBehaviour
         string description,
         UpgradeRarity rarity,
         int maximumLevel,
+        UpgradeEffectType effectType,
         float amount,
         HudIconId iconId)
     {
@@ -288,7 +337,7 @@ public sealed class PlayerUpgradeController : MonoBehaviour
             new HudIconCatalog().Get(iconId),
             rarity,
             maximumLevel,
-            UpgradeEffectType.WeaponDamage,
+            effectType,
             amount);
         runtimeDefinitions.Add(definition);
         return definition;

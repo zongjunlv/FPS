@@ -22,6 +22,13 @@ public class WeaponLoadoutController : MonoBehaviour
     public bool IsSwitching => switchState.IsSwitching;
     public float SwitchDuration => switchDuration;
 
+    public WeaponController GetWeapon(int index)
+    {
+        return index >= 0 && index < weapons.Length
+            ? weapons[index]
+            : null;
+    }
+
     private WeaponSwitchState switchState;
     private int displayedWeaponIndex;
 

@@ -251,11 +251,25 @@ public sealed class UpgradeChoiceView : MonoBehaviour
             new Vector2(292f, 72f),
             new Vector2(0f, -254f));
         description.color = new Color(0.82f, 0.86f, 0.88f, 1f);
+        TMP_Text effect = CreateText(
+            "Effect",
+            cardRect,
+            definition.EffectValueText,
+            17f,
+            TextAlignmentOptions.Center);
+        SetRect(
+            effect.rectTransform,
+            new Vector2(0.5f, 0f),
+            new Vector2(0.5f, 0f),
+            new Vector2(0.5f, 0f),
+            new Vector2(292f, 28f),
+            new Vector2(0f, 68f));
+        effect.color = rarityColor;
+        effect.fontStyle = FontStyles.Bold;
         TMP_Text stack = CreateText(
             "Stack",
             cardRect,
-            $"LEVEL {currentLevel}  →  {currentLevel + 1} / " +
-            definition.MaximumLevel,
+            definition.GetLevelText(currentLevel),
             14f,
             TextAlignmentOptions.Center);
         SetRect(

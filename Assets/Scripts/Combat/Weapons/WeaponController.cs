@@ -18,6 +18,7 @@ public class WeaponController : MonoBehaviour
     public event Action AmmoChanged;
     public event Action DryFired;
     public event Action ReloadStateChanged;
+    public event Action RuntimePropertiesChanged;
     public event Action<ShotResult> ShotResolved;
 
     public bool IsAutomatic => weapon.IsAutomatic;
@@ -26,13 +27,18 @@ public class WeaponController : MonoBehaviour
     public float VerticalRecoil => weapon.VerticalRecoil;
     public float HorizontalRecoil => weapon.HorizontalRecoil;
     public float CurrentVerticalRecoil =>
-        weapon.VerticalRecoil *
-        Mathf.Lerp(1f, weapon.AdsRecoilMultiplier, aimBlend);
+        ApplyRuntimeRecoil(
+            weapon.VerticalRecoil *
+            Mathf.Lerp(1f, weapon.AdsRecoilMultiplier, aimBlend));
     public float CurrentHorizontalRecoil =>
-        weapon.HorizontalRecoil *
-        Mathf.Lerp(1f, weapon.AdsRecoilMultiplier, aimBlend);
+        ApplyRuntimeRecoil(
+            weapon.HorizontalRecoil *
+            Mathf.Lerp(1f, weapon.AdsRecoilMultiplier, aimBlend));
     public float CurrentSpreadDegrees =>
-        spreadState.CurrentSpreadDegrees;
+        runtimeCombatStats != null
+            ? runtimeCombatStats.ApplySpread(
+                spreadState.CurrentSpreadDegrees)
+            : spreadState.CurrentSpreadDegrees;
     public float BaseDamage => weapon.Damage;
     public float Damage => runtimeCombatStats != null
         ? runtimeCombatStats.ApplyWeaponDamage(BaseDamage)
@@ -40,8 +46,15 @@ public class WeaponController : MonoBehaviour
     public int CurrentAmmo => ammoState.CurrentAmmo;
     public int ReserveAmmo => ammoState.ReserveAmmo;
     public int MagazineCapacity => ammoState.MagazineCapacity;
-    public float FireInterval => weapon.FireIntervel;
-    public float ReloadDuration => weapon.ReloadDuration;
+    public float FireInterval => runtimeCombatStats != null
+        ? runtimeCombatStats.ApplyFireInterval(weapon.FireIntervel)
+        : weapon.FireIntervel;
+    public float ReloadDuration => runtimeCombatStats != null
+        ? runtimeCombatStats.ApplyReloadDuration(weapon.ReloadDuration)
+        : weapon.ReloadDuration;
+    public float ReloadAnimationSpeed =>
+        Mathf.Max(0.01f, weapon.ReloadDuration) /
+        Mathf.Max(0.01f, ReloadDuration);
     public bool IsReloading => ammoState.IsReloading;
     public Transform MuzzleTransform => FirePoint.transform;
     public RuntimeAnimatorController CharacterAnimatorController =>
@@ -129,11 +142,12 @@ public class WeaponController : MonoBehaviour
     {
         bool completed = ammoState.AdvanceReload(
             Time.deltaTime,
-            weapon.ReloadDuration);
+            ReloadDuration);
         spreadState.Tick(Time.deltaTime);
 
         if (completed)
         {
+            ResetWeaponAnimationSpeed();
             AmmoChanged?.Invoke();
             ReloadStateChanged?.Invoke();
         }
@@ -152,7 +166,7 @@ public class WeaponController : MonoBehaviour
             return false;
         }
 
-        nextFireTime = Time.time + weapon.FireIntervel;
+        nextFireTime = Time.time + FireInterval;
         ResolveHitscan();
         spreadState.RegisterShot();
         soundEventChannel?.Publish(
@@ -219,9 +233,9 @@ public class WeaponController : MonoBehaviour
         aimCamera = camera;
         shooterRoot = ownerRoot;
         tracerPool = sharedTracerPool;
-        runtimeCombatStats = ownerRoot != null
+        SetRuntimeCombatStats(ownerRoot != null
             ? ownerRoot.GetComponent<PlayerRuntimeCombatStats>()
-            : null;
+            : null);
     }
 
     public bool TryStartReload()
@@ -243,6 +257,7 @@ public class WeaponController : MonoBehaviour
 
         if (weaponAnimator != null)
         {
+            weaponAnimator.speed = ReloadAnimationSpeed;
             weaponAnimator.CrossFade(
                 wasEmpty ? "Reload Empty" : "Reload",
                 0.05f,
@@ -264,6 +279,7 @@ public class WeaponController : MonoBehaviour
 
         if (weaponAnimator != null)
         {
+            ResetWeaponAnimationSpeed();
             weaponAnimator.CrossFade("Default", 0.1f, 0);
         }
 
@@ -292,6 +308,76 @@ public class WeaponController : MonoBehaviour
         if (ammoState != null)
         {
             CancelReload();
+        }
+    }
+
+    private void OnDestroy()
+    {
+        SetRuntimeCombatStats(null);
+    }
+
+    private float ApplyRuntimeRecoil(float baseRecoil)
+    {
+        return runtimeCombatStats != null
+            ? runtimeCombatStats.ApplyRecoil(baseRecoil)
+            : baseRecoil;
+    }
+
+    private void SetRuntimeCombatStats(PlayerRuntimeCombatStats stats)
+    {
+        if (runtimeCombatStats == stats)
+        {
+            RefreshRuntimeWeaponState();
+            return;
+        }
+
+        if (runtimeCombatStats != null)
+        {
+            runtimeCombatStats.ModifiersChanged -=
+                RefreshRuntimeWeaponState;
+        }
+
+        runtimeCombatStats = stats;
+
+        if (runtimeCombatStats != null)
+        {
+            runtimeCombatStats.ModifiersChanged +=
+                RefreshRuntimeWeaponState;
+        }
+
+        RefreshRuntimeWeaponState();
+    }
+
+    private void RefreshRuntimeWeaponState()
+    {
+        if (ammoState == null || weapon == null)
+        {
+            return;
+        }
+
+        int capacity = runtimeCombatStats != null
+            ? runtimeCombatStats.ApplyMagazineCapacity(
+                weapon.MagazineCapacity)
+            : Mathf.Max(1, weapon.MagazineCapacity);
+
+        if (ammoState.SetMagazineCapacity(capacity))
+        {
+            AmmoChanged?.Invoke();
+        }
+
+        if (weaponAnimator != null && IsReloading)
+        {
+            weaponAnimator.speed = ReloadAnimationSpeed;
+        }
+
+        RuntimePropertiesChanged?.Invoke();
+    }
+
+    private void ResetWeaponAnimationSpeed()
+    {
+        if (weaponAnimator != null)
+        {
+            weaponAnimator.speed = 1f;
         }
     }
 

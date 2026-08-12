@@ -82,6 +82,14 @@ public class PlayerCombatController : MonoBehaviour
             gameObject.AddComponent<UnifiedGameHudBootstrap>();
         }
 
+        for (int index = 0; index < loadout.WeaponCount; index++)
+        {
+            loadout.GetWeapon(index)?.ConfigureAiming(
+                playerController.AimCamera,
+                transform,
+                tracerPool);
+        }
+
         loadout.SwitchStarted += HandleSwitchStarted;
         loadout.SwitchInterrupted += HandleSwitchInterrupted;
         loadout.WeaponPresentationChanged +=
@@ -108,6 +116,8 @@ public class PlayerCombatController : MonoBehaviour
         {
             EquippedWeapon.ReloadStateChanged -=
                 HandleReloadStateChanged;
+            EquippedWeapon.RuntimePropertiesChanged -=
+                HandleWeaponRuntimePropertiesChanged;
             EquippedWeapon.ShotResolved -= HandleShotResolved;
         }
     }
@@ -191,6 +201,19 @@ public class PlayerCombatController : MonoBehaviour
         EquippedWeapon?.CancelReload();
     }
 
+    public void SuspendGameplayInput(bool preserveWeaponState)
+    {
+        GameplayInputEnabled = false;
+
+        if (preserveWeaponState || loadout == null)
+        {
+            return;
+        }
+
+        loadout.Interrupt();
+        EquippedWeapon?.CancelReload();
+    }
+
     private void HandleWeaponSelectionInput()
     {
         int requestedSlot = input.ConsumeWeaponSelection();
@@ -245,12 +268,16 @@ public class PlayerCombatController : MonoBehaviour
         {
             EquippedWeapon.ReloadStateChanged -=
                 HandleReloadStateChanged;
+            EquippedWeapon.RuntimePropertiesChanged -=
+                HandleWeaponRuntimePropertiesChanged;
             EquippedWeapon.ShotResolved -= HandleShotResolved;
         }
 
         EquippedWeapon = weapon;
         EquippedWeapon.ReloadStateChanged +=
             HandleReloadStateChanged;
+        EquippedWeapon.RuntimePropertiesChanged +=
+            HandleWeaponRuntimePropertiesChanged;
         EquippedWeapon.ShotResolved += HandleShotResolved;
         EquippedWeapon.ConfigureAiming(
             playerController.AimCamera,
@@ -270,10 +297,20 @@ public class PlayerCombatController : MonoBehaviour
         if (EquippedWeapon.IsReloading)
         {
             playerAnimator.PlayReloadAnimation(
-                EquippedWeapon.CurrentAmmo == 0);
+                EquippedWeapon.CurrentAmmo == 0,
+                EquippedWeapon.ReloadAnimationSpeed);
             return;
         }
 
         playerAnimator.StopReloadAnimation();
+    }
+
+    private void HandleWeaponRuntimePropertiesChanged()
+    {
+        if (EquippedWeapon != null && EquippedWeapon.IsReloading)
+        {
+            playerAnimator.SetReloadAnimationSpeed(
+                EquippedWeapon.ReloadAnimationSpeed);
+        }
     }
 }

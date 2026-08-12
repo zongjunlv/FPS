@@ -18,6 +18,7 @@ public sealed class GameplayLockCoordinator : MonoBehaviour
     private CursorLockMode cursorLockBeforeFirstLock;
     private bool cursorVisibleBeforeFirstLock;
     private bool lockApplied;
+    private bool preservingWeaponState;
 
     public event Action<bool> LockStateChanged;
 
@@ -96,8 +97,18 @@ public sealed class GameplayLockCoordinator : MonoBehaviour
 
         if (shouldLock)
         {
+            bool preserveWeaponState =
+                state.ActiveLockCount == 1 &&
+                state.IsReasonActive(GameplayLockReason.UpgradeChoice);
+
             if (lockApplied)
             {
+                if (preservingWeaponState && !preserveWeaponState)
+                {
+                    preservingWeaponState = false;
+                    combat.SuspendGameplayInput(false);
+                }
+
                 return;
             }
 
@@ -108,7 +119,8 @@ public sealed class GameplayLockCoordinator : MonoBehaviour
             cursorVisibleBeforeFirstLock = Cursor.visible;
             lockApplied = true;
             player.SetGameplayInputEnabled(false);
-            combat.SetGameplayInputEnabled(false);
+            preservingWeaponState = preserveWeaponState;
+            combat.SuspendGameplayInput(preserveWeaponState);
             Time.timeScale = 0f;
             Cursor.lockState = CursorLockMode.None;
             Cursor.visible = true;
@@ -129,6 +141,7 @@ public sealed class GameplayLockCoordinator : MonoBehaviour
     {
         Time.timeScale = Mathf.Max(0.01f, timeScaleBeforeFirstLock);
         lockApplied = false;
+        preservingWeaponState = false;
         player.SetGameplayInputEnabled(true);
         combat.SetGameplayInputEnabled(true);
         Cursor.lockState = cursorLockBeforeFirstLock;

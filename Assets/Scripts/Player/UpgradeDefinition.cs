@@ -10,7 +10,12 @@ public enum UpgradeRarity
 
 public enum UpgradeEffectType
 {
-    WeaponDamage
+    WeaponDamage,
+    WeaponFireRate,
+    WeaponMagazineCapacity,
+    WeaponReloadSpeed,
+    WeaponRecoilControl,
+    WeaponAccuracy
 }
 
 [CreateAssetMenu(
@@ -35,6 +40,8 @@ public sealed class UpgradeDefinition : ScriptableObject
     public int MaximumLevel => Mathf.Max(1, maximumLevel);
     public UpgradeEffectType EffectType => effectType;
     public float EffectAmount => Mathf.Max(0f, effectAmount);
+    public string EffectValueText =>
+        $"{GetEffectLabel(effectType)} +{Mathf.RoundToInt(EffectAmount * 100f)}%";
 
     public void Configure(
         string id,
@@ -61,5 +68,34 @@ public sealed class UpgradeDefinition : ScriptableObject
         maximumLevel = Mathf.Max(1, maxLevel);
         effectType = type;
         effectAmount = Mathf.Max(0f, amount);
+    }
+
+    public string GetLevelText(int currentLevel)
+    {
+        int level = Mathf.Clamp(currentLevel, 0, MaximumLevel);
+
+        if (level >= MaximumLevel)
+        {
+            return $"MAX LEVEL  {MaximumLevel} / {MaximumLevel}";
+        }
+
+        int nextLevel = level + 1;
+        return nextLevel >= MaximumLevel
+            ? $"LEVEL {level}  →  MAX  ({MaximumLevel} / {MaximumLevel})"
+            : $"LEVEL {level}  →  {nextLevel} / {MaximumLevel}";
+    }
+
+    private static string GetEffectLabel(UpgradeEffectType type)
+    {
+        return type switch
+        {
+            UpgradeEffectType.WeaponDamage => "DAMAGE",
+            UpgradeEffectType.WeaponFireRate => "FIRE RATE",
+            UpgradeEffectType.WeaponMagazineCapacity => "MAGAZINE",
+            UpgradeEffectType.WeaponReloadSpeed => "RELOAD SPEED",
+            UpgradeEffectType.WeaponRecoilControl => "RECOIL CONTROL",
+            UpgradeEffectType.WeaponAccuracy => "ACCURACY",
+            _ => "WEAPON"
+        };
     }
 }

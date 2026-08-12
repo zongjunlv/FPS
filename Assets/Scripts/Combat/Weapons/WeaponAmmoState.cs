@@ -2,7 +2,7 @@ using System;
 
 public sealed class WeaponAmmoState
 {
-    public int MagazineCapacity { get; }
+    public int MagazineCapacity { get; private set; }
     public int CurrentAmmo { get; private set; }
     public int ReserveAmmo { get; private set; }
     public bool IsReloading { get; private set; }
@@ -30,6 +30,28 @@ public sealed class WeaponAmmoState
         }
 
         CurrentAmmo--;
+        return true;
+    }
+
+    public bool SetMagazineCapacity(int magazineCapacity)
+    {
+        int nextCapacity = Math.Max(1, magazineCapacity);
+
+        if (nextCapacity == MagazineCapacity)
+        {
+            return false;
+        }
+
+        int spentRounds = Math.Max(0, MagazineCapacity - CurrentAmmo);
+        int nextAmmo = Math.Max(0, nextCapacity - spentRounds);
+
+        if (nextAmmo < CurrentAmmo)
+        {
+            ReserveAmmo += CurrentAmmo - nextAmmo;
+        }
+
+        MagazineCapacity = nextCapacity;
+        CurrentAmmo = Math.Min(nextAmmo, MagazineCapacity);
         return true;
     }
 

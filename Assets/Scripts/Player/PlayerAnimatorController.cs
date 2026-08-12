@@ -54,7 +54,9 @@ public class PlayerAnimatorController : MonoBehaviour
         animator.SetFloat(Aiming, aimingTarget, 0.1f, Time.deltaTime);
     }
 
-    public bool PlayReloadAnimation(bool emptyMagazine)
+    public bool PlayReloadAnimation(
+        bool emptyMagazine,
+        float playbackSpeed = 1f)
     {
         int stateHash = emptyMagazine ? ReloadEmpty : Reload;
 
@@ -65,6 +67,7 @@ public class PlayerAnimatorController : MonoBehaviour
             return false;
         }
 
+        animator.speed = Mathf.Max(0.01f, playbackSpeed);
         animator.CrossFadeInFixedTime(
             stateHash,
             0.08f,
@@ -91,7 +94,16 @@ public class PlayerAnimatorController : MonoBehaviour
                 0f);
         }
 
+        animator.speed = 1f;
         IsReloadAnimationPlaying = false;
+    }
+
+    public void SetReloadAnimationSpeed(float playbackSpeed)
+    {
+        if (IsReloadAnimationPlaying)
+        {
+            animator.speed = Mathf.Max(0.01f, playbackSpeed);
+        }
     }
 
     public void SetWeaponAnimatorController(
