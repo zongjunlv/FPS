@@ -125,7 +125,12 @@ public class PlayerController : MonoBehaviour
     {
         if (IsPaused)
         {
-            HandlePauseInput();
+            if (gameplayLocks == null ||
+                gameplayLocks.IsTopmost(GameplayLockReason.PauseMenu))
+            {
+                HandlePauseInput();
+            }
+
             return;
         }
 

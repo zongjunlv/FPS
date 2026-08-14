@@ -11,12 +11,14 @@ public sealed class UpgradeChoiceView : MonoBehaviour
     private readonly List<Button> cardButtons = new();
     private RectTransform root;
     private RectTransform cardsRoot;
+    private CanvasGroup rootCanvasGroup;
     private TMP_FontAsset fontAsset;
     private TMP_FontAsset runtimeChineseFontAsset;
     private Func<int, bool> onSelected;
     private bool selectionCommitted;
 
     public bool IsVisible => root != null && root.gameObject.activeSelf;
+    public bool IsSuspended { get; private set; }
     public int CardCount => cardButtons.Count;
     public int SubmitCount { get; private set; }
 
@@ -30,6 +32,7 @@ public sealed class UpgradeChoiceView : MonoBehaviour
         fontAsset = CreateChineseFontAsset();
         root = CreateRect("UpgradeChoicePanel", modalLayer);
         Stretch(root);
+        rootCanvasGroup = root.gameObject.AddComponent<CanvasGroup>();
         Image blocker = root.gameObject.AddComponent<Image>();
         blocker.color = new Color(0.005f, 0.008f, 0.012f, 0.9f);
         blocker.raycastTarget = true;
@@ -71,6 +74,34 @@ public sealed class UpgradeChoiceView : MonoBehaviour
             new Vector2(1120f, 440f),
             new Vector2(0f, -10f));
         root.gameObject.SetActive(false);
+    }
+
+    public void SetSuspended(bool suspended)
+    {
+        IsSuspended = suspended;
+
+        if (rootCanvasGroup == null)
+        {
+            return;
+        }
+
+        rootCanvasGroup.alpha = suspended ? 0f : 1f;
+        rootCanvasGroup.interactable = !suspended;
+        rootCanvasGroup.blocksRaycasts = !suspended;
+
+        if (suspended && EventSystem.current != null &&
+            EventSystem.current.currentSelectedGameObject != null &&
+            EventSystem.current.currentSelectedGameObject.transform
+                .IsChildOf(root))
+        {
+            EventSystem.current.SetSelectedGameObject(null);
+        }
+        else if (!suspended && IsVisible && cardButtons.Count > 0 &&
+                 EventSystem.current != null)
+        {
+            EventSystem.current.SetSelectedGameObject(
+                cardButtons[0].gameObject);
+        }
     }
 
     public void Show(
@@ -147,7 +178,8 @@ public sealed class UpgradeChoiceView : MonoBehaviour
 
     private void Update()
     {
-        if (!IsVisible || selectionCommitted || Keyboard.current == null)
+        if (!IsVisible || IsSuspended || selectionCommitted ||
+            Keyboard.current == null)
         {
             return;
         }
@@ -294,7 +326,7 @@ public sealed class UpgradeChoiceView : MonoBehaviour
 
     private void Commit(int index)
     {
-        if (selectionCommitted ||
+        if (IsSuspended || selectionCommitted ||
             index < 0 ||
             index >= cardButtons.Count ||
             onSelected == null)

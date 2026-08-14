@@ -20,6 +20,34 @@ public sealed class GameplayLockState
 
     public bool IsLocked => activeLocks.Count > 0;
     public int ActiveLockCount => activeLocks.Count;
+    public GameplayLockReason? TopReason
+    {
+        get
+        {
+            GameplayLockReason? topReason = null;
+            int topPriority = int.MinValue;
+            int topLockId = int.MinValue;
+
+            foreach (KeyValuePair<int, GameplayLockReason> activeLock
+                     in activeLocks)
+            {
+                int priority = GetPriority(activeLock.Value);
+
+                if (priority < topPriority ||
+                    (priority == topPriority &&
+                     activeLock.Key <= topLockId))
+                {
+                    continue;
+                }
+
+                topPriority = priority;
+                topLockId = activeLock.Key;
+                topReason = activeLock.Value;
+            }
+
+            return topReason;
+        }
+    }
 
     public GameplayLockLease Acquire(GameplayLockReason reason)
     {
@@ -42,6 +70,11 @@ public sealed class GameplayLockState
         return false;
     }
 
+    public bool IsTopmost(GameplayLockReason reason)
+    {
+        return TopReason == reason;
+    }
+
     public void Reset()
     {
         if (activeLocks.Count == 0)
@@ -59,6 +92,19 @@ public sealed class GameplayLockState
         {
             Changed?.Invoke();
         }
+    }
+
+    private static int GetPriority(GameplayLockReason reason)
+    {
+        return reason switch
+        {
+            GameplayLockReason.Victory => 400,
+            GameplayLockReason.Defeat => 400,
+            GameplayLockReason.UpgradeChoice => 300,
+            GameplayLockReason.PauseMenu => 200,
+            GameplayLockReason.Inventory => 100,
+            _ => 0
+        };
     }
 }
 

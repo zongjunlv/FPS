@@ -12,6 +12,7 @@ public enum ItemUseFailureReason
     TargetWeaponMissing,
     RifleAmmoFull,
     HandgunAmmoFull,
+    CooldownActive,
     EffectUnavailable
 }
 
@@ -300,6 +301,7 @@ public static class ItemUsePresentation
             ItemUseFailureReason.ArmorFull => "护甲值已满",
             ItemUseFailureReason.RifleAmmoFull => "步枪备弹已满",
             ItemUseFailureReason.HandgunAmmoFull => "手枪备弹已满",
+            ItemUseFailureReason.CooldownActive => "物品冷却中",
             ItemUseFailureReason.TargetWeaponMissing => "未找到对应武器",
             ItemUseFailureReason.EffectUnavailable => "物品效果不可用",
             _ => "当前无法使用该物品"

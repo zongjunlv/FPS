@@ -73,6 +73,9 @@ public sealed class CityNewInventoryBootstrap : MonoBehaviour
             inventory.RegisterItem(definitions[index]);
         }
 
+        inventory.BindQuickSlot(0, "medical_kit");
+        inventory.BindQuickSlot(1, "armor_pack");
+
         pickups = new WorldItemPickup[definitions.Length];
         pickups[0] = CreatePickup(
             definitions[0],

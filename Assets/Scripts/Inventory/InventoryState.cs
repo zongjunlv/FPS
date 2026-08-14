@@ -49,10 +49,78 @@ public readonly struct InventoryAddResult
     public bool Changed => Accepted > 0;
 }
 
+public enum InventoryOperationKind
+{
+    None,
+    Move,
+    Swap,
+    Merge,
+    Split,
+    Extract,
+    Compact
+}
+
+public enum InventoryOperationFailure
+{
+    None,
+    InvalidIndex,
+    SameSlot,
+    EmptySource,
+    EmptyDestination,
+    DestinationNotEmpty,
+    ItemMismatch,
+    DestinationFull,
+    InvalidQuantity,
+    QuantityExceedsSource,
+    NoChange
+}
+
+public readonly struct InventoryOperationResult
+{
+    public InventoryOperationResult(
+        bool succeeded,
+        InventoryOperationKind kind,
+        InventoryOperationFailure failure,
+        int transferredQuantity)
+    {
+        Succeeded = succeeded;
+        Kind = kind;
+        Failure = failure;
+        TransferredQuantity = Math.Max(0, transferredQuantity);
+    }
+
+    public bool Succeeded { get; }
+    public InventoryOperationKind Kind { get; }
+    public InventoryOperationFailure Failure { get; }
+    public int TransferredQuantity { get; }
+
+    public static InventoryOperationResult Success(
+        InventoryOperationKind kind,
+        int quantity = 0)
+    {
+        return new InventoryOperationResult(
+            true,
+            kind,
+            InventoryOperationFailure.None,
+            quantity);
+    }
+
+    public static InventoryOperationResult Failed(
+        InventoryOperationFailure failure)
+    {
+        return new InventoryOperationResult(
+            false,
+            InventoryOperationKind.None,
+            failure,
+            0);
+    }
+}
+
 public sealed class InventoryState
 {
     private readonly List<InventorySlot> slots;
     private readonly IReadOnlyList<InventorySlot> readOnlySlots;
+    private bool transactionActive;
 
     public InventoryState(int capacity)
     {
@@ -136,7 +204,8 @@ public sealed class InventoryState
         InventoryItemSpec item,
         int quantity = 1)
     {
-        if (string.IsNullOrWhiteSpace(item.StableId) || quantity <= 0)
+        if (transactionActive ||
+            string.IsNullOrWhiteSpace(item.StableId) || quantity <= 0)
         {
             return new InventoryAddResult(quantity, 0);
         }
@@ -193,7 +262,7 @@ public sealed class InventoryState
 
     public bool TryAdd(InventoryItemSpec item, int quantity = 1)
     {
-        if (!CanAdd(item, quantity))
+        if (transactionActive || !CanAdd(item, quantity))
         {
             return false;
         }
@@ -248,7 +317,8 @@ public sealed class InventoryState
 
     public bool TryRemove(string stableId, int quantity = 1)
     {
-        if (quantity <= 0 || GetQuantity(stableId) < quantity)
+        if (transactionActive || quantity <= 0 ||
+            GetQuantity(stableId) < quantity)
         {
             return false;
         }
@@ -284,7 +354,288 @@ public sealed class InventoryState
 
     public bool TryRemoveAt(int slotIndex, int quantity = 1)
     {
-        if (slotIndex < 0 || slotIndex >= slots.Count || quantity <= 0)
+        return TryExtractAt(slotIndex, quantity, out _);
+    }
+
+    public InventoryOperationResult Move(
+        int sourceIndex,
+        int destinationIndex)
+    {
+        if (transactionActive)
+        {
+            return InventoryOperationResult.Failed(
+                InventoryOperationFailure.NoChange);
+        }
+
+        InventoryOperationFailure validation = ValidatePair(
+            sourceIndex,
+            destinationIndex,
+            out InventorySlot source,
+            out InventorySlot destination);
+
+        if (validation != InventoryOperationFailure.None)
+        {
+            return InventoryOperationResult.Failed(validation);
+        }
+
+        if (!destination.IsEmpty)
+        {
+            return InventoryOperationResult.Failed(
+                InventoryOperationFailure.DestinationNotEmpty);
+        }
+
+        slots[destinationIndex] = source;
+        slots[sourceIndex] = default;
+        Changed?.Invoke();
+        return InventoryOperationResult.Success(
+            InventoryOperationKind.Move,
+            source.Quantity);
+    }
+
+    public InventoryOperationResult Swap(
+        int leftIndex,
+        int rightIndex)
+    {
+        if (transactionActive)
+        {
+            return InventoryOperationResult.Failed(
+                InventoryOperationFailure.NoChange);
+        }
+
+        InventoryOperationFailure validation = ValidatePair(
+            leftIndex,
+            rightIndex,
+            out InventorySlot left,
+            out InventorySlot right);
+
+        if (validation != InventoryOperationFailure.None)
+        {
+            return InventoryOperationResult.Failed(validation);
+        }
+
+        if (right.IsEmpty)
+        {
+            return InventoryOperationResult.Failed(
+                InventoryOperationFailure.EmptyDestination);
+        }
+
+        if (SlotsEqual(left, right))
+        {
+            return InventoryOperationResult.Failed(
+                InventoryOperationFailure.NoChange);
+        }
+
+        slots[leftIndex] = right;
+        slots[rightIndex] = left;
+        Changed?.Invoke();
+        return InventoryOperationResult.Success(
+            InventoryOperationKind.Swap);
+    }
+
+    public InventoryOperationResult Merge(
+        int sourceIndex,
+        int destinationIndex)
+    {
+        if (transactionActive)
+        {
+            return InventoryOperationResult.Failed(
+                InventoryOperationFailure.NoChange);
+        }
+
+        InventoryOperationFailure validation = ValidatePair(
+            sourceIndex,
+            destinationIndex,
+            out InventorySlot source,
+            out InventorySlot destination);
+
+        if (validation != InventoryOperationFailure.None)
+        {
+            return InventoryOperationResult.Failed(validation);
+        }
+
+        if (destination.IsEmpty)
+        {
+            return InventoryOperationResult.Failed(
+                InventoryOperationFailure.EmptyDestination);
+        }
+
+        if (!AreSameItem(source, destination))
+        {
+            return InventoryOperationResult.Failed(
+                InventoryOperationFailure.ItemMismatch);
+        }
+
+        int available = destination.MaximumStack - destination.Quantity;
+
+        if (available <= 0)
+        {
+            return InventoryOperationResult.Failed(
+                InventoryOperationFailure.DestinationFull);
+        }
+
+        int transferred = Math.Min(source.Quantity, available);
+        int sourceRemaining = source.Quantity - transferred;
+        slots[sourceIndex] = sourceRemaining > 0
+            ? new InventorySlot(
+                source.StableId,
+                source.MaximumStack,
+                sourceRemaining)
+            : default;
+        slots[destinationIndex] = new InventorySlot(
+            destination.StableId,
+            destination.MaximumStack,
+            destination.Quantity + transferred);
+        Changed?.Invoke();
+        return InventoryOperationResult.Success(
+            InventoryOperationKind.Merge,
+            transferred);
+    }
+
+    public InventoryOperationResult Split(
+        int sourceIndex,
+        int destinationIndex,
+        int quantity)
+    {
+        if (transactionActive)
+        {
+            return InventoryOperationResult.Failed(
+                InventoryOperationFailure.NoChange);
+        }
+
+        InventoryOperationFailure validation = ValidatePair(
+            sourceIndex,
+            destinationIndex,
+            out InventorySlot source,
+            out InventorySlot destination);
+
+        if (validation != InventoryOperationFailure.None)
+        {
+            return InventoryOperationResult.Failed(validation);
+        }
+
+        if (quantity <= 0)
+        {
+            return InventoryOperationResult.Failed(
+                InventoryOperationFailure.InvalidQuantity);
+        }
+
+        if (quantity >= source.Quantity)
+        {
+            return InventoryOperationResult.Failed(
+                InventoryOperationFailure.QuantityExceedsSource);
+        }
+
+        if (!destination.IsEmpty)
+        {
+            return InventoryOperationResult.Failed(
+                InventoryOperationFailure.DestinationNotEmpty);
+        }
+
+        slots[sourceIndex] = new InventorySlot(
+            source.StableId,
+            source.MaximumStack,
+            source.Quantity - quantity);
+        slots[destinationIndex] = new InventorySlot(
+            source.StableId,
+            source.MaximumStack,
+            quantity);
+        Changed?.Invoke();
+        return InventoryOperationResult.Success(
+            InventoryOperationKind.Split,
+            quantity);
+    }
+
+    public InventoryOperationResult Transfer(
+        int sourceIndex,
+        int destinationIndex)
+    {
+        if (transactionActive)
+        {
+            return InventoryOperationResult.Failed(
+                InventoryOperationFailure.NoChange);
+        }
+
+        if (!IsValidIndex(sourceIndex) || !IsValidIndex(destinationIndex))
+        {
+            return InventoryOperationResult.Failed(
+                InventoryOperationFailure.InvalidIndex);
+        }
+
+        if (sourceIndex == destinationIndex)
+        {
+            return InventoryOperationResult.Failed(
+                InventoryOperationFailure.SameSlot);
+        }
+
+        InventorySlot source = slots[sourceIndex];
+        InventorySlot destination = slots[destinationIndex];
+
+        if (source.IsEmpty)
+        {
+            return InventoryOperationResult.Failed(
+                InventoryOperationFailure.EmptySource);
+        }
+
+        if (destination.IsEmpty)
+        {
+            return Move(sourceIndex, destinationIndex);
+        }
+
+        return AreSameItem(source, destination)
+            ? Merge(sourceIndex, destinationIndex)
+            : Swap(sourceIndex, destinationIndex);
+    }
+
+    public InventoryOperationResult Compact()
+    {
+        if (transactionActive)
+        {
+            return InventoryOperationResult.Failed(
+                InventoryOperationFailure.NoChange);
+        }
+
+        int destinationIndex = 0;
+        int movedStacks = 0;
+
+        for (int sourceIndex = 0; sourceIndex < slots.Count; sourceIndex++)
+        {
+            InventorySlot slot = slots[sourceIndex];
+
+            if (slot.IsEmpty)
+            {
+                continue;
+            }
+
+            if (sourceIndex != destinationIndex)
+            {
+                slots[destinationIndex] = slot;
+                slots[sourceIndex] = default;
+                movedStacks++;
+            }
+
+            destinationIndex++;
+        }
+
+        if (movedStacks <= 0)
+        {
+            return InventoryOperationResult.Failed(
+                InventoryOperationFailure.NoChange);
+        }
+
+        Changed?.Invoke();
+        return InventoryOperationResult.Success(
+            InventoryOperationKind.Compact,
+            movedStacks);
+    }
+
+    public bool TryExtractAt(
+        int slotIndex,
+        int quantity,
+        out InventorySlot extracted)
+    {
+        extracted = default;
+
+        if (transactionActive || !IsValidIndex(slotIndex) || quantity <= 0)
         {
             return false;
         }
@@ -296,6 +647,10 @@ public sealed class InventoryState
             return false;
         }
 
+        extracted = new InventorySlot(
+            slot.StableId,
+            slot.MaximumStack,
+            quantity);
         int nextQuantity = slot.Quantity - quantity;
         slots[slotIndex] = nextQuantity > 0
             ? new InventorySlot(
@@ -305,5 +660,105 @@ public sealed class InventoryState
             : default;
         Changed?.Invoke();
         return true;
+    }
+
+    public bool TryConsumeAt(
+        int slotIndex,
+        int quantity,
+        Func<bool> commitEffect)
+    {
+        if (transactionActive || commitEffect == null ||
+            !IsValidIndex(slotIndex) || quantity <= 0)
+        {
+            return false;
+        }
+
+        InventorySlot original = slots[slotIndex];
+
+        if (original.IsEmpty || original.Quantity < quantity)
+        {
+            return false;
+        }
+
+        int nextQuantity = original.Quantity - quantity;
+        slots[slotIndex] = nextQuantity > 0
+            ? new InventorySlot(
+                original.StableId,
+                original.MaximumStack,
+                nextQuantity)
+            : default;
+        transactionActive = true;
+        bool committed = false;
+
+        try
+        {
+            committed = commitEffect();
+        }
+        finally
+        {
+            if (!committed)
+            {
+                slots[slotIndex] = original;
+            }
+
+            transactionActive = false;
+        }
+
+        if (!committed)
+        {
+            return false;
+        }
+
+        Changed?.Invoke();
+        return true;
+    }
+
+    private InventoryOperationFailure ValidatePair(
+        int sourceIndex,
+        int destinationIndex,
+        out InventorySlot source,
+        out InventorySlot destination)
+    {
+        source = default;
+        destination = default;
+
+        if (!IsValidIndex(sourceIndex) || !IsValidIndex(destinationIndex))
+        {
+            return InventoryOperationFailure.InvalidIndex;
+        }
+
+        if (sourceIndex == destinationIndex)
+        {
+            return InventoryOperationFailure.SameSlot;
+        }
+
+        source = slots[sourceIndex];
+        destination = slots[destinationIndex];
+        return source.IsEmpty
+            ? InventoryOperationFailure.EmptySource
+            : InventoryOperationFailure.None;
+    }
+
+    private bool IsValidIndex(int index)
+    {
+        return index >= 0 && index < slots.Count;
+    }
+
+    private static bool AreSameItem(
+        InventorySlot left,
+        InventorySlot right)
+    {
+        return string.Equals(
+                   left.StableId,
+                   right.StableId,
+                   StringComparison.Ordinal) &&
+               left.MaximumStack == right.MaximumStack;
+    }
+
+    private static bool SlotsEqual(
+        InventorySlot left,
+        InventorySlot right)
+    {
+        return AreSameItem(left, right) && left.Quantity == right.Quantity;
     }
 }

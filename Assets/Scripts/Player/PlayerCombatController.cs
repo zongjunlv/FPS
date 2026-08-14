@@ -85,6 +85,11 @@ public class PlayerCombatController : MonoBehaviour
             gameObject.AddComponent<PlayerUpgradeController>();
         }
 
+        if (GetComponent<WorldItemFactory>() == null)
+        {
+            gameObject.AddComponent<WorldItemFactory>();
+        }
+
         if (GetComponent<PlayerInventoryController>() == null)
         {
             gameObject.AddComponent<PlayerInventoryController>();

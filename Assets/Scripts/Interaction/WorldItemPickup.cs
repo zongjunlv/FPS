@@ -1,3 +1,4 @@
+using System;
 using UnityEngine;
 
 public sealed class WorldItemPickup : MonoBehaviour, IInteractable
@@ -10,21 +11,43 @@ public sealed class WorldItemPickup : MonoBehaviour, IInteractable
 
     public bool IsClaimed { get; private set; }
     public int SettlementCount { get; private set; }
+    public int InitialQuantity { get; private set; }
     public int RemainingQuantity => quantity;
     public int TotalAccepted { get; private set; }
+    public int SpawnId { get; private set; }
+    public WorldItemSource Source { get; private set; }
     public ItemDefinition Definition => definition;
-    public InteractionView View => new(
-        IsClaimed
-            ? "物品已拾取"
-            : $"[E] 拾取 {definition?.DisplayName ?? "物品"}",
-        IsClaimed ? 1f : 0f,
-        !IsClaimed,
-        IsClaimed);
+    public InteractionView View
+    {
+        get
+        {
+            bool isAvailable =
+                !IsClaimed && definition != null && quantity > 0;
+            return new InteractionView(
+                isAvailable
+                    ? $"[E] 拾取 {definition.DisplayName} ×{quantity}"
+                    : "物品已拾取",
+                IsClaimed ? 1f : 0f,
+                isAvailable,
+                IsClaimed);
+        }
+    }
 
     public void Configure(ItemDefinition configuredDefinition, int count)
     {
+        if (configuredDefinition == null)
+        {
+            throw new ArgumentNullException(nameof(configuredDefinition));
+        }
+
+        if (count <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(count));
+        }
+
         definition = configuredDefinition;
-        quantity = Mathf.Max(1, count);
+        quantity = count;
+        InitialQuantity = count;
         activeActor = null;
         attempted = false;
         IsClaimed = false;
@@ -32,10 +55,18 @@ public sealed class WorldItemPickup : MonoBehaviour, IInteractable
         TotalAccepted = 0;
     }
 
+    public void ConfigureSpawnMetadata(
+        int spawnId,
+        WorldItemSource source)
+    {
+        SpawnId = Mathf.Max(0, spawnId);
+        Source = source;
+    }
+
     public bool TryBegin(GameObject actor)
     {
-        if (actor == null || definition == null || IsClaimed ||
-            activeActor != null)
+        if (actor == null || definition == null || quantity <= 0 ||
+            IsClaimed || activeActor != null)
         {
             return false;
         }
@@ -55,11 +86,20 @@ public sealed class WorldItemPickup : MonoBehaviour, IInteractable
         attempted = true;
         PlayerInventoryController inventory =
             actor.GetComponent<PlayerInventoryController>();
-        InventoryAddResult result = inventory != null
-            ? inventory.Add(definition, quantity)
-            : new InventoryAddResult(quantity, 0);
+        InventoryAddResult result;
+
+        try
+        {
+            result = inventory != null
+                ? inventory.Add(definition, quantity)
+                : new InventoryAddResult(quantity, 0);
+        }
+        finally
+        {
+            activeActor = null;
+        }
+
         quantity = result.Remaining;
-        activeActor = null;
 
         if (result.Accepted > 0)
         {
@@ -81,6 +121,12 @@ public sealed class WorldItemPickup : MonoBehaviour, IInteractable
         }
 
         return true;
+    }
+
+    private void OnDisable()
+    {
+        activeActor = null;
+        attempted = false;
     }
 
     public bool Cancel(GameObject actor, InteractionCancelReason reason)

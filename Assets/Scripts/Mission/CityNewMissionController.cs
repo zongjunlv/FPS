@@ -341,7 +341,9 @@ public sealed class CityNewMissionController : MonoBehaviour
 
         DrawObjective();
 
-        if (player.IsPaused)
+        if (player.IsPaused &&
+            (gameplayLocks == null ||
+             gameplayLocks.IsTopmost(GameplayLockReason.PauseMenu)))
         {
             DrawPauseMenu();
         }

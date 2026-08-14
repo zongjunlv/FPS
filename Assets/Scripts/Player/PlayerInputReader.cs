@@ -19,10 +19,13 @@ public class PlayerInputReader : MonoBehaviour
     private InputAction weaponSlot1Action;
     private InputAction weaponSlot2Action;
     private InputAction cycleWeaponAction;
+    private InputAction quickUse1Action;
+    private InputAction quickUse2Action;
     private bool aimingPressed;
     private bool reloadPressed;
     private int weaponSelection = -1;
     private int weaponCycleDirection;
+    private int quickUseSelection = -1;
 
     // 其他脚本只能读取输入结果，不需要直接管理 Input Action。
     public Vector2 Move => moveAction.action.ReadValue<Vector2>();
@@ -48,6 +51,7 @@ public class PlayerInputReader : MonoBehaviour
     public bool ReloadPressed => reloadPressed;
     public int WeaponSelection => weaponSelection;
     public int WeaponCycleDirection => weaponCycleDirection;
+    public InputActionAsset ActionsAsset => moveAction?.asset;
     public bool LookUsesPointerDelta =>
         lookAction.action.activeControl?.device is Pointer;
 
@@ -65,6 +69,8 @@ public class PlayerInputReader : MonoBehaviour
         SetActionEnabled(weaponSlot1Action, enabled);
         SetActionEnabled(weaponSlot2Action, enabled);
         SetActionEnabled(cycleWeaponAction, enabled);
+        SetActionEnabled(quickUse1Action, enabled);
+        SetActionEnabled(quickUse2Action, enabled);
 
         if (!enabled)
         {
@@ -100,6 +106,13 @@ public class PlayerInputReader : MonoBehaviour
         return direction;
     }
 
+    public int ConsumeQuickUse()
+    {
+        int requestedSlot = quickUseSelection;
+        quickUseSelection = -1;
+        return requestedSlot;
+    }
+
     private void Awake()
     {
         crouchAction = moveAction.action.actionMap.FindAction(
@@ -123,6 +136,12 @@ public class PlayerInputReader : MonoBehaviour
         cycleWeaponAction = moveAction.action.actionMap.FindAction(
             "CycleWeapon",
             true);
+        quickUse1Action = moveAction.action.actionMap.FindAction(
+            "QuickUse1",
+            true);
+        quickUse2Action = moveAction.action.actionMap.FindAction(
+            "QuickUse2",
+            true);
     }
 
     private void OnEnable()
@@ -132,6 +151,8 @@ public class PlayerInputReader : MonoBehaviour
         weaponSlot1Action.performed += OnWeaponSlot1Performed;
         weaponSlot2Action.performed += OnWeaponSlot2Performed;
         cycleWeaponAction.performed += OnCycleWeaponPerformed;
+        quickUse1Action.performed += OnQuickUse1Performed;
+        quickUse2Action.performed += OnQuickUse2Performed;
         SetGameplayActionsEnabled(true);
         pauseAction?.Enable();
         inventoryAction?.Enable();
@@ -144,6 +165,8 @@ public class PlayerInputReader : MonoBehaviour
         weaponSlot1Action.performed -= OnWeaponSlot1Performed;
         weaponSlot2Action.performed -= OnWeaponSlot2Performed;
         cycleWeaponAction.performed -= OnCycleWeaponPerformed;
+        quickUse1Action.performed -= OnQuickUse1Performed;
+        quickUse2Action.performed -= OnQuickUse2Performed;
         ClearBufferedGameplayInput();
         moveAction.action.Disable();
         jumpAction.action.Disable();
@@ -159,6 +182,8 @@ public class PlayerInputReader : MonoBehaviour
         weaponSlot1Action?.Disable();
         weaponSlot2Action?.Disable();
         cycleWeaponAction?.Disable();
+        quickUse1Action?.Disable();
+        quickUse2Action?.Disable();
     }
 
     private void ClearBufferedGameplayInput()
@@ -167,6 +192,7 @@ public class PlayerInputReader : MonoBehaviour
         reloadPressed = false;
         weaponSelection = -1;
         weaponCycleDirection = 0;
+        quickUseSelection = -1;
     }
 
     private static void SetActionEnabled(
@@ -216,5 +242,15 @@ public class PlayerInputReader : MonoBehaviour
         {
             weaponCycleDirection = scrollValue > 0f ? 1 : -1;
         }
+    }
+
+    private void OnQuickUse1Performed(InputAction.CallbackContext context)
+    {
+        quickUseSelection = 0;
+    }
+
+    private void OnQuickUse2Performed(InputAction.CallbackContext context)
+    {
+        quickUseSelection = 1;
     }
 }

@@ -21,9 +21,16 @@ public sealed class GameplayLockCoordinator : MonoBehaviour
     private bool preservingWeaponState;
 
     public event Action<bool> LockStateChanged;
+    public event Action<GameplayLockReason?> ModalStateChanged;
 
     public GameplayLockState State => state;
     public bool IsLocked => state.IsLocked;
+    public GameplayLockReason? TopReason => state.TopReason;
+
+    public bool IsTopmost(GameplayLockReason reason)
+    {
+        return state.IsTopmost(reason);
+    }
 
     private void Awake()
     {
@@ -103,12 +110,13 @@ public sealed class GameplayLockCoordinator : MonoBehaviour
 
             if (lockApplied)
             {
-                if (preservingWeaponState && !preserveWeaponState)
+                if (preservingWeaponState != preserveWeaponState)
                 {
-                    preservingWeaponState = false;
-                    combat.SuspendGameplayInput(false);
+                    preservingWeaponState = preserveWeaponState;
+                    combat.SuspendGameplayInput(preserveWeaponState);
                 }
 
+                ModalStateChanged?.Invoke(state.TopReason);
                 return;
             }
 
@@ -125,16 +133,19 @@ public sealed class GameplayLockCoordinator : MonoBehaviour
             Cursor.lockState = CursorLockMode.None;
             Cursor.visible = true;
             LockStateChanged?.Invoke(true);
+            ModalStateChanged?.Invoke(state.TopReason);
             return;
         }
 
         if (!lockApplied)
         {
+            ModalStateChanged?.Invoke(state.TopReason);
             return;
         }
 
         RestoreRuntimeState();
         LockStateChanged?.Invoke(false);
+        ModalStateChanged?.Invoke(state.TopReason);
     }
 
     private void RestoreRuntimeState()

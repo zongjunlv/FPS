@@ -79,6 +79,24 @@
                     "initialStateCheck": false
                 },
                 {
+                    "name": "QuickUse1",
+                    "type": "Button",
+                    "id": "b8707417-f965-468b-aed6-b230adbf7081",
+                    "expectedControlType": "Button",
+                    "processors": "",
+                    "interactions": "",
+                    "initialStateCheck": false
+                },
+                {
+                    "name": "QuickUse2",
+                    "type": "Button",
+                    "id": "0a79e64c-e8b4-4c37-a38e-c74836e7e59c",
+                    "expectedControlType": "Button",
+                    "processors": "",
+                    "interactions": "",
+                    "initialStateCheck": false
+                },
+                {
                     "name": "Jump",
                     "type": "Button",
                     "id": "f1ba0d36-48eb-4cd5-b651-1c94a6531f70",
@@ -439,6 +457,50 @@
                     "processors": "",
                     "groups": "Gamepad",
                     "action": "Inventory",
+                    "isComposite": false,
+                    "isPartOfComposite": false
+                },
+                {
+                    "name": "",
+                    "id": "5aa6db59-81d7-42a3-bba5-c98142843304",
+                    "path": "<Keyboard>/4",
+                    "interactions": "",
+                    "processors": "",
+                    "groups": "Keyboard&Mouse",
+                    "action": "QuickUse1",
+                    "isComposite": false,
+                    "isPartOfComposite": false
+                },
+                {
+                    "name": "",
+                    "id": "f193df83-4dc9-46e9-a3c7-4989bb7d14a5",
+                    "path": "<Gamepad>/dpad/left",
+                    "interactions": "",
+                    "processors": "",
+                    "groups": "Gamepad",
+                    "action": "QuickUse1",
+                    "isComposite": false,
+                    "isPartOfComposite": false
+                },
+                {
+                    "name": "",
+                    "id": "27dae641-aa17-4ca0-98cc-e657a9e4d505",
+                    "path": "<Keyboard>/5",
+                    "interactions": "",
+                    "processors": "",
+                    "groups": "Keyboard&Mouse",
+                    "action": "QuickUse2",
+                    "isComposite": false,
+                    "isPartOfComposite": false
+                },
+                {
+                    "name": "",
+                    "id": "bf57541a-02b1-4181-894f-b07d4e5b5fb2",
+                    "path": "<Gamepad>/dpad/right",
+                    "interactions": "",
+                    "processors": "",
+                    "groups": "Gamepad",
+                    "action": "QuickUse2",
                     "isComposite": false,
                     "isPartOfComposite": false
                 },

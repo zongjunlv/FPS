@@ -52,6 +52,11 @@ public sealed class PlayerUpgradeController : MonoBehaviour
         {
             progression.LevelsGained += HandleLevelsGained;
         }
+
+        if (gameplayLocks != null)
+        {
+            gameplayLocks.ModalStateChanged += HandleModalStateChanged;
+        }
     }
 
     private void OnDisable()
@@ -59,6 +64,11 @@ public sealed class PlayerUpgradeController : MonoBehaviour
         if (progression != null)
         {
             progression.LevelsGained -= HandleLevelsGained;
+        }
+
+        if (gameplayLocks != null)
+        {
+            gameplayLocks.ModalStateChanged -= HandleModalStateChanged;
         }
 
         CloseChoice();
@@ -108,6 +118,8 @@ public sealed class PlayerUpgradeController : MonoBehaviour
     public bool TrySelect(int candidateIndex)
     {
         if (!IsChoiceOpen ||
+            (gameplayLocks != null &&
+             !gameplayLocks.IsTopmost(GameplayLockReason.UpgradeChoice)) ||
             candidateIndex < 0 ||
             candidateIndex >= currentCandidates.Count)
         {
@@ -172,6 +184,7 @@ public sealed class PlayerUpgradeController : MonoBehaviour
         choiceLock ??= gameplayLocks?.Acquire(
             GameplayLockReason.UpgradeChoice);
         PresentNextChoice();
+        HandleModalStateChanged(gameplayLocks?.TopReason);
     }
 
     private void PresentNextChoice()
@@ -242,6 +255,13 @@ public sealed class PlayerUpgradeController : MonoBehaviour
         currentCandidates = Array.Empty<UpgradeDefinition>();
         choiceLock?.Dispose();
         choiceLock = null;
+    }
+
+    private void HandleModalStateChanged(GameplayLockReason? topReason)
+    {
+        view?.SetSuspended(
+            topReason.HasValue &&
+            topReason.Value != GameplayLockReason.UpgradeChoice);
     }
 
     private void EnsureDefinitions()
