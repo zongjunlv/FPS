@@ -65,17 +65,40 @@ public readonly struct EnemySpawnHandle
         int waveNumber,
         EnemyController controller,
         WaveEnemyLifecycle lifecycle)
+        : this(
+            spawnId,
+            waveNumber,
+            controller,
+            lifecycle,
+            "*",
+            LootRewardTier.Normal)
+    {
+    }
+
+    public EnemySpawnHandle(
+        int spawnId,
+        int waveNumber,
+        EnemyController controller,
+        WaveEnemyLifecycle lifecycle,
+        string enemyTypeId,
+        LootRewardTier rewardTier)
     {
         SpawnId = spawnId;
         WaveNumber = Mathf.Max(0, waveNumber);
         Controller = controller;
         Lifecycle = lifecycle;
+        EnemyTypeId = string.IsNullOrWhiteSpace(enemyTypeId)
+            ? "*"
+            : enemyTypeId.Trim();
+        RewardTier = rewardTier;
     }
 
     public int SpawnId { get; }
     public int WaveNumber { get; }
     public EnemyController Controller { get; }
     public WaveEnemyLifecycle Lifecycle { get; }
+    public string EnemyTypeId { get; }
+    public LootRewardTier RewardTier { get; }
     public bool IsValid => Controller != null && Lifecycle != null;
 }
 

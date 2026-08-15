@@ -99,12 +99,16 @@ public sealed class SceneEnemyFactory : MonoBehaviour, IEnemyFactory
             request.SpawnId,
             request.WaveNumber,
             instance,
+            request.Entry?.EnemyTypeId,
+            request.Entry?.RewardTier ?? LootRewardTier.Normal,
             onEnded);
         handle = new EnemySpawnHandle(
             request.SpawnId,
             request.WaveNumber,
             instance,
-            lifecycle);
+            lifecycle,
+            request.Entry?.EnemyTypeId,
+            request.Entry?.RewardTier ?? LootRewardTier.Normal);
         sceneTemplateAdopted |= adoptSceneTemplate;
         SuccessfulSpawnCount++;
         return true;

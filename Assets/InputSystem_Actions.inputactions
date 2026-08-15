@@ -79,6 +79,15 @@
                     "initialStateCheck": false
                 },
                 {
+                    "name": "Pickup",
+                    "type": "Button",
+                    "id": "8cdb47d6-5d61-4d23-b43c-63b3895bd1b1",
+                    "expectedControlType": "Button",
+                    "processors": "",
+                    "interactions": "",
+                    "initialStateCheck": false
+                },
+                {
                     "name": "QuickUse1",
                     "type": "Button",
                     "id": "b8707417-f965-468b-aed6-b230adbf7081",
@@ -391,6 +400,17 @@
                     "processors": "",
                     "groups": "Gamepad",
                     "action": "Interact",
+                    "isComposite": false,
+                    "isPartOfComposite": false
+                },
+                {
+                    "name": "",
+                    "id": "71e2ec0e-aead-4642-bd85-ad0226d238fb",
+                    "path": "<Keyboard>/f",
+                    "interactions": "",
+                    "processors": "",
+                    "groups": "Keyboard&Mouse",
+                    "action": "Pickup",
                     "isComposite": false,
                     "isPartOfComposite": false
                 },

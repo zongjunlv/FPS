@@ -28,12 +28,31 @@ public sealed class WaveEnemyLifecycle : MonoBehaviour
         EnemyController controller,
         Action<EnemySpawnHandle, EnemyExitReason> ended)
     {
+        Arm(
+            spawnId,
+            waveNumber,
+            controller,
+            "*",
+            LootRewardTier.Normal,
+            ended);
+    }
+
+    public void Arm(
+        int spawnId,
+        int waveNumber,
+        EnemyController controller,
+        string enemyTypeId,
+        LootRewardTier rewardTier,
+        Action<EnemySpawnHandle, EnemyExitReason> ended)
+    {
         Disarm();
         handle = new EnemySpawnHandle(
             spawnId,
             waveNumber,
             controller,
-            this);
+            this,
+            enemyTypeId,
+            rewardTier);
         onEnded = ended;
         settled = false;
         armed = true;

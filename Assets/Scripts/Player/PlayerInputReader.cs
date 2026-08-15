@@ -1,8 +1,14 @@
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.InputSystem;
 
 public class PlayerInputReader : MonoBehaviour
 {
+    private const double ScrollGestureGap = 0.12d;
+    private const double ScrollImpulseConfirmationWindow = 0.06d;
+    private const float ScrollImpulseMinimum = 0.25f;
+    private const float ScrollImpulseRise = 0.12f;
+    private const float ScrollImpulseConfirmationRatio = 0.7f;
     [Header("Input Actions")]
     [SerializeField] private InputActionReference moveAction;
     [SerializeField] private InputActionReference jumpAction;
@@ -15,6 +21,7 @@ public class PlayerInputReader : MonoBehaviour
     private InputAction crouchAction;
     private InputAction pauseAction;
     private InputAction inventoryAction;
+    private InputAction pickupAction;
     private InputAction reloadAction;
     private InputAction weaponSlot1Action;
     private InputAction weaponSlot2Action;
@@ -24,7 +31,13 @@ public class PlayerInputReader : MonoBehaviour
     private bool aimingPressed;
     private bool reloadPressed;
     private int weaponSelection = -1;
-    private int weaponCycleDirection;
+    private readonly Queue<int> weaponCycleDirections = new();
+    private double lastWeaponCycleEventTime = double.NegativeInfinity;
+    private int lastWeaponCycleDirection;
+    private float lastWeaponCycleMagnitude;
+    private double pendingScrollImpulseTime;
+    private int pendingScrollImpulseDirection;
+    private float pendingScrollImpulseMagnitude;
     private int quickUseSelection = -1;
 
     // 其他脚本只能读取输入结果，不需要直接管理 Input Action。
@@ -48,9 +61,13 @@ public class PlayerInputReader : MonoBehaviour
         inventoryAction != null && inventoryAction.WasPressedThisFrame();
     public bool InventoryActionEnabled =>
         inventoryAction != null && inventoryAction.enabled;
+    public bool PickupPressed =>
+        pickupAction != null && pickupAction.WasPressedThisFrame();
     public bool ReloadPressed => reloadPressed;
     public int WeaponSelection => weaponSelection;
-    public int WeaponCycleDirection => weaponCycleDirection;
+    public int WeaponCycleDirection => weaponCycleDirections.Count > 0
+        ? weaponCycleDirections.Peek()
+        : 0;
     public InputActionAsset ActionsAsset => moveAction?.asset;
     public bool LookUsesPointerDelta =>
         lookAction.action.activeControl?.device is Pointer;
@@ -65,6 +82,7 @@ public class PlayerInputReader : MonoBehaviour
         SetActionEnabled(attackAction?.action, enabled);
         SetActionEnabled(aimingAction?.action, enabled);
         SetActionEnabled(crouchAction, enabled);
+        SetActionEnabled(pickupAction, enabled);
         SetActionEnabled(reloadAction, enabled);
         SetActionEnabled(weaponSlot1Action, enabled);
         SetActionEnabled(weaponSlot2Action, enabled);
@@ -101,9 +119,9 @@ public class PlayerInputReader : MonoBehaviour
 
     public int ConsumeWeaponCycleDirection()
     {
-        int direction = weaponCycleDirection;
-        weaponCycleDirection = 0;
-        return direction;
+        return weaponCycleDirections.Count > 0
+            ? weaponCycleDirections.Dequeue()
+            : 0;
     }
 
     public int ConsumeQuickUse()
@@ -123,6 +141,9 @@ public class PlayerInputReader : MonoBehaviour
             true);
         inventoryAction = moveAction.action.actionMap.FindAction(
             "Inventory",
+            true);
+        pickupAction = moveAction.action.actionMap.FindAction(
+            "Pickup",
             true);
         reloadAction = moveAction.action.actionMap.FindAction(
             "Reload",
@@ -178,6 +199,7 @@ public class PlayerInputReader : MonoBehaviour
         crouchAction?.Disable();
         pauseAction?.Disable();
         inventoryAction?.Disable();
+        pickupAction?.Disable();
         reloadAction?.Disable();
         weaponSlot1Action?.Disable();
         weaponSlot2Action?.Disable();
@@ -191,7 +213,11 @@ public class PlayerInputReader : MonoBehaviour
         aimingPressed = false;
         reloadPressed = false;
         weaponSelection = -1;
-        weaponCycleDirection = 0;
+        weaponCycleDirections.Clear();
+        lastWeaponCycleEventTime = double.NegativeInfinity;
+        lastWeaponCycleDirection = 0;
+        lastWeaponCycleMagnitude = 0f;
+        ClearPendingScrollImpulse();
         quickUseSelection = -1;
     }
 
@@ -236,12 +262,85 @@ public class PlayerInputReader : MonoBehaviour
 
     private void OnCycleWeaponPerformed(InputAction.CallbackContext context)
     {
-        float scrollValue = context.ReadValue<float>();
+        BufferWeaponCycleDelta(context.ReadValue<float>(), context.time);
+    }
 
-        if (Mathf.Abs(scrollValue) > 0.01f)
+    public void BufferWeaponCycleDelta(
+        float scrollValue,
+        double eventTime)
+    {
+        if (Mathf.Abs(scrollValue) <= 0.01f)
         {
-            weaponCycleDirection = scrollValue > 0f ? 1 : -1;
+            return;
         }
+
+        int direction = scrollValue > 0f ? 1 : -1;
+        float magnitude = Mathf.Abs(scrollValue);
+        bool startsNewGesture =
+            double.IsNegativeInfinity(lastWeaponCycleEventTime) ||
+            eventTime < lastWeaponCycleEventTime ||
+            eventTime - lastWeaponCycleEventTime >= ScrollGestureGap ||
+            direction != lastWeaponCycleDirection;
+
+        if (!startsNewGesture)
+        {
+            bool confirmsPendingImpulse =
+                pendingScrollImpulseDirection == direction &&
+                eventTime - pendingScrollImpulseTime <=
+                ScrollImpulseConfirmationWindow &&
+                magnitude >= pendingScrollImpulseMagnitude *
+                ScrollImpulseConfirmationRatio;
+
+            if (confirmsPendingImpulse)
+            {
+                startsNewGesture = true;
+                ClearPendingScrollImpulse();
+            }
+            else
+            {
+                bool pendingExpired =
+                    pendingScrollImpulseDirection != 0 &&
+                    (eventTime - pendingScrollImpulseTime >
+                        ScrollImpulseConfirmationWindow ||
+                     magnitude < pendingScrollImpulseMagnitude *
+                        ScrollImpulseConfirmationRatio);
+
+                if (pendingExpired)
+                {
+                    ClearPendingScrollImpulse();
+                }
+
+                if (pendingScrollImpulseDirection == 0 &&
+                    magnitude >= ScrollImpulseMinimum &&
+                    magnitude - lastWeaponCycleMagnitude >=
+                    ScrollImpulseRise)
+                {
+                    pendingScrollImpulseDirection = direction;
+                    pendingScrollImpulseMagnitude = magnitude;
+                    pendingScrollImpulseTime = eventTime;
+                }
+            }
+        }
+        else
+        {
+            ClearPendingScrollImpulse();
+        }
+
+        lastWeaponCycleEventTime = eventTime;
+        lastWeaponCycleDirection = direction;
+        lastWeaponCycleMagnitude = magnitude;
+
+        if (startsNewGesture)
+        {
+            weaponCycleDirections.Enqueue(direction);
+        }
+    }
+
+    private void ClearPendingScrollImpulse()
+    {
+        pendingScrollImpulseTime = 0d;
+        pendingScrollImpulseDirection = 0;
+        pendingScrollImpulseMagnitude = 0f;
     }
 
     private void OnQuickUse1Performed(InputAction.CallbackContext context)

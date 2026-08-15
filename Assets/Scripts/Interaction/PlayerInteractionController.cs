@@ -175,6 +175,11 @@ public sealed class PlayerInteractionController : MonoBehaviour
 
         foreach (MonoBehaviour candidate in candidates)
         {
+            if (candidate is WorldItemPickup)
+            {
+                continue;
+            }
+
             if (candidate is IInteractable interactable &&
                 interactable.View.IsAvailable)
             {

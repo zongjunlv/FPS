@@ -196,6 +196,23 @@ public sealed class PlayerInventoryController : MonoBehaviour
         catalog[definition.StableId] = definition;
     }
 
+    public bool TryGetDefinition(
+        string stableId,
+        out ItemDefinition definition)
+    {
+        definition = null;
+
+        if (string.IsNullOrWhiteSpace(stableId) ||
+            !catalog.TryGetValue(stableId, out ItemDefinition resolved) ||
+            resolved == null)
+        {
+            return false;
+        }
+
+        definition = resolved;
+        return true;
+    }
+
     public bool TryAdd(ItemDefinition definition, int quantity = 1)
     {
         if (definition == null ||

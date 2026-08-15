@@ -7,15 +7,38 @@ public sealed class WaveEnemyEntry
 {
     [SerializeField] private EnemyController template;
     [SerializeField, Min(1)] private int weight = 1;
+    [SerializeField] private LootRewardTier rewardTier = LootRewardTier.Normal;
+    [SerializeField] private string enemyTypeId = "*";
 
     public WaveEnemyEntry(EnemyController enemyTemplate, int entryWeight = 1)
+        : this(
+            enemyTemplate,
+            entryWeight,
+            LootRewardTier.Normal,
+            "*")
+    {
+    }
+
+    public WaveEnemyEntry(
+        EnemyController enemyTemplate,
+        int entryWeight,
+        LootRewardTier tier,
+        string typeId = "*")
     {
         template = enemyTemplate;
         weight = Mathf.Max(1, entryWeight);
+        rewardTier = tier;
+        enemyTypeId = string.IsNullOrWhiteSpace(typeId)
+            ? "*"
+            : typeId.Trim();
     }
 
     public EnemyController Template => template;
     public int Weight => Mathf.Max(1, weight);
+    public LootRewardTier RewardTier => rewardTier;
+    public string EnemyTypeId => string.IsNullOrWhiteSpace(enemyTypeId)
+        ? "*"
+        : enemyTypeId.Trim();
 }
 
 [CreateAssetMenu(

@@ -62,6 +62,11 @@ public class PlayerCombatController : MonoBehaviour
             gameObject.AddComponent<PlayerInteractionController>();
         }
 
+        if (GetComponent<PlayerWorldPickupController>() == null)
+        {
+            gameObject.AddComponent<PlayerWorldPickupController>();
+        }
+
         if (GetComponent<CityNewTerminalMissionBootstrap>() == null)
         {
             gameObject.AddComponent<CityNewTerminalMissionBootstrap>();
@@ -93,6 +98,11 @@ public class PlayerCombatController : MonoBehaviour
         if (GetComponent<PlayerInventoryController>() == null)
         {
             gameObject.AddComponent<PlayerInventoryController>();
+        }
+
+        if (GetComponent<PlayerLootRewardController>() == null)
+        {
+            gameObject.AddComponent<PlayerLootRewardController>();
         }
 
         if (GetComponent<UnifiedGameHudBootstrap>() == null)

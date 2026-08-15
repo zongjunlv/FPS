@@ -490,7 +490,10 @@ public sealed class WaveDirector : MonoBehaviour, IWaveProgressSource
                 ? handle.WaveNumber
                 : endingWave,
             enemyHealth.LastAppliedDamage,
-            handle.Controller.RewardExperience);
+            handle.Controller.RewardExperience,
+            handle.Controller.transform.position,
+            handle.EnemyTypeId,
+            handle.RewardTier);
         EnemyDeathEventCount++;
         EnemyDied?.Invoke(LastEnemyDeath);
     }

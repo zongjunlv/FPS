@@ -1,3 +1,5 @@
+using System.Collections;
+using System.Collections.Generic;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
@@ -52,6 +54,10 @@ public sealed class UnifiedGameHud : MonoBehaviour
     private TMP_Text wavePhaseText;
     private TMP_Text waveCountdownText;
     private TMP_Text waveCueText;
+    private TMP_Text rewardCueText;
+    private TMP_FontAsset runtimeRewardFontAsset;
+    private readonly Queue<RewardCueNotice> rewardCueQueue = new();
+    private Coroutine rewardCueRoutine;
     private RectTransform progressionHudRoot;
     private Image experienceFill;
     private TMP_Text levelText;
@@ -69,6 +75,7 @@ public sealed class UnifiedGameHud : MonoBehaviour
     public int DamageRefreshCount { get; private set; }
     public int WaveRefreshCount { get; private set; }
     public int ProgressionRefreshCount { get; private set; }
+    public int RewardCueCount { get; private set; }
     public string HealthText => healthText != null ? healthText.text : string.Empty;
     public string ArmorText => armorText != null ? armorText.text : string.Empty;
     public string MovementText =>
@@ -88,6 +95,8 @@ public sealed class UnifiedGameHud : MonoBehaviour
         waveCountdownText != null ? waveCountdownText.text : string.Empty;
     public string WaveCueText =>
         waveCueText != null ? waveCueText.text : string.Empty;
+    public string RewardCueText =>
+        rewardCueText != null ? rewardCueText.text : string.Empty;
     public string LevelText =>
         levelText != null ? levelText.text : string.Empty;
     public string ExperienceText =>
@@ -101,6 +110,8 @@ public sealed class UnifiedGameHud : MonoBehaviour
         waveCountdownText != null && waveCountdownText.gameObject.activeSelf;
     public bool IsWaveCueVisible =>
         waveCueText != null && waveCueText.gameObject.activeSelf;
+    public bool IsRewardCueVisible =>
+        rewardCueText != null && rewardCueText.gameObject.activeSelf;
     public bool IsWaveBound => waveSource != null;
     public bool LegacyPresentationsDisabled =>
         ammoPresenter != null && !ammoPresenter.LegacyOnGuiEnabled &&
@@ -124,6 +135,50 @@ public sealed class UnifiedGameHud : MonoBehaviour
         UnbindWave();
         UnbindProgression();
         Unbind();
+
+        if (runtimeRewardFontAsset != null)
+        {
+            Destroy(runtimeRewardFontAsset);
+        }
+    }
+
+    public void ShowRewardCue(string message, bool eliteOrFinal)
+    {
+        if (rewardCueText == null || string.IsNullOrWhiteSpace(message))
+        {
+            return;
+        }
+
+        rewardCueQueue.Enqueue(new RewardCueNotice(
+            message,
+            eliteOrFinal));
+        RewardCueCount++;
+
+        if (rewardCueRoutine == null)
+        {
+            rewardCueRoutine = StartCoroutine(ProcessRewardCueQueue());
+        }
+    }
+
+    private IEnumerator ProcessRewardCueQueue()
+    {
+        while (rewardCueQueue.Count > 0)
+        {
+            RewardCueNotice notice = rewardCueQueue.Dequeue();
+            rewardCueText.text = notice.Message;
+            rewardCueText.color = notice.Highlighted
+                ? new Color(1f, 0.72f, 0.18f, 1f)
+                : new Color(0.38f, 0.92f, 0.86f, 1f);
+            rewardCueText.gameObject.SetActive(true);
+            yield return new WaitForSecondsRealtime(2.4f);
+        }
+
+        if (rewardCueText != null)
+        {
+            rewardCueText.gameObject.SetActive(false);
+        }
+
+        rewardCueRoutine = null;
     }
 
     public void Bind(GameObject playerRoot)
@@ -493,6 +548,7 @@ public sealed class UnifiedGameHud : MonoBehaviour
         BuildProgressionHud();
         BuildWeaponHud();
         BuildWaveHud();
+        BuildRewardCue();
         BuildCrosshair();
         BuildDamageOverlay();
     }
@@ -620,6 +676,69 @@ public sealed class UnifiedGameHud : MonoBehaviour
         waveCueText.fontStyle = FontStyles.Bold;
         waveCueText.gameObject.SetActive(false);
         waveHudRoot.gameObject.SetActive(false);
+    }
+
+    private void BuildRewardCue()
+    {
+        rewardCueText = CreateText(
+            "RewardCue", OverlayLayer, 22f,
+            TextAlignmentOptions.Center,
+            Vector2.zero,
+            new Vector2(720f, 40f));
+        RectTransform rect = rewardCueText.rectTransform;
+        rect.anchorMin = new Vector2(0.5f, 1f);
+        rect.anchorMax = new Vector2(0.5f, 1f);
+        rect.pivot = new Vector2(0.5f, 1f);
+        rect.anchoredPosition = new Vector2(0f, -194f);
+        runtimeRewardFontAsset = CreateRewardFontAsset();
+
+        if (runtimeRewardFontAsset != null)
+        {
+            rewardCueText.font = runtimeRewardFontAsset;
+        }
+
+        rewardCueText.fontStyle = FontStyles.Bold;
+        rewardCueText.gameObject.SetActive(false);
+    }
+
+    private static TMP_FontAsset CreateRewardFontAsset()
+    {
+        string[] fonts =
+        {
+            "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC",
+            "Source Han Sans SC", "Arial Unicode MS"
+        };
+
+        for (int index = 0; index < fonts.Length; index++)
+        {
+            TMP_FontAsset asset = TMP_FontAsset.CreateFontAsset(
+                fonts[index], "Regular", 48);
+
+            if (asset != null && asset.HasCharacter('奖', false, true))
+            {
+                asset.name = "奖励提示中文动态字体";
+                return asset;
+            }
+
+            if (asset != null)
+            {
+                Destroy(asset);
+            }
+        }
+
+        return null;
+    }
+
+    private readonly struct RewardCueNotice
+    {
+        public RewardCueNotice(string message, bool highlighted)
+        {
+            Message = message;
+            Highlighted = highlighted;
+        }
+
+        public string Message { get; }
+        public bool Highlighted { get; }
     }
 
     private void BuildVitalsHud()

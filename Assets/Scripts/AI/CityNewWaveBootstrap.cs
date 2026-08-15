@@ -13,6 +13,7 @@ public sealed class CityNewWaveBootstrap : MonoBehaviour
     private WaveDirector director;
     private readonly List<WaveDefinition> runtimeDefinitions = new();
     private WaveSequenceDefinition runtimeSequence;
+    private LootDropTableDefinition runtimeDropTable;
 
     public static bool IsWaveModeActive => instance != null;
     public WaveDirector Director => director;
@@ -92,6 +93,7 @@ public sealed class CityNewWaveBootstrap : MonoBehaviour
             factory,
             resolver,
             playerObject.transform);
+        ConfigureLootRewards(playerObject, director);
         director.StartRun();
     }
 
@@ -110,6 +112,11 @@ public sealed class CityNewWaveBootstrap : MonoBehaviour
         if (runtimeSequence != null)
         {
             Destroy(runtimeSequence);
+        }
+
+        if (runtimeDropTable != null)
+        {
+            Destroy(runtimeDropTable);
         }
 
         if (instance == this)
@@ -131,9 +138,91 @@ public sealed class CityNewWaveBootstrap : MonoBehaviour
             totalCount,
             maximumAlive,
             spawnInterval,
-            new[] { new WaveEnemyEntry(sceneTemplate) });
+            new[]
+            {
+                new WaveEnemyEntry(
+                    sceneTemplate,
+                    Mathf.Max(1, totalCount - 1),
+                    LootRewardTier.Normal,
+                    "spider_bot"),
+                new WaveEnemyEntry(
+                    sceneTemplate,
+                    1,
+                    LootRewardTier.Elite,
+                    "spider_bot")
+            });
         runtimeDefinitions.Add(definition);
         return definition;
+    }
+
+    private void ConfigureLootRewards(
+        GameObject playerObject,
+        WaveDirector configuredDirector)
+    {
+        PlayerLootRewardController rewards =
+            playerObject.GetComponent<PlayerLootRewardController>();
+
+        if (rewards == null)
+        {
+            rewards = playerObject.AddComponent<PlayerLootRewardController>();
+        }
+
+        runtimeDropTable = CreateDefaultDropTable();
+        PlayerUpgradeController upgrades =
+            playerObject.GetComponent<PlayerUpgradeController>();
+        rewards.Configure(
+            configuredDirector,
+            runtimeDropTable,
+            upgrades != null ? upgrades.RunSeed : 18018);
+    }
+
+    private static LootDropTableDefinition CreateDefaultDropTable()
+    {
+        LootDropEntry health = new(
+            "medical_kit", 2, 1, 1, 0.35f);
+        LootDropEntry armor = new(
+            "armor_pack", 2, 1, 1, 0.35f);
+        LootDropEntry rifle = new(
+            "rifle_ammo", 4, 1, 2, 0.6f);
+        LootDropEntry handgun = new(
+            "handgun_ammo", 3, 1, 2, 0.55f);
+        LootDropEntry eliteArmor = new(
+            "armor_pack", 3, 1, 2, 1f);
+        LootDropEntry eliteRifle = new(
+            "rifle_ammo", 4, 2, 3, 1f);
+        LootDropEntry eliteHealth = new(
+            "medical_kit", 2, 1, 2, 1f);
+        LootDropTableDefinition table =
+            ScriptableObject.CreateInstance<LootDropTableDefinition>();
+        table.name = "CityNew Runtime Loot Drop Table";
+        table.Configure(new[]
+        {
+            new LootDropRule(
+                "*", 1, 99, LootRewardTier.Normal, 1, 1,
+                new[] { health, armor, rifle, handgun }),
+            new LootDropRule(
+                "*", 1, 99, LootRewardTier.Elite, 2, 2,
+                new[] { eliteArmor, eliteRifle, eliteHealth }),
+            new LootDropRule(
+                "*", 1, 99, LootRewardTier.WaveClear, 2, 2,
+                new[]
+                {
+                    new LootDropEntry("medical_kit", 2, 1, 1, 1f),
+                    new LootDropEntry("armor_pack", 2, 1, 1, 1f),
+                    new LootDropEntry("rifle_ammo", 3, 1, 2, 1f),
+                    new LootDropEntry("handgun_ammo", 2, 1, 2, 1f)
+                }),
+            new LootDropRule(
+                "*", 1, 99, LootRewardTier.FinalWave, 4, 4,
+                new[]
+                {
+                    new LootDropEntry("medical_kit", 2, 2, 3, 1f),
+                    new LootDropEntry("armor_pack", 2, 2, 3, 1f),
+                    new LootDropEntry("rifle_ammo", 3, 3, 5, 1f),
+                    new LootDropEntry("handgun_ammo", 2, 3, 5, 1f)
+                })
+        });
+        return table;
     }
 
     private static EnemyController FindSceneTemplate()

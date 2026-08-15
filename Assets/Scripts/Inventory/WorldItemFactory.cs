@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.AI;
 
 public enum WorldItemSource
 {
@@ -64,6 +65,10 @@ public sealed class WorldItemFactory : MonoBehaviour
     {
         0f, -42f, 42f, -78f, 78f, 180f
     };
+    private static readonly float[] RewardCandidateRadii =
+    {
+        0.85f, 1.35f, 1.9f, 2.4f
+    };
 
     private readonly Dictionary<ItemEffectType, Material> bodyMaterials =
         new();
@@ -120,6 +125,36 @@ public sealed class WorldItemFactory : MonoBehaviour
             ++nextSpawnId);
         WorldItemPickup pickup = worldObject.GetComponent<WorldItemPickup>();
         handle = new WorldItemDropHandle(this, worldObject, pickup);
+        return true;
+    }
+
+    public bool TrySpawnRewardDrop(
+        ItemDefinition definition,
+        int quantity,
+        Vector3 desiredOrigin,
+        Transform ignoredRoot,
+        out WorldItemPickup pickup)
+    {
+        pickup = null;
+
+        if (definition == null || quantity <= 0 ||
+            !TryFindRewardDropPosition(
+                desiredOrigin,
+                ignoredRoot,
+                out Vector3 position))
+        {
+            return false;
+        }
+
+        GameObject worldObject = CreateWorldObject(
+            definition,
+            quantity,
+            position,
+            WorldItemSource.EnemyDrop,
+            ++nextSpawnId);
+        pickup = worldObject.GetComponent<WorldItemPickup>();
+        worldObject.SetActive(true);
+        RegisterCommitted(pickup);
         return true;
     }
 
@@ -185,6 +220,53 @@ public sealed class WorldItemFactory : MonoBehaviour
         return false;
     }
 
+    private bool TryFindRewardDropPosition(
+        Vector3 origin,
+        Transform ignoredRoot,
+        out Vector3 position)
+    {
+        Vector3 forward = ResolveHorizontalForward();
+
+        for (int radiusIndex = 0;
+             radiusIndex < RewardCandidateRadii.Length;
+             radiusIndex++)
+        {
+            float radius = RewardCandidateRadii[radiusIndex];
+
+            for (int angleIndex = 0;
+                 angleIndex < CandidateAngles.Length;
+                 angleIndex++)
+            {
+                Vector3 direction = Quaternion.AngleAxis(
+                    CandidateAngles[angleIndex],
+                    Vector3.up) * forward;
+                Vector3 candidate = origin + direction * radius;
+
+                if (!TryFindGround(
+                        candidate,
+                        ignoredRoot,
+                        out RaycastHit ground) ||
+                    Vector3.Dot(ground.normal, Vector3.up) < 0.7f ||
+                    Mathf.Abs(ground.point.y - origin.y) > 2.5f ||
+                    !IsNavMeshReachable(ground.point))
+                {
+                    continue;
+                }
+
+                Vector3 resolved = ground.point + Vector3.up * 0.24f;
+
+                if (IsDropSpaceClear(resolved, direction, ignoredRoot))
+                {
+                    position = resolved;
+                    return true;
+                }
+            }
+        }
+
+        position = default;
+        return false;
+    }
+
     private Vector3 ResolveHorizontalForward()
     {
         PlayerController player = GetComponent<PlayerController>();
@@ -207,6 +289,14 @@ public sealed class WorldItemFactory : MonoBehaviour
 
     private bool TryFindGround(Vector3 candidate, out RaycastHit ground)
     {
+        return TryFindGround(candidate, null, out ground);
+    }
+
+    private bool TryFindGround(
+        Vector3 candidate,
+        Transform ignoredRoot,
+        out RaycastHit ground)
+    {
         int count = Physics.RaycastNonAlloc(
             candidate + Vector3.up * 2.5f,
             Vector3.down,
@@ -223,6 +313,7 @@ public sealed class WorldItemFactory : MonoBehaviour
 
             if (hit.collider == null ||
                 hit.collider.transform.IsChildOf(transform) ||
+                IsWithin(hit.collider.transform, ignoredRoot) ||
                 hit.collider.GetComponentInParent<WorldItemPickup>() != null ||
                 !IsStableGround(hit.collider) ||
                 hit.distance >= nearest)
@@ -275,6 +366,14 @@ public sealed class WorldItemFactory : MonoBehaviour
 
     private bool IsDropSpaceClear(Vector3 center, Vector3 forward)
     {
+        return IsDropSpaceClear(center, forward, null);
+    }
+
+    private bool IsDropSpaceClear(
+        Vector3 center,
+        Vector3 forward,
+        Transform ignoredRoot)
+    {
         Quaternion rotation = Quaternion.LookRotation(-forward, Vector3.up);
         int count = Physics.OverlapBoxNonAlloc(
             center,
@@ -289,7 +388,8 @@ public sealed class WorldItemFactory : MonoBehaviour
             Collider collider = overlapHits[index];
 
             if (collider == null ||
-                collider.transform.IsChildOf(transform))
+                collider.transform.IsChildOf(transform) ||
+                IsWithin(collider.transform, ignoredRoot))
             {
                 continue;
             }
@@ -298,6 +398,37 @@ public sealed class WorldItemFactory : MonoBehaviour
         }
 
         return count < overlapHits.Length;
+    }
+
+    private bool IsNavMeshReachable(Vector3 destination)
+    {
+        if (!NavMesh.SamplePosition(
+                transform.position,
+                out NavMeshHit start,
+                2.5f,
+                NavMesh.AllAreas) ||
+            !NavMesh.SamplePosition(
+                destination,
+                out NavMeshHit end,
+                1.5f,
+                NavMesh.AllAreas))
+        {
+            return false;
+        }
+
+        var path = new NavMeshPath();
+        return NavMesh.CalculatePath(
+                   start.position,
+                   end.position,
+                   NavMesh.AllAreas,
+                   path) &&
+               path.status == NavMeshPathStatus.PathComplete;
+    }
+
+    private static bool IsWithin(Transform candidate, Transform root)
+    {
+        return candidate != null && root != null &&
+               (candidate == root || candidate.IsChildOf(root));
     }
 
     private static bool IsStableGround(Collider collider)

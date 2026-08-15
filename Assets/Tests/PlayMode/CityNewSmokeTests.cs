@@ -836,6 +836,17 @@ namespace FPS.Tests.PlayMode
                     (int)equippedWeaponIndex.GetValue(combat),
                     Is.EqualTo(1));
 
+                foreach (GameObject sceneObject in
+                         GetSceneObjects(SceneManager.GetActiveScene()))
+                {
+                    if (sceneObject.GetComponent("WorldItemPickup") != null)
+                    {
+                        sceneObject.SetActive(false);
+                    }
+                }
+
+                yield return null;
+
                 Set(mouse.scroll, new Vector2(0f, 120f));
                 yield return null;
                 Set(mouse.scroll, Vector2.zero);
@@ -846,6 +857,162 @@ namespace FPS.Tests.PlayMode
                     (int)equippedWeaponIndex.GetValue(combat),
                     Is.EqualTo(0),
                     "Mouse wheel must cycle back to the AR.");
+            }
+            finally
+            {
+                InputSystem.RemoveDevice(mouse);
+                InputSystem.RemoveDevice(keyboard);
+            }
+        }
+
+        [UnityTest]
+        public IEnumerator PickupListUsesRealFAndConsumesMouseWheelBeforeWeapons()
+        {
+            Keyboard keyboard = InputSystem.AddDevice<Keyboard>();
+            Mouse mouse = InputSystem.AddDevice<Mouse>();
+
+            try
+            {
+                yield return LoadCityNew();
+                GameObject player = FindObjectWithComponent(
+                    GetSceneObjects(SceneManager.GetActiveScene()),
+                    "PlayerWorldPickupController");
+                Component pickupController =
+                    player.GetComponent("PlayerWorldPickupController");
+                Component combat =
+                    player.GetComponent("PlayerCombatController");
+                PropertyInfo nearbyCount = pickupController.GetType()
+                    .GetProperty("NearbyPickupCount");
+                PropertyInfo selectedPickup = pickupController.GetType()
+                    .GetProperty("SelectedPickup");
+                PropertyInfo scrollSelectionCount = pickupController.GetType()
+                    .GetProperty("ScrollSelectionCount");
+                PropertyInfo equippedWeaponIndex = combat.GetType()
+                    .GetProperty("EquippedWeaponIndex");
+                float deadline = Time.realtimeSinceStartup + 10f;
+
+                while (Time.realtimeSinceStartup < deadline &&
+                       (int)nearbyCount.GetValue(pickupController) < 2)
+                {
+                    yield return null;
+                }
+
+                Assert.That((int)nearbyCount.GetValue(pickupController),
+                    Is.GreaterThanOrEqualTo(2));
+                object beforeScroll = selectedPickup.GetValue(
+                    pickupController);
+                int weaponBefore = (int)equippedWeaponIndex.GetValue(combat);
+                int selectionCountBefore =
+                    (int)scrollSelectionCount.GetValue(pickupController);
+                Set(mouse.scroll, new Vector2(0f, -120f));
+                yield return null;
+                Set(mouse.scroll, Vector2.zero);
+                yield return null;
+                object afterScroll = selectedPickup.GetValue(
+                    pickupController);
+                Assert.That(afterScroll, Is.Not.SameAs(beforeScroll));
+                Assert.That((int)scrollSelectionCount.GetValue(
+                    pickupController), Is.EqualTo(selectionCountBefore + 1),
+                    "One wheel event must move exactly one row.");
+                Assert.That((int)equippedWeaponIndex.GetValue(combat),
+                    Is.EqualTo(weaponBefore));
+
+                yield return new WaitForSecondsRealtime(0.15f);
+                Set(mouse.scroll, new Vector2(0f, -120f));
+                yield return null;
+                Set(mouse.scroll, Vector2.zero);
+                yield return null;
+                Assert.That((int)scrollSelectionCount.GetValue(
+                    pickupController), Is.EqualTo(selectionCountBefore + 2),
+                    "A following wheel event must not be swallowed by the previous one.");
+                afterScroll = selectedPickup.GetValue(pickupController);
+
+                System.Type pickupType = afterScroll.GetType();
+                int quantityBefore = (int)pickupType
+                    .GetProperty("RemainingQuantity").GetValue(afterScroll);
+                PressAndRelease(keyboard.fKey);
+                yield return null;
+                yield return null;
+                int quantityAfter = (int)pickupType
+                    .GetProperty("RemainingQuantity").GetValue(afterScroll);
+                Assert.That(quantityAfter, Is.LessThan(quantityBefore));
+            }
+            finally
+            {
+                InputSystem.RemoveDevice(mouse);
+                InputSystem.RemoveDevice(keyboard);
+            }
+        }
+
+        [UnityTest]
+        public IEnumerator FinalPickupKeepsOwnershipOfResidualWheelInput()
+        {
+            Keyboard keyboard = InputSystem.AddDevice<Keyboard>();
+            Mouse mouse = InputSystem.AddDevice<Mouse>();
+
+            try
+            {
+                yield return LoadCityNew();
+                GameObject player = FindObjectWithComponent(
+                    GetSceneObjects(SceneManager.GetActiveScene()),
+                    "PlayerWorldPickupController");
+                Component pickupController =
+                    player.GetComponent("PlayerWorldPickupController");
+                Component combat =
+                    player.GetComponent("PlayerCombatController");
+                PropertyInfo nearbyCount = pickupController.GetType()
+                    .GetProperty("NearbyPickupCount");
+                PropertyInfo selectedPickup = pickupController.GetType()
+                    .GetProperty("SelectedPickup");
+                PropertyInfo nearbyPickups = pickupController.GetType()
+                    .GetProperty("NearbyPickups");
+                PropertyInfo equippedWeaponIndex = combat.GetType()
+                    .GetProperty("EquippedWeaponIndex");
+                float deadline = Time.realtimeSinceStartup + 10f;
+
+                while (Time.realtimeSinceStartup < deadline &&
+                       (int)nearbyCount.GetValue(pickupController) < 2)
+                {
+                    yield return null;
+                }
+
+                Component selected = (Component)selectedPickup.GetValue(
+                    pickupController);
+
+                foreach (object candidate in
+                         (System.Collections.IEnumerable)nearbyPickups
+                             .GetValue(pickupController))
+                {
+                    Component pickup = (Component)candidate;
+
+                    if (pickup != selected)
+                    {
+                        pickup.gameObject.SetActive(false);
+                    }
+                }
+
+                yield return null;
+                Assert.That((int)nearbyCount.GetValue(pickupController),
+                    Is.EqualTo(1));
+                int weaponBefore = (int)equippedWeaponIndex.GetValue(combat);
+                Set(mouse.scroll, new Vector2(0f, -120f));
+                yield return null;
+                PressAndRelease(keyboard.fKey);
+                yield return null;
+                Assert.That((int)nearbyCount.GetValue(pickupController),
+                    Is.EqualTo(0));
+
+                Set(mouse.scroll, new Vector2(0f, -100f));
+                yield return null;
+                Set(mouse.scroll, new Vector2(0f, -80f));
+                yield return null;
+                Set(mouse.scroll, new Vector2(0f, -60f));
+                yield return null;
+                Set(mouse.scroll, Vector2.zero);
+                yield return null;
+                Assert.That((int)equippedWeaponIndex.GetValue(combat),
+                    Is.EqualTo(weaponBefore),
+                    "Residual wheel input from the pickup gesture must never reach weapon cycling.");
             }
             finally
             {
