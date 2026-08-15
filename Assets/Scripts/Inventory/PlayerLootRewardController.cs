@@ -68,10 +68,13 @@ public sealed class PlayerLootRewardController : MonoBehaviour
     private DeterministicLootResolver resolver;
     private PlayerInventoryController inventory;
     private WorldItemFactory worldItemFactory;
+    private Health playerHealth;
     private Vector3 lastDeathPosition;
     private bool hasLastDeathPosition;
     private bool finalRewardRequested;
     private bool subscribed;
+    private bool healthSubscribed;
+    private bool acceptingRewards = true;
     private int configuredTotalWaves;
     private float nextRetryTime;
 
@@ -84,27 +87,31 @@ public sealed class PlayerLootRewardController : MonoBehaviour
     public int PendingRewardCount => pendingRewards.Count;
     public LootRewardSettlement LastSettlement { get; private set; }
     public int RunSeed { get; private set; }
+    public bool AcceptingRewards => acceptingRewards;
 
     private void Awake()
     {
         inventory = GetComponent<PlayerInventoryController>();
+        playerHealth = GetComponent<Health>();
         worldItemFactory = GetComponent<WorldItemFactory>();
         worldItemFactory ??= gameObject.AddComponent<WorldItemFactory>();
     }
 
     private void OnEnable()
     {
+        SubscribeHealth();
         Subscribe();
     }
 
     private void OnDisable()
     {
         Unsubscribe();
+        UnsubscribeHealth();
     }
 
     private void Update()
     {
-        if (pendingRewards.Count == 0 ||
+        if (!acceptingRewards || pendingRewards.Count == 0 ||
             Time.unscaledTime < nextRetryTime)
         {
             return;
@@ -124,6 +131,7 @@ public sealed class PlayerLootRewardController : MonoBehaviour
         dropTable = table;
         RunSeed = runSeed;
         resolver = new DeterministicLootResolver(runSeed);
+        acceptingRewards = playerHealth == null || !playerHealth.IsDead;
         configuredTotalWaves = source != null
             ? source.CurrentProgress.TotalWaves
             : 0;
@@ -152,7 +160,7 @@ public sealed class PlayerLootRewardController : MonoBehaviour
 
     public bool ProcessEnemyDeath(EnemyDeathEvent death)
     {
-        if (resolver == null || dropTable == null ||
+        if (!acceptingRewards || resolver == null || dropTable == null ||
             !processedSpawnIds.Add(death.SpawnId))
         {
             return false;
@@ -180,6 +188,11 @@ public sealed class PlayerLootRewardController : MonoBehaviour
 
     public bool ProcessWaveEnded(int waveNumber)
     {
+        if (!acceptingRewards)
+        {
+            return false;
+        }
+
         int totalWaves = waveDirector != null
             ? waveDirector.CurrentProgress.TotalWaves
             : configuredTotalWaves;
@@ -205,7 +218,8 @@ public sealed class PlayerLootRewardController : MonoBehaviour
 
     public bool ProcessRunCompleted()
     {
-        if (finalRewardRequested || resolver == null || dropTable == null)
+        if (!acceptingRewards || finalRewardRequested || resolver == null ||
+            dropTable == null)
         {
             return false;
         }
@@ -229,6 +243,11 @@ public sealed class PlayerLootRewardController : MonoBehaviour
 
     public void RetryPendingRewards()
     {
+        if (!acceptingRewards)
+        {
+            return;
+        }
+
         for (int index = pendingRewards.Count - 1; index >= 0; index--)
         {
             PendingLootReward pending = pendingRewards[index];
@@ -247,6 +266,11 @@ public sealed class PlayerLootRewardController : MonoBehaviour
         string noticePrefix,
         bool highlighted)
     {
+        if (!acceptingRewards)
+        {
+            return;
+        }
+
         IReadOnlyList<LootDropStack> drops = resolver.Resolve(
             dropTable,
             context);
@@ -374,7 +398,8 @@ public sealed class PlayerLootRewardController : MonoBehaviour
 
     private void Subscribe()
     {
-        if (!isActiveAndEnabled || subscribed || waveDirector == null)
+        if (!acceptingRewards || !isActiveAndEnabled || subscribed ||
+            waveDirector == null)
         {
             return;
         }
@@ -415,5 +440,44 @@ public sealed class PlayerLootRewardController : MonoBehaviour
     private void HandleWaveCompleted()
     {
         ProcessRunCompleted();
+    }
+
+    public void EndRun()
+    {
+        if (!acceptingRewards)
+        {
+            return;
+        }
+
+        acceptingRewards = false;
+        pendingRewards.Clear();
+        Unsubscribe();
+    }
+
+    private void SubscribeHealth()
+    {
+        if (healthSubscribed || playerHealth == null)
+        {
+            return;
+        }
+
+        playerHealth.Died += HandlePlayerDied;
+        healthSubscribed = true;
+    }
+
+    private void UnsubscribeHealth()
+    {
+        if (!healthSubscribed || playerHealth == null)
+        {
+            return;
+        }
+
+        playerHealth.Died -= HandlePlayerDied;
+        healthSubscribed = false;
+    }
+
+    private void HandlePlayerDied()
+    {
+        EndRun();
     }
 }

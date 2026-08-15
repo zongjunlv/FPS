@@ -255,6 +255,9 @@ namespace FPS.Tests.PlayMode
                 "WaveDirector, Assembly-CSharp");
             Component director = (Component)UnityEngine.Object
                 .FindAnyObjectByType(directorType);
+            Type upgradeType = Type.GetType(
+                "PlayerUpgradeController, Assembly-CSharp");
+            Component upgrades = player.GetComponent(upgradeType);
             Assert.That(director, Is.Not.Null);
             float deadline = Time.realtimeSinceStartup + 30f;
 
@@ -301,6 +304,20 @@ namespace FPS.Tests.PlayMode
                         });
                     healthType.GetMethod("ApplyDamage")
                         .Invoke(targetHealth, new[] { lethalDamage });
+                }
+
+                if (upgrades != null &&
+                    (bool)upgradeType.GetProperty("IsChoiceOpen")
+                        .GetValue(upgrades))
+                {
+                    for (int candidate = 0; candidate < 3; candidate++)
+                    {
+                        if ((bool)upgradeType.GetMethod("TrySelect")
+                            .Invoke(upgrades, new object[] { candidate }))
+                        {
+                            break;
+                        }
+                    }
                 }
 
                 yield return null;

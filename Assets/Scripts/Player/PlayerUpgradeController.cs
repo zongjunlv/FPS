@@ -24,6 +24,7 @@ public sealed class PlayerUpgradeController : MonoBehaviour
         Array.Empty<UpgradeDefinition>();
     private int pendingChoices;
     private bool waitingForHud;
+    private bool runEnded;
 
     public int RunSeed => runSeed;
     public int PendingChoiceCount => pendingChoices;
@@ -106,7 +107,7 @@ public sealed class PlayerUpgradeController : MonoBehaviour
 
     public void QueueUpgradeChoices(int count)
     {
-        if (count <= 0)
+        if (runEnded || count <= 0)
         {
             return;
         }
@@ -117,7 +118,7 @@ public sealed class PlayerUpgradeController : MonoBehaviour
 
     public bool TrySelect(int candidateIndex)
     {
-        if (!IsChoiceOpen ||
+        if (runEnded || !IsChoiceOpen ||
             (gameplayLocks != null &&
              !gameplayLocks.IsTopmost(GameplayLockReason.UpgradeChoice)) ||
             candidateIndex < 0 ||
@@ -154,6 +155,20 @@ public sealed class PlayerUpgradeController : MonoBehaviour
         return true;
     }
 
+    public void EndRun()
+    {
+        if (runEnded)
+        {
+            return;
+        }
+
+        runEnded = true;
+        pendingChoices = 0;
+        waitingForHud = false;
+        StopAllCoroutines();
+        CloseChoice();
+    }
+
     public int GetUpgradeLevel(string stableId)
     {
         return state.GetLevel(stableId);
@@ -161,7 +176,10 @@ public sealed class PlayerUpgradeController : MonoBehaviour
 
     private void HandleLevelsGained(int count)
     {
-        QueueUpgradeChoices(count);
+        if (!runEnded)
+        {
+            QueueUpgradeChoices(count);
+        }
     }
 
     private void TryOpenNextChoice()

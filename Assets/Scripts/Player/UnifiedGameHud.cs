@@ -68,6 +68,7 @@ public sealed class UnifiedGameHud : MonoBehaviour
     public RectTransform HudLayer { get; private set; }
     public RectTransform ModalLayer { get; private set; }
     public RectTransform OverlayLayer { get; private set; }
+    public RectTransform OutcomeLayer { get; private set; }
     public bool IsBound { get; private set; }
     public int VitalsRefreshCount { get; private set; }
     public int WeaponRefreshCount { get; private set; }
@@ -157,6 +158,41 @@ public sealed class UnifiedGameHud : MonoBehaviour
         if (rewardCueRoutine == null)
         {
             rewardCueRoutine = StartCoroutine(ProcessRewardCueQueue());
+        }
+    }
+
+    public void ClearRewardCues()
+    {
+        rewardCueQueue.Clear();
+
+        if (rewardCueRoutine != null)
+        {
+            StopCoroutine(rewardCueRoutine);
+            rewardCueRoutine = null;
+        }
+
+        if (rewardCueText != null)
+        {
+            rewardCueText.text = string.Empty;
+            rewardCueText.gameObject.SetActive(false);
+        }
+    }
+
+    public void SetOutcomePresentation(bool active)
+    {
+        if (HudLayer != null)
+        {
+            HudLayer.gameObject.SetActive(!active);
+        }
+
+        if (OverlayLayer != null)
+        {
+            OverlayLayer.gameObject.SetActive(!active);
+        }
+
+        if (OutcomeLayer != null)
+        {
+            OutcomeLayer.gameObject.SetActive(active);
         }
     }
 
@@ -544,6 +580,9 @@ public sealed class UnifiedGameHud : MonoBehaviour
         Stretch(ModalLayer);
         OverlayLayer = CreateRect("OverlayLayer", canvasRect);
         Stretch(OverlayLayer);
+        OutcomeLayer = CreateRect("OutcomeLayer", canvasRect);
+        Stretch(OutcomeLayer);
+        OutcomeLayer.gameObject.SetActive(false);
         BuildVitalsHud();
         BuildProgressionHud();
         BuildWeaponHud();

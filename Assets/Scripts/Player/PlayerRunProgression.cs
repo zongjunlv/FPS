@@ -29,6 +29,7 @@ public sealed class PlayerRunProgression : MonoBehaviour, IRunProgressionSource
     private RunExperienceState state;
     private WaveDirector killSource;
     private bool subscribed;
+    private bool runEnded;
 
     public event Action<RunExperienceSnapshot> ProgressChanged;
     public event Action<int> LevelsGained;
@@ -92,6 +93,11 @@ public sealed class PlayerRunProgression : MonoBehaviour, IRunProgressionSource
 
     public void BindKillSource(WaveDirector source)
     {
+        if (runEnded)
+        {
+            return;
+        }
+
         if (killSource == source)
         {
             Subscribe();
@@ -105,7 +111,7 @@ public sealed class PlayerRunProgression : MonoBehaviour, IRunProgressionSource
 
     public bool TryApplyEnemyDeath(EnemyDeathEvent death)
     {
-        if (death.Enemy == null ||
+        if (runEnded || death.Enemy == null ||
             death.RewardExperience <= 0 ||
             rewardedSpawnIds.Contains(death.SpawnId) ||
             !IsPlayerOwned(death.DamageSource))
@@ -123,6 +129,17 @@ public sealed class PlayerRunProgression : MonoBehaviour, IRunProgressionSource
         }
 
         return true;
+    }
+
+    public void EndRun()
+    {
+        if (runEnded)
+        {
+            return;
+        }
+
+        runEnded = true;
+        Unsubscribe();
     }
 
     private RunExperienceState CreateState()
@@ -145,7 +162,8 @@ public sealed class PlayerRunProgression : MonoBehaviour, IRunProgressionSource
 
     private void Subscribe()
     {
-        if (!isActiveAndEnabled || subscribed || killSource == null)
+        if (runEnded || !isActiveAndEnabled || subscribed ||
+            killSource == null)
         {
             return;
         }

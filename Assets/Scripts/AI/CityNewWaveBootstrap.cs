@@ -94,7 +94,11 @@ public sealed class CityNewWaveBootstrap : MonoBehaviour
             resolver,
             playerObject.transform);
         ConfigureLootRewards(playerObject, director);
-        director.StartRun();
+        if (!director.StartRun())
+        {
+            Debug.LogError(
+                "CityNew wave run failed to start after configuration.");
+        }
     }
 
     private void OnDestroy()

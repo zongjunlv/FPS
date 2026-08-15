@@ -7,6 +7,7 @@ public sealed class Health : MonoBehaviour, IDamageable
     [SerializeField, Min(0f)] private float maxArmor;
 
     public event Action<DamageInfo> Damaged;
+    public event Action<DamageResult> DamageApplied;
     public event Action<DamageInfo> Killed;
     public event Action Died;
     public event Action VitalsChanged;
@@ -60,31 +61,30 @@ public sealed class Health : MonoBehaviour, IDamageable
         CurrentHealth = Mathf.Max(
             0f,
             CurrentHealth - healthDamage);
-        LastAppliedDamage = damage;
-        HasLastAppliedDamage = true;
-        Damaged?.Invoke(damage);
-        VitalsChanged?.Invoke();
         float appliedAmount =
             armorBeforeDamage - CurrentArmor +
             healthBeforeDamage - CurrentHealth;
+        bool wasKilled = CurrentHealth <= 0f;
+        var result = new DamageResult(
+            true,
+            wasKilled,
+            appliedAmount,
+            HitRegion.Generic);
+        LastAppliedDamage = damage;
+        HasLastAppliedDamage = true;
+        Damaged?.Invoke(damage);
+        DamageApplied?.Invoke(result);
+        VitalsChanged?.Invoke();
 
-        if (CurrentHealth > 0f)
+        if (!wasKilled)
         {
-            return new DamageResult(
-                true,
-                false,
-                appliedAmount,
-                HitRegion.Generic);
+            return result;
         }
 
         IsDead = true;
         Killed?.Invoke(damage);
         Died?.Invoke();
-        return new DamageResult(
-            true,
-            true,
-            appliedAmount,
-            HitRegion.Generic);
+        return result;
     }
 
     public float RestoreHealth(float amount)

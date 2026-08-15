@@ -83,6 +83,12 @@ public sealed class PlayerFailureFlowController : MonoBehaviour
         }
 
         IsFailed = true;
+
+        if (ExternalPresentationEnabled)
+        {
+            return;
+        }
+
         defeatLock ??= gameplayLocks != null
             ? gameplayLocks.Acquire(GameplayLockReason.Defeat)
             : null;

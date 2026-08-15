@@ -1,3 +1,5 @@
+using System;
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.InputSystem;
 using UnityEngine.SceneManagement;
@@ -19,12 +21,16 @@ public sealed class CityNewMissionController : MonoBehaviour
     private GUIStyle objectiveStyle;
     private GUIStyle markerStyle;
     private GUIStyle resultTitleStyle;
-    private GUIStyle resultBodyStyle;
     private GUIStyle buttonStyle;
     private bool configured;
     private GameplayLockCoordinator gameplayLocks;
     private GameplayLockLease outcomeLock;
     private WaveDirector waveDirector;
+    private PlayerRunProgression progression;
+    private PlayerUpgradeController upgrades;
+    private PlayerLootRewardController lootRewards;
+    private UnifiedGameHud hud;
+    private MissionOutcomeView outcomeView;
 
     public TerminalInteractable Terminal { get; private set; }
     public Health TargetHealth { get; private set; }
@@ -34,6 +40,9 @@ public sealed class CityNewMissionController : MonoBehaviour
     public bool ExtractionAvailable =>
         State == MissionFlowState.ExtractionAvailable;
     public bool QuitRequested { get; private set; }
+    public bool IsRestarting { get; private set; }
+    public MissionRunSummary OutcomeSummary { get; private set; }
+    public MissionOutcomeView OutcomeView => outcomeView;
 
     private void Awake()
     {
@@ -41,6 +50,9 @@ public sealed class CityNewMissionController : MonoBehaviour
         player = GetComponent<PlayerController>();
         combat = GetComponent<PlayerCombatController>();
         gameplayLocks = GetComponent<GameplayLockCoordinator>();
+        progression = GetComponent<PlayerRunProgression>();
+        upgrades = GetComponent<PlayerUpgradeController>();
+        lootRewards = GetComponent<PlayerLootRewardController>();
         profile = Resources.Load<PlayerHudVisualProfile>(
             "PlayerHudVisualProfile");
     }
@@ -52,18 +64,23 @@ public sealed class CityNewMissionController : MonoBehaviour
             return;
         }
 
-        if (!flow.IsOutcome &&
-            !player.IsPaused &&
+        if (flow.IsOutcome)
+        {
+            EnsureOutcomePresentation();
+
+            if (Keyboard.current != null &&
+                Keyboard.current.rKey.wasPressedThisFrame)
+            {
+                RestartLevel();
+            }
+
+            return;
+        }
+
+        if (!player.IsPaused &&
             Time.timeScale > 0f)
         {
             statistics.AdvanceTime(Time.unscaledDeltaTime);
-        }
-
-        if (flow.IsOutcome &&
-            Keyboard.current != null &&
-            Keyboard.current.rKey.wasPressedThisFrame)
-        {
-            RestartLevel();
         }
     }
 
@@ -78,6 +95,8 @@ public sealed class CityNewMissionController : MonoBehaviour
         statistics.Reset();
         flow.Configure(1);
         QuitRequested = false;
+        IsRestarting = false;
+        OutcomeSummary = default;
         CreateExtractionZone(extractionPosition);
 
         if (Terminal != null)
@@ -100,7 +119,7 @@ public sealed class CityNewMissionController : MonoBehaviour
             }
         }
 
-        playerHealth.Damaged += HandlePlayerDamaged;
+        playerHealth.DamageApplied += HandlePlayerDamageApplied;
         playerHealth.Died += HandlePlayerDied;
         combat.ShotResolved += HandleShotResolved;
         flow.StateChanged += HandleStateChanged;
@@ -123,8 +142,11 @@ public sealed class CityNewMissionController : MonoBehaviour
         TargetHealth = null;
         waveDirector = configuredWaveDirector;
         statistics.Reset();
+        statistics.UseAuthoritativeKillTracking();
         flow.Configure(1);
         QuitRequested = false;
+        IsRestarting = false;
+        OutcomeSummary = default;
         CreateExtractionZone(extractionPosition);
 
         if (Terminal != null)
@@ -139,6 +161,8 @@ public sealed class CityNewMissionController : MonoBehaviour
 
         if (waveDirector != null)
         {
+            waveDirector.EnemyDied += HandleEnemyDied;
+            waveDirector.WaveEnded += HandleWaveEnded;
             waveDirector.WaveCompleted += HandleWaveCompleted;
 
             if (waveDirector.IsCompleted)
@@ -147,7 +171,7 @@ public sealed class CityNewMissionController : MonoBehaviour
             }
         }
 
-        playerHealth.Damaged += HandlePlayerDamaged;
+        playerHealth.DamageApplied += HandlePlayerDamageApplied;
         playerHealth.Died += HandlePlayerDied;
         combat.ShotResolved += HandleShotResolved;
         flow.StateChanged += HandleStateChanged;
@@ -169,6 +193,7 @@ public sealed class CityNewMissionController : MonoBehaviour
             return false;
         }
 
+        EndRunSystems();
         ApplyOutcome();
         return true;
     }
@@ -186,11 +211,20 @@ public sealed class CityNewMissionController : MonoBehaviour
 
     public bool RestartLevel()
     {
-        if (!flow.IsOutcome && !player.IsPaused)
+        if (IsRestarting || (!flow.IsOutcome && !player.IsPaused))
         {
             return false;
         }
 
+        IsRestarting = true;
+        EndRunSystems();
+        waveDirector?.StopRun(State == MissionFlowState.Defeat
+            ? WaveStopReason.PlayerDied
+            : WaveStopReason.Reconfigured);
+        outcomeView?.Hide();
+        hud?.SetOutcomePresentation(false);
+        outcomeLock?.Dispose();
+        outcomeLock = null;
         gameplayLocks?.ResetForSceneTransition();
         Time.timeScale = 1f;
         SceneManager.LoadScene(SceneManager.GetActiveScene().name);
@@ -228,13 +262,15 @@ public sealed class CityNewMissionController : MonoBehaviour
 
         if (waveDirector != null)
         {
+            waveDirector.EnemyDied -= HandleEnemyDied;
+            waveDirector.WaveEnded -= HandleWaveEnded;
             waveDirector.WaveCompleted -= HandleWaveCompleted;
             waveDirector = null;
         }
 
         if (playerHealth != null)
         {
-            playerHealth.Damaged -= HandlePlayerDamaged;
+            playerHealth.DamageApplied -= HandlePlayerDamageApplied;
             playerHealth.Died -= HandlePlayerDied;
         }
 
@@ -262,11 +298,27 @@ public sealed class CityNewMissionController : MonoBehaviour
         flow.RegisterTargetEliminated();
     }
 
-    private void HandlePlayerDamaged(DamageInfo damage)
+    private void HandleEnemyDied(EnemyDeathEvent death)
     {
         if (!flow.IsOutcome)
         {
-            statistics.RegisterDamageTaken();
+            statistics.RegisterEnemyDeath(death, gameObject);
+        }
+    }
+
+    private void HandleWaveEnded(int waveNumber)
+    {
+        if (!flow.IsOutcome)
+        {
+            statistics.RegisterWaveCompleted(waveNumber);
+        }
+    }
+
+    private void HandlePlayerDamageApplied(DamageResult result)
+    {
+        if (!flow.IsOutcome)
+        {
+            statistics.RegisterAppliedDamage(result);
         }
     }
 
@@ -274,6 +326,8 @@ public sealed class CityNewMissionController : MonoBehaviour
     {
         if (flow.Fail())
         {
+            waveDirector?.StopRun(WaveStopReason.PlayerDied);
+            EndRunSystems();
             ApplyOutcome();
         }
     }
@@ -294,6 +348,11 @@ public sealed class CityNewMissionController : MonoBehaviour
 
     private void ApplyOutcome()
     {
+        if (!OutcomeSummary.IsValid)
+        {
+            OutcomeSummary = CaptureOutcomeSummary();
+        }
+
         GameplayLockReason reason = State == MissionFlowState.Victory
             ? GameplayLockReason.Victory
             : GameplayLockReason.Defeat;
@@ -309,6 +368,120 @@ public sealed class CityNewMissionController : MonoBehaviour
             Cursor.lockState = CursorLockMode.None;
             Cursor.visible = true;
         }
+
+        EnsureOutcomePresentation();
+    }
+
+    private void EndRunSystems()
+    {
+        lootRewards ??= GetComponent<PlayerLootRewardController>();
+        progression ??= GetComponent<PlayerRunProgression>();
+        upgrades ??= GetComponent<PlayerUpgradeController>();
+        lootRewards?.EndRun();
+        progression?.EndRun();
+        upgrades?.EndRun();
+        hud ??= FindAnyObjectByType<UnifiedGameHud>();
+        hud?.ClearRewardCues();
+    }
+
+    private MissionRunSummary CaptureOutcomeSummary()
+    {
+        int completedWaves = waveDirector != null
+            ? Mathf.Max(statistics.CompletedWaves, waveDirector.CompletedWaveCount)
+            : statistics.CompletedWaves;
+        int totalWaves = waveDirector != null
+            ? waveDirector.CurrentProgress.TotalWaves
+            : 1;
+        int level = progression != null
+            ? progression.CurrentProgress.Level
+            : 1;
+        return new MissionRunSummary(
+            State,
+            completedWaves,
+            totalWaves,
+            statistics.Kills,
+            statistics.ShotsFired,
+            statistics.Hits,
+            statistics.ElapsedSeconds,
+            statistics.DamageTakenCount,
+            statistics.DamageTakenAmount,
+            level,
+            BuildSelectedUpgradeSummary());
+    }
+
+    private IReadOnlyList<string> BuildSelectedUpgradeSummary()
+    {
+        if (upgrades == null || upgrades.SelectionHistory.Count == 0)
+        {
+            return Array.Empty<string>();
+        }
+
+        var definitions = new Dictionary<string, UpgradeDefinition>(
+            StringComparer.Ordinal);
+        for (int index = 0; index < upgrades.AvailableUpgrades.Count; index++)
+        {
+            UpgradeDefinition definition = upgrades.AvailableUpgrades[index];
+            if (definition != null && !string.IsNullOrWhiteSpace(definition.StableId))
+            {
+                definitions[definition.StableId] = definition;
+            }
+        }
+
+        var orderedIds = new List<string>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        for (int index = 0; index < upgrades.SelectionHistory.Count; index++)
+        {
+            string id = upgrades.SelectionHistory[index];
+            if (seen.Add(id))
+            {
+                orderedIds.Add(id);
+            }
+        }
+
+        var result = new List<string>(orderedIds.Count);
+        for (int index = 0; index < orderedIds.Count; index++)
+        {
+            string id = orderedIds[index];
+            string title = definitions.TryGetValue(id, out UpgradeDefinition definition) &&
+                           !string.IsNullOrWhiteSpace(definition.Title)
+                ? definition.Title
+                : id;
+            result.Add($"{title}  ×{upgrades.GetUpgradeLevel(id)}");
+        }
+        return result;
+    }
+
+    private void EnsureOutcomeView()
+    {
+        hud ??= FindAnyObjectByType<UnifiedGameHud>();
+        if (hud == null || hud.OutcomeLayer == null)
+        {
+            return;
+        }
+
+        outcomeView ??= hud.GetComponent<MissionOutcomeView>();
+        outcomeView ??= hud.gameObject.AddComponent<MissionOutcomeView>();
+        outcomeView.Initialize(hud.OutcomeLayer);
+    }
+
+    private void EnsureOutcomePresentation()
+    {
+        if (!flow.IsOutcome || !OutcomeSummary.IsValid ||
+            (outcomeView != null && outcomeView.IsVisible))
+        {
+            return;
+        }
+
+        EnsureOutcomeView();
+
+        if (outcomeView == null)
+        {
+            return;
+        }
+
+        hud?.ClearRewardCues();
+        hud?.SetOutcomePresentation(true);
+        outcomeView.Show(OutcomeSummary, () => RestartLevel());
     }
 
     private void CreateExtractionZone(Vector3 position)
@@ -335,7 +508,6 @@ public sealed class CityNewMissionController : MonoBehaviour
 
         if (flow.IsOutcome)
         {
-            DrawResult();
             return;
         }
 
@@ -475,45 +647,6 @@ public sealed class CityNewMissionController : MonoBehaviour
         }
     }
 
-    private void DrawResult()
-    {
-        GUI.depth = -100;
-        DrawScreenDim();
-        Rect panel = CenterPanel(620f, 500f);
-        DrawPanel(panel);
-        string title =
-            State == MissionFlowState.Victory
-                ? "MISSION COMPLETE"
-                : "MISSION FAILED";
-        GUI.Label(
-            new Rect(panel.x, panel.y + 30f, panel.width, 62f),
-            title,
-            resultTitleStyle);
-        string summary =
-            $"完成时间    {FormatTime(statistics.ElapsedSeconds)}\n" +
-            $"开火数      {statistics.ShotsFired}\n" +
-            $"命中数      {statistics.Hits}\n" +
-            $"命中率      {statistics.Accuracy * 100f:0.0}%\n" +
-            $"击杀数      {statistics.Kills}\n" +
-            $"受伤次数    {statistics.DamageTakenCount}";
-        GUI.Label(
-            new Rect(panel.x + 120f, panel.y + 110f, 380f, 240f),
-            summary,
-            resultBodyStyle);
-
-        if (GUI.Button(
-                new Rect(
-                    panel.center.x - 150f,
-                    panel.yMax - 90f,
-                    300f,
-                    52f),
-                "重新开始  [R]",
-                buttonStyle))
-        {
-            RestartLevel();
-        }
-    }
-
     private static void DrawScreenDim()
     {
         Color previous = GUI.color;
@@ -543,12 +676,6 @@ public sealed class CityNewMissionController : MonoBehaviour
             (Screen.height - height) * 0.5f,
             width,
             height);
-    }
-
-    private static string FormatTime(float seconds)
-    {
-        int totalSeconds = Mathf.Max(0, Mathf.FloorToInt(seconds));
-        return $"{totalSeconds / 60:00}:{totalSeconds % 60:00}";
     }
 
     private void EnsureStyles()
@@ -581,11 +708,6 @@ public sealed class CityNewMissionController : MonoBehaviour
             fontSize = 38,
             fontStyle = FontStyle.Bold,
             alignment = TextAnchor.MiddleCenter
-        };
-        resultBodyStyle = new GUIStyle(objectiveStyle)
-        {
-            fontSize = 20,
-            alignment = TextAnchor.UpperLeft
         };
         buttonStyle = new GUIStyle(GUI.skin.button)
         {
