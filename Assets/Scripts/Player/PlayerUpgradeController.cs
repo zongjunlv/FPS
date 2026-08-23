@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using FPS.GameplayEffects;
 using UnityEngine;
 
 public sealed class PlayerUpgradeController : MonoBehaviour
@@ -25,6 +26,8 @@ public sealed class PlayerUpgradeController : MonoBehaviour
     private int pendingChoices;
     private bool waitingForHud;
     private bool runEnded;
+    private GameplayEffectRuntime gameplayEffects;
+    private bool gameplayEffectBaselineCaptured;
 
     public int RunSeed => runSeed;
     public int PendingChoiceCount => pendingChoices;
@@ -36,12 +39,17 @@ public sealed class PlayerUpgradeController : MonoBehaviour
         currentCandidates;
     public IReadOnlyList<UpgradeDefinition> AvailableUpgrades => definitions;
     public UpgradeCandidateStatus LastCandidateStatus { get; private set; }
+    public IReadOnlyList<GameplayEffectInstance> ActiveGameplayEffects =>
+        gameplayEffects?.ActiveInstances ??
+        Array.Empty<GameplayEffectInstance>();
+    public int ActiveGameplayEffectCount => ActiveGameplayEffects.Count;
 
     private void Awake()
     {
         progression = GetComponent<PlayerRunProgression>();
         combatStats = GetComponent<PlayerRuntimeCombatStats>();
         health = GetComponent<Health>();
+        gameplayEffects = new GameplayEffectRuntime(gameObject);
         gameplayLocks = GetComponent<GameplayLockCoordinator>();
         generator = new UpgradeCandidateGenerator(runSeed);
         EnsureDefinitions();
@@ -77,6 +85,7 @@ public sealed class PlayerUpgradeController : MonoBehaviour
 
     private void OnDestroy()
     {
+        ClearGameplayEffects();
         CloseChoice();
 
         for (int index = 0; index < runtimeDefinitions.Count; index++)
@@ -140,6 +149,7 @@ public sealed class PlayerUpgradeController : MonoBehaviour
         }
 
         combatStats?.SetWeaponModifiers(state.WeaponModifiers);
+        ApplyGameplayEffect(selected);
         ApplySurvivalEffect(selected);
         pendingChoices = Mathf.Max(0, pendingChoices - 1);
 
@@ -167,6 +177,18 @@ public sealed class PlayerUpgradeController : MonoBehaviour
         waitingForHud = false;
         StopAllCoroutines();
         CloseChoice();
+        ClearGameplayEffects();
+    }
+
+    public bool RemoveGameplayEffect(long instanceId)
+    {
+        if (gameplayEffects == null || !gameplayEffects.Remove(instanceId))
+        {
+            return false;
+        }
+
+        RefreshGameplayEffectAttributes();
+        return true;
     }
 
     public int GetUpgradeLevel(string stableId)
@@ -461,11 +483,6 @@ public sealed class PlayerUpgradeController : MonoBehaviour
 
         switch (selected.EffectType)
         {
-            case UpgradeEffectType.MaximumHealth:
-                health?.SetMaximumHealth(
-                    baseMaximumHealth *
-                    state.SurvivalModifiers.MaximumHealthMultiplier);
-                break;
             case UpgradeEffectType.MaximumArmor:
                 health?.SetMaximumArmor(
                     baseMaximumArmor *
@@ -487,8 +504,69 @@ public sealed class PlayerUpgradeController : MonoBehaviour
             return;
         }
 
-        baseMaximumHealth = health.MaxHealth;
         baseMaximumArmor = health.MaxArmor;
         survivalBaselineCaptured = true;
+    }
+
+    private void ApplyGameplayEffect(UpgradeDefinition selected)
+    {
+        GameplayEffectDefinition definition = selected?.GameplayEffect;
+
+        if (definition == null || gameplayEffects == null || health == null)
+        {
+            return;
+        }
+
+        CaptureGameplayEffectBaseline();
+        gameplayEffects.Apply(
+            definition,
+            new GameplayEffectContext(
+                selected.StableId,
+                selected,
+                gameObject));
+        RefreshGameplayEffectAttributes();
+    }
+
+    private void CaptureGameplayEffectBaseline()
+    {
+        if (gameplayEffectBaselineCaptured || health == null)
+        {
+            return;
+        }
+
+        baseMaximumHealth = health.MaxHealth;
+        gameplayEffectBaselineCaptured = true;
+    }
+
+    private void RefreshGameplayEffectAttributes()
+    {
+        if (!gameplayEffectBaselineCaptured ||
+            gameplayEffects == null ||
+            health == null)
+        {
+            return;
+        }
+
+        health.SetMaximumHealth(
+            gameplayEffects.Evaluate(
+                GameplayAttributeId.MaximumHealth,
+                baseMaximumHealth));
+    }
+
+    private void ClearGameplayEffects()
+    {
+        if (gameplayEffects == null)
+        {
+            return;
+        }
+
+        gameplayEffects.Clear();
+
+        if (gameplayEffectBaselineCaptured && health != null)
+        {
+            health.SetMaximumHealth(baseMaximumHealth);
+        }
+
+        gameplayEffectBaselineCaptured = false;
     }
 }

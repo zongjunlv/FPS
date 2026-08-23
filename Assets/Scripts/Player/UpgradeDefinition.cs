@@ -1,4 +1,5 @@
 using System;
+using FPS.GameplayEffects;
 using UnityEngine;
 
 public enum UpgradeRarity
@@ -36,6 +37,8 @@ public sealed class UpgradeDefinition : ScriptableObject
     [SerializeField, Min(1)] private int maximumLevel = 1;
     [SerializeField] private UpgradeEffectType effectType;
     [SerializeField, Min(0f)] private float effectAmount = 0.2f;
+    [SerializeField] private GameplayEffectDefinition gameplayEffect;
+    private bool ownsGeneratedGameplayEffect;
 
     public string StableId => stableId;
     public string Title => title;
@@ -45,6 +48,7 @@ public sealed class UpgradeDefinition : ScriptableObject
     public int MaximumLevel => Mathf.Max(1, maximumLevel);
     public UpgradeEffectType EffectType => effectType;
     public float EffectAmount => Mathf.Max(0f, effectAmount);
+    public GameplayEffectDefinition GameplayEffect => gameplayEffect;
     public string EffectValueText =>
         effectType == UpgradeEffectType.HealthRestore ||
         effectType == UpgradeEffectType.ArmorRestore
@@ -76,6 +80,15 @@ public sealed class UpgradeDefinition : ScriptableObject
         maximumLevel = Mathf.Max(1, maxLevel);
         effectType = type;
         effectAmount = Mathf.Max(0f, amount);
+        ConfigureGeneratedGameplayEffect();
+    }
+
+    public void ConfigureGameplayEffect(
+        GameplayEffectDefinition configuredEffect)
+    {
+        ReleaseGeneratedGameplayEffect();
+        gameplayEffect = configuredEffect;
+        ownsGeneratedGameplayEffect = false;
     }
 
     public string GetLevelText(int currentLevel)
@@ -110,5 +123,52 @@ public sealed class UpgradeDefinition : ScriptableObject
             UpgradeEffectType.MovementSpeed => "移动速度",
             _ => "武器"
         };
+    }
+
+    private void ConfigureGeneratedGameplayEffect()
+    {
+        ReleaseGeneratedGameplayEffect();
+
+        if (effectType != UpgradeEffectType.MaximumHealth)
+        {
+            gameplayEffect = null;
+            return;
+        }
+
+        gameplayEffect = CreateInstance<GameplayEffectDefinition>();
+        gameplayEffect.name = $"{stableId} Maximum Health Effect";
+        gameplayEffect.hideFlags = HideFlags.DontSave;
+        gameplayEffect.Configure(
+            $"{stableId}.maximum-health",
+            new GameplayEffectModifier(
+                GameplayAttributeId.MaximumHealth,
+                GameplayModifierOperation.Multiply,
+                effectAmount));
+        ownsGeneratedGameplayEffect = true;
+    }
+
+    private void ReleaseGeneratedGameplayEffect()
+    {
+        if (!ownsGeneratedGameplayEffect || gameplayEffect == null)
+        {
+            return;
+        }
+
+        if (Application.isPlaying)
+        {
+            Destroy(gameplayEffect);
+        }
+        else
+        {
+            DestroyImmediate(gameplayEffect);
+        }
+
+        gameplayEffect = null;
+        ownsGeneratedGameplayEffect = false;
+    }
+
+    private void OnDestroy()
+    {
+        ReleaseGeneratedGameplayEffect();
     }
 }

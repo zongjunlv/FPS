@@ -15,7 +15,6 @@ public sealed class RunUpgradeState
     private float weaponReloadSpeedBonus;
     private float weaponRecoilControlBonus;
     private float weaponAccuracyBonus;
-    private float maximumHealthBonus;
     private float maximumArmorBonus;
     private float movementSpeedBonus;
 
@@ -31,7 +30,7 @@ public sealed class RunUpgradeState
         WeaponModifiers.DamageMultiplier;
     public SurvivalRuntimeModifiers SurvivalModifiers =>
         new SurvivalRuntimeModifiers(
-            1f + maximumHealthBonus,
+            1f,
             1f + maximumArmorBonus,
             1f + movementSpeedBonus);
 
@@ -81,9 +80,6 @@ public sealed class RunUpgradeState
                 break;
             case UpgradeEffectType.WeaponAccuracy:
                 weaponAccuracyBonus += definition.EffectAmount;
-                break;
-            case UpgradeEffectType.MaximumHealth:
-                maximumHealthBonus += definition.EffectAmount;
                 break;
             case UpgradeEffectType.MaximumArmor:
                 maximumArmorBonus += definition.EffectAmount;

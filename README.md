@@ -95,6 +95,10 @@
 
 入口会固定100敌人、1920×1080、PC画质、随机种子、感知预算、5秒预热和20秒采样，连续执行3轮并校验实验条件一致性，最后输出中位数报告。正式优化前结果与原始 JSON 见 [`docs/performance/issue-30.md`](docs/performance/issue-30.md)。
 
+## Gameplay Effect
+
+生命强化卡牌已接入可追踪、可移除和可回滚的最小 Gameplay Effect 闭环，支持 Add、Multiply、Override 的确定性聚合。设计与回滚规则见 [`docs/architecture/gameplay-effects.md`](docs/architecture/gameplay-effects.md)。
+
 ## macOS Development Build
 
 ```bash

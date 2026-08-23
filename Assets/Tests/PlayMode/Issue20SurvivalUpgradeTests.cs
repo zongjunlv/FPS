@@ -107,7 +107,7 @@ namespace FPS.Tests.PlayMode
         }
 
         [Test]
-        public void SurvivalModifiersStackAdditivelyAndMovementKeepsRatios()
+        public void LegacySurvivalModifiersExcludeGameplayEffectAttributes()
         {
             Type definitionType = RuntimeTypeResolver.GetType(
                 "UpgradeDefinition");
@@ -145,7 +145,8 @@ namespace FPS.Tests.PlayMode
                 object modifiers = stateType.GetProperty("SurvivalModifiers")
                     .GetValue(state);
                 Assert.That(ReadModifier(modifiers, "MaximumHealthMultiplier"),
-                    Is.EqualTo(1.4f).Within(0.0001f));
+                    Is.EqualTo(1f).Within(0.0001f),
+                    "最大生命现由 Gameplay Effect 聚合，不应重复进入旧修正器。 ");
                 Assert.That(ReadModifier(modifiers, "MaximumArmorMultiplier"),
                     Is.EqualTo(1.2f).Within(0.0001f));
                 Assert.That(ReadModifier(modifiers, "MovementSpeedMultiplier"),
