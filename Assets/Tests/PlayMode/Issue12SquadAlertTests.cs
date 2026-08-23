@@ -316,7 +316,7 @@ namespace FPS.Tests.PlayMode
         }
 
         [Test]
-        public void BroadcastActivatesRangeAndRelationDebugView()
+        public void BroadcastKeepsRangeButDoesNotDrawRelationLines()
         {
             Type coordinatorType = Type.GetType(
                 "EnemySquadCoordinator, Assembly-CSharp");
@@ -376,6 +376,12 @@ namespace FPS.Tests.PlayMode
                     coordinatorType.GetProperty("DebugRelationCount")
                         .GetValue(coordinator),
                     Is.EqualTo(1));
+                Assert.That(
+                    coordinatorObject
+                        .GetComponentsInChildren<LineRenderer>(true)
+                        .Length,
+                    Is.EqualTo(1),
+                    "只保留警戒范围圈，不得绘制怪物之间的连接线。");
             }
             finally
             {

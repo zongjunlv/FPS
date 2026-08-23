@@ -127,8 +127,10 @@ namespace FPS.Tests.PlayMode
             GameObject oldPlayer = GameObject.FindGameObjectWithTag("Player");
             Component mission = oldPlayer.GetComponent(RuntimeType("CityNewMissionController"));
             Component director = Find(RuntimeType("WaveDirector"));
-            CompleteTerminal(mission, oldPlayer);
             yield return CompleteAllWaves(director, oldPlayer, 55f);
+            Assert.That(Get<object>(mission.GetType(), mission, "State").ToString(),
+                Is.EqualTo("ActivateTerminal"));
+            CompleteTerminal(mission, oldPlayer);
 
             string preExtractionState = Get<object>(
                 mission.GetType(), mission, "State").ToString();
@@ -318,7 +320,7 @@ namespace FPS.Tests.PlayMode
             Component inventory = player.GetComponent(RuntimeType("PlayerInventoryController"));
             Component coordinator = player.GetComponent(RuntimeType("GameplayLockCoordinator"));
             Assert.That(Get<object>(mission.GetType(), mission, "State").ToString(),
-                Is.EqualTo("ActivateTerminal"));
+                Is.EqualTo("EliminateTargets"));
             Assert.That(Get<bool>(mission.GetType(), mission, "IsRestarting"), Is.False);
             object summary = mission.GetType().GetProperty("OutcomeSummary").GetValue(mission);
             Assert.That(Get<bool>(summary.GetType(), summary, "IsValid"), Is.False);

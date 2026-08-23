@@ -13,6 +13,7 @@ public sealed class WaveEnemyLifecycle : MonoBehaviour
     public int SpawnId => handle.SpawnId;
     public int WaveNumber => handle.WaveNumber;
     public bool IsSettled => settled;
+    public int Generation => handle.Generation;
 
     public void Arm(
         int spawnId,
@@ -45,6 +46,25 @@ public sealed class WaveEnemyLifecycle : MonoBehaviour
         LootRewardTier rewardTier,
         Action<EnemySpawnHandle, EnemyExitReason> ended)
     {
+        Arm(
+            spawnId,
+            waveNumber,
+            controller,
+            enemyTypeId,
+            rewardTier,
+            0,
+            ended);
+    }
+
+    public void Arm(
+        int spawnId,
+        int waveNumber,
+        EnemyController controller,
+        string enemyTypeId,
+        LootRewardTier rewardTier,
+        int generation,
+        Action<EnemySpawnHandle, EnemyExitReason> ended)
+    {
         Disarm();
         handle = new EnemySpawnHandle(
             spawnId,
@@ -52,7 +72,8 @@ public sealed class WaveEnemyLifecycle : MonoBehaviour
             controller,
             this,
             enemyTypeId,
-            rewardTier);
+            rewardTier,
+            generation);
         onEnded = ended;
         settled = false;
         armed = true;

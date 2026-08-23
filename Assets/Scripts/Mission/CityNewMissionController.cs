@@ -102,11 +102,6 @@ public sealed class CityNewMissionController : MonoBehaviour
         if (Terminal != null)
         {
             Terminal.Completed += HandleTerminalCompleted;
-
-            if (Terminal.State == TerminalInteractionState.Completed)
-            {
-                flow.CompleteTerminal();
-            }
         }
 
         if (TargetHealth != null)
@@ -118,6 +113,8 @@ public sealed class CityNewMissionController : MonoBehaviour
                 flow.RegisterTargetEliminated();
             }
         }
+
+        CompleteAlreadyActivatedTerminal();
 
         playerHealth.DamageApplied += HandlePlayerDamageApplied;
         playerHealth.Died += HandlePlayerDied;
@@ -152,11 +149,6 @@ public sealed class CityNewMissionController : MonoBehaviour
         if (Terminal != null)
         {
             Terminal.Completed += HandleTerminalCompleted;
-
-            if (Terminal.State == TerminalInteractionState.Completed)
-            {
-                flow.CompleteTerminal();
-            }
         }
 
         if (waveDirector != null)
@@ -170,6 +162,8 @@ public sealed class CityNewMissionController : MonoBehaviour
                 flow.RegisterTargetEliminated();
             }
         }
+
+        CompleteAlreadyActivatedTerminal();
 
         playerHealth.DamageApplied += HandlePlayerDamageApplied;
         playerHealth.Died += HandlePlayerDied;
@@ -291,11 +285,13 @@ public sealed class CityNewMissionController : MonoBehaviour
     private void HandleTargetEliminated()
     {
         flow.RegisterTargetEliminated();
+        CompleteAlreadyActivatedTerminal();
     }
 
     private void HandleWaveCompleted()
     {
         flow.RegisterTargetEliminated();
+        CompleteAlreadyActivatedTerminal();
     }
 
     private void HandleEnemyDied(EnemyDeathEvent death)
@@ -342,6 +338,8 @@ public sealed class CityNewMissionController : MonoBehaviour
 
     private void HandleStateChanged(MissionFlowState state)
     {
+        Terminal?.SetMissionAvailable(
+            state == MissionFlowState.ActivateTerminal);
         ExtractionZone?.SetAvailable(
             state == MissionFlowState.ExtractionAvailable);
     }
@@ -550,12 +548,24 @@ public sealed class CityNewMissionController : MonoBehaviour
             MissionFlowState.ActivateTerminal =>
                 "接入城市控制终端   0/1",
             MissionFlowState.EliminateTargets =>
-                $"清除高价值目标   " +
-                $"{flow.EliminatedTargets}/{flow.RequiredTargets}",
+                waveDirector != null
+                    ? "清除所有波次怪物"
+                    : $"清除高价值目标   " +
+                      $"{flow.EliminatedTargets}/{flow.RequiredTargets}",
             MissionFlowState.ExtractionAvailable =>
                 "前往撤离点   已开放",
             _ => string.Empty
         };
+    }
+
+    private void CompleteAlreadyActivatedTerminal()
+    {
+        if (State == MissionFlowState.ActivateTerminal &&
+            Terminal != null &&
+            Terminal.State == TerminalInteractionState.Completed)
+        {
+            flow.CompleteTerminal();
+        }
     }
 
     private void DrawWorldMarker()

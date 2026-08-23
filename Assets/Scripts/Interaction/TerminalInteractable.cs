@@ -35,6 +35,7 @@ public sealed class TerminalInteractable :
     private AudioClip completionClip;
     private Renderer statusLight;
     private Material statusMaterial;
+    private bool missionAvailable = true;
 
     public event Action<TerminalInteractable> Completed;
 
@@ -42,11 +43,15 @@ public sealed class TerminalInteractable :
     public float ProgressNormalized =>
         stateMachine.ProgressNormalized;
     public int CompletionCount { get; private set; }
+    public bool MissionAvailable => missionAvailable;
     public InteractionView View => new(
         State == TerminalInteractionState.Completed
             ? "终端接入完成"
-            : "[E] 长按接入终端",
+            : !missionAvailable
+                ? "先清除怪物"
+                : "[E] 长按接入终端",
         ProgressNormalized,
+        missionAvailable &&
         State != TerminalInteractionState.Completed,
         State == TerminalInteractionState.Completed);
 
@@ -108,7 +113,7 @@ public sealed class TerminalInteractable :
 
     public bool TryBegin(GameObject actor)
     {
-        if (actor == null ||
+        if (!missionAvailable || actor == null ||
             State == TerminalInteractionState.Completed)
         {
             return false;
@@ -125,7 +130,7 @@ public sealed class TerminalInteractable :
 
     public bool Advance(GameObject actor, float deltaTime)
     {
-        if (actor == null ||
+        if (!missionAvailable || actor == null ||
             activeActor != actor ||
             !stateMachine.Advance(deltaTime))
         {
@@ -137,6 +142,22 @@ public sealed class TerminalInteractable :
         PublishCompletion();
         Completed?.Invoke(this);
         return true;
+    }
+
+    public void SetMissionAvailable(bool available)
+    {
+        if (missionAvailable == available)
+        {
+            return;
+        }
+
+        missionAvailable = available;
+
+        if (!missionAvailable && activeActor != null)
+        {
+            stateMachine.Cancel();
+            activeActor = null;
+        }
     }
 
     public bool Cancel(

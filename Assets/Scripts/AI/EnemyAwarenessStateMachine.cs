@@ -38,6 +38,17 @@ public sealed class EnemyAwarenessStateMachine
         searchDuration = Mathf.Max(0.1f, configuredSearchDuration);
     }
 
+    public void Reset()
+    {
+        State = EnemyAwarenessState.Patrol;
+        Awareness = 0f;
+        LastKnownPosition = Vector3.zero;
+        searchRemaining = 0f;
+        searchApproachRemaining = 0f;
+        lostSightElapsed = 0f;
+        searchAreaReached = false;
+    }
+
     public void Observe(Vector3 position, float deltaTime)
     {
         if (deltaTime <= 0f)

@@ -10,6 +10,8 @@ public sealed class PooledEffectInstance : MonoBehaviour
     private bool hasFollowTarget;
     private Vector3 followLocalPosition;
     private Quaternion followLocalRotation;
+    private EnemyController followedEnemy;
+    private int followedEnemyGeneration;
 
     public void Prepare()
     {
@@ -36,6 +38,12 @@ public sealed class PooledEffectInstance : MonoBehaviour
 
         if (followTarget != null)
         {
+            followedEnemy =
+                followTarget.GetComponentInParent<EnemyController>();
+            followedEnemyGeneration =
+                followedEnemy != null
+                    ? followedEnemy.SpawnResetCount
+                    : 0;
             followLocalPosition = followTarget.InverseTransformPoint(
                 transform.position);
             followLocalRotation = Quaternion.Inverse(
@@ -61,7 +69,9 @@ public sealed class PooledEffectInstance : MonoBehaviour
         if (hasFollowTarget)
         {
             if (followTarget == null ||
-                !followTarget.gameObject.activeInHierarchy)
+                !followTarget.gameObject.activeInHierarchy ||
+                (followedEnemy != null &&
+                 followedEnemy.SpawnResetCount != followedEnemyGeneration))
             {
                 owner?.Return(gameObject);
                 return;
@@ -98,6 +108,8 @@ public sealed class PooledEffectInstance : MonoBehaviour
         owner = null;
         followTarget = null;
         hasFollowTarget = false;
+        followedEnemy = null;
+        followedEnemyGeneration = 0;
         remainingLifetime = 0f;
 
         if (!string.IsNullOrEmpty(pooledName))

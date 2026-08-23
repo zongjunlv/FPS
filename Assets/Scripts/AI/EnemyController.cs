@@ -10,6 +10,15 @@ public class EnemyController : MonoBehaviour
     private Health health;
     private bool deathPresentationTriggered;
     private bool factoryManaged;
+    private Collider[] colliders;
+    private bool[] colliderBaseline;
+    private Rigidbody[] rigidbodies;
+    private Animator animator;
+    private float configuredHealth;
+    private float configuredArmor;
+
+    public int SpawnResetCount { get; private set; }
+    public int PoolPreparationCount { get; private set; }
 
     public float AttackDamage =>
         currentEnemy != null
@@ -35,11 +44,13 @@ public class EnemyController : MonoBehaviour
             health = gameObject.AddComponent<Health>();
         }
 
-        float configuredHealth =
+        configuredHealth =
             currentEnemy != null ? currentEnemy.HP : health.MaxHealth;
-        health.Initialize(configuredHealth);
+        configuredArmor = health.MaxArmor;
+        health.Initialize(configuredHealth, configuredArmor);
         health.Died += HandleDeath;
         EnsureHitboxes();
+        CacheRuntimeBaseline();
     }
 
     private void EnsureAwareness()
@@ -96,6 +107,92 @@ public class EnemyController : MonoBehaviour
         if (!factoryManaged)
         {
             Destroy(gameObject);
+        }
+    }
+
+    public void ResetForSpawn(Transform target)
+    {
+        deathPresentationTriggered = false;
+        RestoreColliderBaseline();
+
+        foreach (Rigidbody body in rigidbodies)
+        {
+            if (body == null)
+            {
+                continue;
+            }
+
+            body.linearVelocity = Vector3.zero;
+            body.angularVelocity = Vector3.zero;
+        }
+
+        if (animator != null)
+        {
+            animator.Rebind();
+            animator.Update(0f);
+        }
+
+        health.Initialize(configuredHealth, configuredArmor);
+        GetComponent<EnemyCombatController>()?.ResetForSpawn();
+        GetComponent<EnemyNavigationController>()?.ResetForSpawn();
+        GetComponent<EnemyPerceptionController>()?.ResetForSpawn(target);
+
+        foreach (DamageHitbox hitbox in
+                 GetComponentsInChildren<DamageHitbox>(true))
+        {
+            hitbox.ResetForSpawn();
+        }
+
+        SpawnResetCount++;
+    }
+
+    public void PrepareForPool()
+    {
+        GetComponent<EnemyCombatController>()?.PrepareForPool();
+        GetComponent<EnemyNavigationController>()?.PrepareForPool();
+        GetComponent<EnemyPerceptionController>()?.PrepareForPool();
+
+        if (colliders != null)
+        {
+            foreach (Collider collider in colliders)
+            {
+                if (collider != null)
+                {
+                    collider.enabled = false;
+                }
+            }
+        }
+
+        PoolPreparationCount++;
+    }
+
+    private void CacheRuntimeBaseline()
+    {
+        colliders = GetComponentsInChildren<Collider>(true);
+        colliderBaseline = new bool[colliders.Length];
+
+        for (int index = 0; index < colliders.Length; index++)
+        {
+            colliderBaseline[index] = colliders[index].enabled;
+        }
+
+        rigidbodies = GetComponentsInChildren<Rigidbody>(true);
+        animator = GetComponent<Animator>();
+    }
+
+    private void RestoreColliderBaseline()
+    {
+        if (colliders == null || colliderBaseline == null)
+        {
+            CacheRuntimeBaseline();
+        }
+
+        for (int index = 0; index < colliders.Length; index++)
+        {
+            if (colliders[index] != null)
+            {
+                colliders[index].enabled = colliderBaseline[index];
+            }
         }
     }
 

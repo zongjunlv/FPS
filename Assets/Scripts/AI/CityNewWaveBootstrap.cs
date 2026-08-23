@@ -3,12 +3,22 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 
+public enum EnemyFactoryBackend
+{
+    Pool,
+    Instantiate
+}
+
 public sealed class CityNewWaveBootstrap : MonoBehaviour
 {
     private static CityNewWaveBootstrap instance;
 
     private EnemyController sceneTemplate;
-    private SceneEnemyFactory factory;
+    [SerializeField] private EnemyFactoryBackend factoryBackend =
+        EnemyFactoryBackend.Pool;
+    private IEnemyFactory factory;
+    private PooledEnemyFactory pooledFactory;
+    private SceneEnemyFactory sceneFactory;
     private NavMeshEnemySpawnPointResolver resolver;
     private WaveDirector director;
     private readonly List<WaveDefinition> runtimeDefinitions = new();
@@ -17,6 +27,8 @@ public sealed class CityNewWaveBootstrap : MonoBehaviour
 
     public static bool IsWaveModeActive => instance != null;
     public WaveDirector Director => director;
+    public PooledEnemyFactory EnemyPool => pooledFactory;
+    public EnemyFactoryBackend FactoryBackend => factoryBackend;
 
     private void Awake()
     {
@@ -29,8 +41,18 @@ public sealed class CityNewWaveBootstrap : MonoBehaviour
 
         instance = this;
         sceneTemplate = FindSceneTemplate();
-        factory = GetComponent<SceneEnemyFactory>();
-        factory ??= gameObject.AddComponent<SceneEnemyFactory>();
+        if (factoryBackend == EnemyFactoryBackend.Pool)
+        {
+            pooledFactory = GetComponent<PooledEnemyFactory>();
+            pooledFactory ??= gameObject.AddComponent<PooledEnemyFactory>();
+            factory = pooledFactory;
+        }
+        else
+        {
+            sceneFactory = GetComponent<SceneEnemyFactory>();
+            sceneFactory ??= gameObject.AddComponent<SceneEnemyFactory>();
+            factory = sceneFactory;
+        }
         resolver = GetComponent<NavMeshEnemySpawnPointResolver>();
         resolver ??=
             gameObject.AddComponent<NavMeshEnemySpawnPointResolver>();
@@ -87,7 +109,14 @@ public sealed class CityNewWaveBootstrap : MonoBehaviour
             new WaveStageDefinition(waveTwo, 3f),
             new WaveStageDefinition(waveThree, 0f)
         });
-        factory.Configure(sceneTemplate);
+        if (factoryBackend == EnemyFactoryBackend.Pool)
+        {
+            pooledFactory.Configure(sceneTemplate, 4, 64);
+        }
+        else
+        {
+            sceneFactory.Configure(sceneTemplate);
+        }
         director.Configure(
             runtimeSequence,
             factory,

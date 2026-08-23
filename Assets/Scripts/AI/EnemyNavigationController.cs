@@ -91,6 +91,36 @@ public sealed class EnemyNavigationController : MonoBehaviour
         GeneratePatrolPoints();
     }
 
+    public void ResetForSpawn()
+    {
+        patrolIndex = 0;
+        hasDestination = false;
+        destinationIsPatrol = false;
+        movementStopped = false;
+        Destination = transform.position;
+
+        if (UsesNavMesh)
+        {
+            agent.isStopped = false;
+            agent.ResetPath();
+        }
+
+        AttachToNavMesh();
+    }
+
+    public void PrepareForPool()
+    {
+        hasDestination = false;
+        destinationIsPatrol = false;
+        movementStopped = true;
+
+        if (UsesNavMesh)
+        {
+            agent.isStopped = true;
+            agent.ResetPath();
+        }
+    }
+
     private void ConfigureAgent()
     {
         if (agent == null)
@@ -326,14 +356,12 @@ public sealed class EnemyNavigationController : MonoBehaviour
                 continue;
             }
 
-            NavMeshPath path = new NavMeshPath();
-
             if (!NavMesh.CalculatePath(
                     origin,
                     hit.position,
                     NavMesh.AllAreas,
-                    path) ||
-                path.status != NavMeshPathStatus.PathComplete)
+                    reachablePath) ||
+                reachablePath.status != NavMeshPathStatus.PathComplete)
             {
                 continue;
             }

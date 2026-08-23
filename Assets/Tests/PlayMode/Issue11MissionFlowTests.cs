@@ -32,13 +32,16 @@ namespace FPS.Tests.PlayMode
 
             Assert.That(
                 flowType.GetProperty("State").GetValue(flow).ToString(),
-                Is.EqualTo("ActivateTerminal"));
+                Is.EqualTo("EliminateTargets"));
             Assert.That(
                 flowType.GetMethod("TryExtract").Invoke(flow, null),
                 Is.EqualTo(false),
                 "终端和清除目标未完成时不得撤离。");
 
-            flowType.GetMethod("CompleteTerminal").Invoke(flow, null);
+            Assert.That(
+                flowType.GetMethod("CompleteTerminal").Invoke(flow, null),
+                Is.EqualTo(false),
+                "清怪完成前终端阶段不得提前完成。");
             Assert.That(
                 flowType.GetProperty("State").GetValue(flow).ToString(),
                 Is.EqualTo("EliminateTargets"));
@@ -49,6 +52,12 @@ namespace FPS.Tests.PlayMode
 
             flowType.GetMethod("RegisterTargetEliminated")
                 .Invoke(flow, null);
+            Assert.That(
+                flowType.GetProperty("State").GetValue(flow).ToString(),
+                Is.EqualTo("ActivateTerminal"));
+            Assert.That(
+                flowType.GetMethod("CompleteTerminal").Invoke(flow, null),
+                Is.EqualTo(true));
             Assert.That(
                 flowType.GetProperty("State").GetValue(flow).ToString(),
                 Is.EqualTo("ExtractionAvailable"));
@@ -88,6 +97,67 @@ namespace FPS.Tests.PlayMode
                     .Invoke(flow, null),
                 Is.EqualTo(false),
                 "重复死亡事件不得重复累计目标。");
+        }
+
+        [Test]
+        public void TerminalStaysLockedUntilEnemyObjectiveIsComplete()
+        {
+            Type terminalType = Type.GetType(
+                "TerminalInteractable, Assembly-CSharp");
+            GameObject terminalObject = new GameObject("Locked Terminal");
+            GameObject actor = new GameObject("Terminal Actor");
+
+            try
+            {
+                Component terminal =
+                    terminalObject.AddComponent(terminalType);
+                terminalType.GetMethod("Configure").Invoke(
+                    terminal,
+                    new object[]
+                    {
+                        0.05f,
+                        Enum.Parse(
+                            Type.GetType(
+                                "TerminalInterruptionProgressMode, " +
+                                "Assembly-CSharp"),
+                            "Reset"),
+                        Enum.Parse(
+                            Type.GetType(
+                                "TerminalCompletionMode, Assembly-CSharp"),
+                            "Silent"),
+                        20f,
+                        1f
+                    });
+
+                terminalType.GetMethod("SetMissionAvailable")
+                    .Invoke(terminal, new object[] { false });
+                object lockedView = terminalType.GetProperty("View")
+                    .GetValue(terminal);
+                Assert.That(
+                    lockedView.GetType().GetProperty("Prompt")
+                        .GetValue(lockedView),
+                    Is.EqualTo("先清除怪物"));
+                Assert.That(
+                    terminalType.GetMethod("TryBegin")
+                        .Invoke(terminal, new object[] { actor }),
+                    Is.EqualTo(false));
+
+                terminalType.GetMethod("SetMissionAvailable")
+                    .Invoke(terminal, new object[] { true });
+                Assert.That(
+                    terminalType.GetMethod("TryBegin")
+                        .Invoke(terminal, new object[] { actor }),
+                    Is.EqualTo(true));
+                Assert.That(
+                    terminalType.GetMethod("Advance")
+                        .Invoke(terminal, new object[] { actor, 0.05f }),
+                    Is.EqualTo(true));
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(actor);
+                UnityEngine.Object.DestroyImmediate(terminalObject);
+            }
         }
 
         [Test]
@@ -216,7 +286,7 @@ namespace FPS.Tests.PlayMode
             Assert.That(
                 missionType.GetProperty("State").GetValue(mission)
                     .ToString(),
-                Is.EqualTo("ActivateTerminal"));
+                Is.EqualTo("EliminateTargets"));
             Assert.That(
                 missionType.GetProperty("ExtractionAvailable")
                     .GetValue(mission),
@@ -241,10 +311,15 @@ namespace FPS.Tests.PlayMode
                     32f,
                     1f
                 });
-            terminalType.GetMethod("TryBegin")
-                .Invoke(terminal, new object[] { player });
-            terminalType.GetMethod("Advance")
-                .Invoke(terminal, new object[] { player, 0.05f });
+            Assert.That(
+                terminalType.GetProperty("MissionAvailable")
+                    .GetValue(terminal),
+                Is.EqualTo(false));
+            Assert.That(
+                terminalType.GetMethod("TryBegin")
+                    .Invoke(terminal, new object[] { player }),
+                Is.EqualTo(false),
+                "清怪完成前终端必须锁定。");
 
             Assert.That(
                 missionType.GetProperty("State").GetValue(mission)
@@ -329,6 +404,22 @@ namespace FPS.Tests.PlayMode
                 Is.True,
                 "任务撤离必须等待整波敌人清除完成。");
 
+            Assert.That(
+                missionType.GetProperty("State").GetValue(mission)
+                    .ToString(),
+                Is.EqualTo("ActivateTerminal"));
+            Assert.That(
+                terminalType.GetProperty("MissionAvailable")
+                    .GetValue(terminal),
+                Is.EqualTo(true));
+            Assert.That(
+                terminalType.GetMethod("TryBegin")
+                    .Invoke(terminal, new object[] { player }),
+                Is.EqualTo(true));
+            Assert.That(
+                terminalType.GetMethod("Advance")
+                    .Invoke(terminal, new object[] { player, 0.05f }),
+                Is.EqualTo(true));
             Assert.That(
                 missionType.GetProperty("State").GetValue(mission)
                     .ToString(),
@@ -464,7 +555,7 @@ namespace FPS.Tests.PlayMode
                 missionType.GetProperty("State")
                     .GetValue(restoredMission)
                     .ToString(),
-                Is.EqualTo("ActivateTerminal"));
+                Is.EqualTo("EliminateTargets"));
             Assert.That(
                 restoredStatistics.GetType()
                     .GetProperty("ShotsFired")

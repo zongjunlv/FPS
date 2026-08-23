@@ -41,6 +41,9 @@ public sealed class Issue13PerformanceBenchmark : MonoBehaviour
     private int hits;
     private long peakUnityUsedMemory;
     private long peakGcUsedMemory;
+    private PooledEnemyFactory enemyPool;
+    private readonly List<EnemySpawnHandle> benchmarkEnemies = new();
+    private int poolInstantiateAtSampleStart;
 
     [RuntimeInitializeOnLoadMethod(
         RuntimeInitializeLoadType.AfterSceneLoad)]
@@ -163,6 +166,8 @@ public sealed class Issue13PerformanceBenchmark : MonoBehaviour
         }
 
         StartRecorders();
+        poolInstantiateAtSampleStart =
+            enemyPool != null ? enemyPool.InstantiateCount : 0;
         int sampleCount = 0;
         double sampleStart = Time.realtimeSinceStartupAsDouble;
         double sampleEnd = sampleStart + sampleSeconds;
@@ -236,12 +241,18 @@ public sealed class Issue13PerformanceBenchmark : MonoBehaviour
 
     private int BuildEnemyStressGroup(Transform player)
     {
-        EnemyController[] existing =
-            FindObjectsByType<EnemyController>(
-                FindObjectsInactive.Exclude,
-                FindObjectsSortMode.None);
+        CityNewWaveBootstrap waveBootstrap =
+            FindFirstObjectByType<CityNewWaveBootstrap>();
+        waveBootstrap?.Director?.StopRun(WaveStopReason.Disabled);
+        enemyPool = waveBootstrap != null
+            ? waveBootstrap.EnemyPool
+            : FindFirstObjectByType<PooledEnemyFactory>();
+        enemyPool?.FlushPendingReleases();
+        EnemyController[] existing = FindObjectsByType<EnemyController>(
+            FindObjectsInactive.Include,
+            FindObjectsSortMode.None);
 
-        if (existing.Length == 0)
+        if (existing.Length == 0 || enemyPool == null)
         {
             return 0;
         }
@@ -257,25 +268,11 @@ public sealed class Issue13PerformanceBenchmark : MonoBehaviour
             }
         }
 
-        var enemies = new List<EnemyController>(
-            requestedEnemyCount);
         var occupied = new List<Vector3>(requestedEnemyCount);
-
-        foreach (EnemyController enemy in existing)
-        {
-            if (enemies.Count >= requestedEnemyCount)
-            {
-                break;
-            }
-
-            PrepareEnemy(enemy, player);
-            enemies.Add(enemy);
-            occupied.Add(enemy.transform.position);
-        }
 
         for (int candidate = 0;
              candidate < 512 &&
-             enemies.Count < requestedEnemyCount;
+             benchmarkEnemies.Count < requestedEnemyCount;
              candidate++)
         {
             float angle = candidate * 137.50776f * Mathf.Deg2Rad;
@@ -296,20 +293,30 @@ public sealed class Issue13PerformanceBenchmark : MonoBehaviour
                 continue;
             }
 
-            EnemyController clone = Instantiate(
-                template,
+            var request = new EnemySpawnRequest(
+                260000 + benchmarkEnemies.Count,
+                1,
+                null,
                 hit.position,
-                template.transform.rotation);
-            clone.name =
-                $"BENCHMARK SPIDER {enemies.Count + 1:00}";
-            clone.GetComponent<EnemyNavigationController>()
-                ?.AttachToNavMesh();
-            PrepareEnemy(clone, player);
-            enemies.Add(clone);
+                template.transform.rotation,
+                player);
+
+            if (!enemyPool.TrySpawn(
+                    request,
+                    (_, _) => { },
+                    out EnemySpawnHandle handle))
+            {
+                continue;
+            }
+
+            handle.Controller.name =
+                $"BENCHMARK SPIDER {benchmarkEnemies.Count + 1:00}";
+            PrepareEnemy(handle.Controller, player);
+            benchmarkEnemies.Add(handle);
             occupied.Add(hit.position);
         }
 
-        return enemies.Count;
+        return benchmarkEnemies.Count;
     }
 
     private static void PrepareEnemy(
@@ -430,14 +437,14 @@ public sealed class Issue13PerformanceBenchmark : MonoBehaviour
                 frameMilliseconds,
                 sampleCount,
                 0.99),
-            onePercentLowFps = Percentile(
+            onePercentLowFps = SlowestPercentAverage(
                     frameMilliseconds,
                     sampleCount,
-                    0.99) > 0.0
-                ? 1000.0 / Percentile(
+                    0.01) > 0.0
+                ? 1000.0 / SlowestPercentAverage(
                     frameMilliseconds,
                     sampleCount,
-                    0.99)
+                    0.01)
                 : 0.0,
             averageMainThreadMs = Average(
                 mainThreadMilliseconds,
@@ -453,6 +460,10 @@ public sealed class Issue13PerformanceBenchmark : MonoBehaviour
                 gcBytes,
                 sampleCount,
                 0.95),
+            maximumGcBytesInFrame = sampleCount > 0
+                ? gcBytes[sampleCount - 1]
+                : 0L,
+            totalGcBytes = Sum(gcBytes, sampleCount),
             gcAllocFramePercent = sampleCount > 0
                 ? allocatedFrames * 100.0 / sampleCount
                 : 0.0,
@@ -463,8 +474,33 @@ public sealed class Issue13PerformanceBenchmark : MonoBehaviour
             mainThreadRecorderValid = mainThreadRecorder.Valid,
             gcRecorderValid = gcRecorder.Valid,
             perceptionChecks = ReadPerceptionChecks(),
+            maximumPerceptionLatencyFrames =
+                ReadMaximumPerceptionLatencyFrames(),
+            enemyPoolObjects = enemyPool?.PooledObjectCount ?? 0,
+            enemyPoolReuseCount = enemyPool?.ReuseCount ?? 0,
+            enemyPoolExpansionCount = enemyPool?.ExpansionCount ?? 0,
+            stableSampleInstantiateCount = enemyPool != null
+                ? enemyPool.InstantiateCount - poolInstantiateAtSampleStart
+                : -1,
             poolSummary = ReadPoolSummary()
         };
+    }
+
+    private static int ReadMaximumPerceptionLatencyFrames()
+    {
+        int maximum = 0;
+
+        foreach (EnemyPerceptionController perception in
+                 FindObjectsByType<EnemyPerceptionController>(
+                     FindObjectsInactive.Exclude,
+                     FindObjectsSortMode.None))
+        {
+            maximum = Mathf.Max(
+                maximum,
+                perception.MaximumSightCheckLatencyFrames);
+        }
+
+        return maximum;
     }
 
     private static long ReadPerceptionChecks()
@@ -610,6 +646,39 @@ public sealed class Issue13PerformanceBenchmark : MonoBehaviour
         return values[index];
     }
 
+    private static double SlowestPercentAverage(
+        double[] values,
+        int count,
+        double fraction)
+    {
+        if (count <= 0)
+        {
+            return 0.0;
+        }
+
+        int slowCount = Math.Max(1, (int)Math.Ceiling(count * fraction));
+        double sum = 0.0;
+
+        for (int index = count - slowCount; index < count; index++)
+        {
+            sum += values[index];
+        }
+
+        return sum / slowCount;
+    }
+
+    private static long Sum(long[] values, int count)
+    {
+        long sum = 0L;
+
+        for (int index = 0; index < count; index++)
+        {
+            sum += values[index];
+        }
+
+        return sum;
+    }
+
     private static double Percentile(
         long[] values,
         int count,
@@ -633,6 +702,14 @@ public sealed class Issue13PerformanceBenchmark : MonoBehaviour
         if (weapon != null)
         {
             weapon.ShotResolved -= CountShotResult;
+        }
+
+        if (enemyPool != null)
+        {
+            foreach (EnemySpawnHandle handle in benchmarkEnemies)
+            {
+                enemyPool.Release(handle);
+            }
         }
 
         if (mainThreadRecorder.Valid)
@@ -677,11 +754,18 @@ public sealed class Issue13BenchmarkReport
     public double p95MainThreadMs;
     public double averageGcBytesPerFrame;
     public double p95GcBytesPerFrame;
+    public long maximumGcBytesInFrame;
+    public long totalGcBytes;
     public double gcAllocFramePercent;
     public double peakUnityUsedMemoryMb;
     public double peakManagedMemoryMb;
     public bool mainThreadRecorderValid;
     public bool gcRecorderValid;
     public long perceptionChecks;
+    public int maximumPerceptionLatencyFrames;
+    public int enemyPoolObjects;
+    public int enemyPoolReuseCount;
+    public int enemyPoolExpansionCount;
+    public int stableSampleInstantiateCount;
     public string poolSummary;
 }

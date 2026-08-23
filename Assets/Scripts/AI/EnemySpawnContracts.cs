@@ -82,6 +82,25 @@ public readonly struct EnemySpawnHandle
         WaveEnemyLifecycle lifecycle,
         string enemyTypeId,
         LootRewardTier rewardTier)
+        : this(
+            spawnId,
+            waveNumber,
+            controller,
+            lifecycle,
+            enemyTypeId,
+            rewardTier,
+            0)
+    {
+    }
+
+    public EnemySpawnHandle(
+        int spawnId,
+        int waveNumber,
+        EnemyController controller,
+        WaveEnemyLifecycle lifecycle,
+        string enemyTypeId,
+        LootRewardTier rewardTier,
+        int generation)
     {
         SpawnId = spawnId;
         WaveNumber = Mathf.Max(0, waveNumber);
@@ -91,6 +110,7 @@ public readonly struct EnemySpawnHandle
             ? "*"
             : enemyTypeId.Trim();
         RewardTier = rewardTier;
+        Generation = Mathf.Max(0, generation);
     }
 
     public int SpawnId { get; }
@@ -99,6 +119,7 @@ public readonly struct EnemySpawnHandle
     public WaveEnemyLifecycle Lifecycle { get; }
     public string EnemyTypeId { get; }
     public LootRewardTier RewardTier { get; }
+    public int Generation { get; }
     public bool IsValid => Controller != null && Lifecycle != null;
 }
 

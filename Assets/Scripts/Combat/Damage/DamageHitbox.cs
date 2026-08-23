@@ -86,4 +86,14 @@ public sealed class DamageHitbox : MonoBehaviour, IDamageable
 
         return result;
     }
+
+    public void ResetForSpawn()
+    {
+        flashRemaining = 0f;
+
+        if (visualRenderer != null)
+        {
+            visualRenderer.material.color = baseColor;
+        }
+    }
 }

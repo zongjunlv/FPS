@@ -14,7 +14,7 @@ public sealed class MissionFlowStateMachine
     public event Action<MissionFlowState> StateChanged;
 
     public MissionFlowState State { get; private set; } =
-        MissionFlowState.ActivateTerminal;
+        MissionFlowState.EliminateTargets;
     public bool TerminalCompleted { get; private set; }
     public int EliminatedTargets { get; private set; }
     public int RequiredTargets { get; private set; } = 1;
@@ -27,12 +27,13 @@ public sealed class MissionFlowStateMachine
         RequiredTargets = Math.Max(1, requiredTargets);
         TerminalCompleted = false;
         EliminatedTargets = 0;
-        State = MissionFlowState.ActivateTerminal;
+        State = MissionFlowState.EliminateTargets;
     }
 
     public bool CompleteTerminal()
     {
-        if (TerminalCompleted || IsOutcome)
+        if (TerminalCompleted || IsOutcome ||
+            EliminatedTargets < RequiredTargets)
         {
             return false;
         }
@@ -78,15 +79,19 @@ public sealed class MissionFlowStateMachine
 
     private void EvaluateObjectives()
     {
+        if (EliminatedTargets < RequiredTargets)
+        {
+            SetState(MissionFlowState.EliminateTargets);
+            return;
+        }
+
         if (!TerminalCompleted)
         {
             SetState(MissionFlowState.ActivateTerminal);
             return;
         }
 
-        SetState(EliminatedTargets >= RequiredTargets
-            ? MissionFlowState.ExtractionAvailable
-            : MissionFlowState.EliminateTargets);
+        SetState(MissionFlowState.ExtractionAvailable);
     }
 
     private void SetState(MissionFlowState next)

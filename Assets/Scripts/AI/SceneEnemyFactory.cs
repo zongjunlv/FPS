@@ -50,8 +50,10 @@ public sealed class SceneEnemyFactory : MonoBehaviour, IEnemyFactory
         }
 
         instance.name = $"SPIDER_BOT WAVE {request.SpawnId:000}";
+        instance.transform.position = request.Position;
         instance.transform.rotation = request.Rotation;
         instance.SetFactoryManaged(true);
+        instance.ResetForSpawn(request.Target);
 
         if (!instance.gameObject.activeSelf)
         {
@@ -70,7 +72,7 @@ public sealed class SceneEnemyFactory : MonoBehaviour, IEnemyFactory
         }
         EnemyNavigationController navigation =
             instance.GetComponent<EnemyNavigationController>();
-        navigation?.AttachToNavMesh();
+        navigation?.ResetForSpawn();
 
         if (navigation == null || !navigation.UsesNavMesh)
         {
@@ -122,6 +124,7 @@ public sealed class SceneEnemyFactory : MonoBehaviour, IEnemyFactory
         }
 
         handle.Lifecycle.Disarm();
+        handle.Controller.PrepareForPool();
 
         if (handle.Controller == sceneTemplate)
         {

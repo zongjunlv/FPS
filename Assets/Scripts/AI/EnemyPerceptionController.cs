@@ -56,6 +56,7 @@ public sealed class EnemyPerceptionController : MonoBehaviour
         squadAlertMemory.LatestAlert;
     public int SightCheckCount { get; private set; }
     public int SaturatedSightQueryCount { get; private set; }
+    public int MaximumSightCheckLatencyFrames { get; private set; }
 
     private void Awake()
     {
@@ -76,6 +77,11 @@ public sealed class EnemyPerceptionController : MonoBehaviour
 
     private void OnEnable()
     {
+        squadCoordinator ??= EnemySquadCoordinator.Instance ??
+            EnemySquadCoordinator.EnsureForActiveScene();
+        perceptionScheduler ??=
+            EnemyPerceptionScheduler.EnsureForActiveScene();
+
         if (soundEvents != null)
         {
             soundEvents.SoundPublished += HandleSound;
@@ -215,6 +221,30 @@ public sealed class EnemyPerceptionController : MonoBehaviour
         target = newTarget;
     }
 
+    public void ResetForSpawn(Transform newTarget)
+    {
+        awareness.Reset();
+        squadAlertMemory.Reset();
+        target = newTarget;
+        investigatingSound = false;
+        hasSquadSearchAssignment = false;
+        squadSearchDestination = Vector3.zero;
+        latestVisualIntelTime = float.NegativeInfinity;
+        HasVisualContact = false;
+        lastSightCheckFrame = -1;
+        SightCheckCount = 0;
+        SaturatedSightQueryCount = 0;
+        MaximumSightCheckLatencyFrames = 0;
+    }
+
+    public void PrepareForPool()
+    {
+        target = null;
+        investigatingSound = false;
+        hasSquadSearchAssignment = false;
+        HasVisualContact = false;
+    }
+
     public void Configure(
         float configuredSightDistance,
         float configuredFieldOfView,
@@ -313,6 +343,13 @@ public sealed class EnemyPerceptionController : MonoBehaviour
 
     internal void PerformScheduledSightCheck()
     {
+        if (lastSightCheckFrame >= 0)
+        {
+            MaximumSightCheckLatencyFrames = Mathf.Max(
+                MaximumSightCheckLatencyFrames,
+                Time.frameCount - lastSightCheckFrame);
+        }
+
         HasVisualContact = CanSeeTarget();
         SightCheckCount++;
         lastSightCheckFrame = Time.frameCount;

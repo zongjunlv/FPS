@@ -19,35 +19,11 @@ public sealed class EnemySquadAlertDebugView : MonoBehaviour
         DisplayedRadius = alert.Radius;
         IsActive = true;
         DrawRange(alert.SourcePosition, alert.Radius);
-        EnsureRelationLineCount(relations.Count);
 
         for (int index = 0; index < relationLines.Count; index++)
         {
-            bool visible = index < relations.Count;
             LineRenderer line = relationLines[index];
-            line.enabled = visible;
-
-            if (!visible)
-            {
-                continue;
-            }
-
-            EnemyAlertDebugRelation relation = relations[index];
-            Color color = relation.Accepted
-                ? new Color(0.1f, 1f, 0.55f, 0.9f)
-                : new Color(0.55f, 0.55f, 0.55f, 0.45f);
-            line.startColor = color;
-            line.endColor = color;
-            line.positionCount = 3;
-            line.SetPosition(
-                0,
-                alert.SourcePosition + Vector3.up * 0.65f);
-            line.SetPosition(
-                1,
-                relation.ReceiverPosition + Vector3.up * 0.65f);
-            line.SetPosition(
-                2,
-                relation.SearchPosition + Vector3.up * 0.12f);
+            line.enabled = false;
         }
     }
 
@@ -99,17 +75,6 @@ public sealed class EnemySquadAlertDebugView : MonoBehaviour
         rangeLine.startColor = rangeColor;
         rangeLine.endColor = rangeColor;
         rangeLine.loop = false;
-    }
-
-    private void EnsureRelationLineCount(int count)
-    {
-        while (relationLines.Count < count)
-        {
-            relationLines.Add(
-                CreateLine(
-                    $"Alert Relation {relationLines.Count + 1}",
-                    0.07f));
-        }
     }
 
     private LineRenderer CreateLine(string lineName, float width)

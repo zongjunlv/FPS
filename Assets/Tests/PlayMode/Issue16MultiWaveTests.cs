@@ -133,7 +133,6 @@ namespace FPS.Tests.PlayMode
             Assert.That(director, Is.Not.Null);
             Assert.That(mission, Is.Not.Null);
             Assert.That(hud, Is.Not.Null);
-            CompleteTerminal(missionType, mission, player);
             Assert.That(
                 missionType.GetProperty("State").GetValue(mission).ToString(),
                 Is.EqualTo("EliminateTargets"));
@@ -224,8 +223,17 @@ namespace FPS.Tests.PlayMode
             Assert.That(
                 missionType.GetProperty("ExtractionAvailable")
                     .GetValue(mission),
+                Is.EqualTo(false),
+                "最终波完成后必须先接入终端，不能提前开放撤离。");
+            Assert.That(
+                missionType.GetProperty("State").GetValue(mission).ToString(),
+                Is.EqualTo("ActivateTerminal"));
+            CompleteTerminal(missionType, mission, player);
+            Assert.That(
+                missionType.GetProperty("ExtractionAvailable")
+                    .GetValue(mission),
                 Is.EqualTo(true),
-                "只有最终波完成后才开放撤离。");
+                "清怪后接入终端才允许撤离。");
             Assert.That(
                 hudType.GetProperty("WaveText").GetValue(hud),
                 Is.EqualTo("WAVE 3/3"));

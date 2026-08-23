@@ -52,7 +52,7 @@ public sealed class PlayerLootRewardController : MonoBehaviour
 
         public LootRewardContext Context { get; }
         public Vector3 Origin { get; }
-        public Transform IgnoredRoot { get; }
+        public Transform IgnoredRoot { get; set; }
         public IReadOnlyList<LootDropStack> Drops { get; }
         public byte[] States { get; }
         public List<LootDropStack> CommittedDrops { get; }
@@ -284,6 +284,8 @@ public sealed class PlayerLootRewardController : MonoBehaviour
 
         if (!TryCommitPending(pending))
         {
+            // 池化敌人下一帧可能已代表新租约，重试不可保留旧尸体引用。
+            pending.IgnoredRoot = null;
             pendingRewards.Add(pending);
             nextRetryTime = Time.unscaledTime + RetryInterval;
         }

@@ -275,15 +275,5 @@ public sealed class EnemySquadCoordinator : MonoBehaviour
             LastAlert.Radius);
         Gizmos.DrawSphere(LastAlert.LastKnownPosition, 0.25f);
 
-        foreach (EnemyAlertDebugRelation relation in debugRelations)
-        {
-            Gizmos.color = relation.Accepted
-                ? new Color(0.15f, 1f, 0.55f, 0.8f)
-                : new Color(0.5f, 0.5f, 0.5f, 0.35f);
-            Gizmos.DrawLine(
-                LastAlert.SourcePosition,
-                relation.ReceiverPosition);
-            Gizmos.DrawWireSphere(relation.SearchPosition, 0.3f);
-        }
     }
 }

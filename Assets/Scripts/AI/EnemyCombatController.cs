@@ -98,7 +98,31 @@ public sealed class EnemyCombatController : MonoBehaviour
 
     private void OnDisable()
     {
+        PrepareForPool();
+    }
+
+    public void ResetForSpawn()
+    {
+        PrepareForPool();
+        attackState ??= new EnemyAttackStateMachine();
+        attackState.Configure(attackRange, aimDuration, attackCooldown);
+        Decision = EnemyAttackDecision.Chase;
+        SuccessfulAttackCount = 0;
+    }
+
+    public void PrepareForPool()
+    {
+        if (attackAnimationRoutine != null)
+        {
+            StopCoroutine(attackAnimationRoutine);
+            attackAnimationRoutine = null;
+        }
+
+        attackState?.CancelAim();
+        navigation?.Stop();
+        audioSource?.Stop();
         DestroyAttackGraph();
+        Decision = EnemyAttackDecision.Chase;
     }
 
     private void FaceTarget(Vector3 direction)
