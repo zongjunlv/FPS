@@ -24,8 +24,8 @@ namespace FPS.Tests.PlayMode
         [Test]
         public void MultipleLocksKeepGameplayLockedUntilLastRelease()
         {
-            Type stateType = Type.GetType("GameplayLockState, Assembly-CSharp");
-            Type reasonType = Type.GetType("GameplayLockReason, Assembly-CSharp");
+            Type stateType = RuntimeTypeResolver.GetType("GameplayLockState");
+            Type reasonType = RuntimeTypeResolver.GetType("GameplayLockReason");
             Assert.That(stateType, Is.Not.Null);
             Assert.That(reasonType, Is.Not.Null);
 
@@ -53,7 +53,7 @@ namespace FPS.Tests.PlayMode
         [TestCase(3840, 2160)]
         public void FullSafeAreaProducesFullScreenAnchors(int width, int height)
         {
-            Type fitterType = Type.GetType("SafeAreaFitter, Assembly-CSharp");
+            Type fitterType = RuntimeTypeResolver.GetType("SafeAreaFitter");
             object anchors = fitterType.GetMethod("Calculate")?.Invoke(
                 null, new object[] { new Rect(0f, 0f, width, height), width, height });
 
@@ -66,7 +66,7 @@ namespace FPS.Tests.PlayMode
         [Test]
         public void SafeAreaInsetsAreNormalizedAndClamped()
         {
-            Type fitterType = Type.GetType("SafeAreaFitter, Assembly-CSharp");
+            Type fitterType = RuntimeTypeResolver.GetType("SafeAreaFitter");
             object anchors = fitterType.GetMethod("Calculate")?.Invoke(
                 null, new object[] { new Rect(100f, 50f, 1720f, 980f), 1920, 1080 });
             Type anchorType = anchors.GetType();
@@ -82,8 +82,8 @@ namespace FPS.Tests.PlayMode
         [Test]
         public void MissingHudIconUsesRuntimePlaceholder()
         {
-            Type catalogType = Type.GetType("HudIconCatalog, Assembly-CSharp");
-            Type iconType = Type.GetType("HudIconId, Assembly-CSharp");
+            Type catalogType = RuntimeTypeResolver.GetType("HudIconCatalog");
+            Type iconType = RuntimeTypeResolver.GetType("HudIconId");
             object catalog = Activator.CreateInstance(catalogType);
             object unknownIcon = Enum.ToObject(iconType, 999);
 
@@ -97,8 +97,8 @@ namespace FPS.Tests.PlayMode
         [Test]
         public void WeaponIconsUseTrimmedVisibleBounds()
         {
-            Type catalogType = Type.GetType("HudIconCatalog, Assembly-CSharp");
-            Type iconType = Type.GetType("HudIconId, Assembly-CSharp");
+            Type catalogType = RuntimeTypeResolver.GetType("HudIconCatalog");
+            Type iconType = RuntimeTypeResolver.GetType("HudIconId");
             object catalog = Activator.CreateInstance(catalogType);
             Sprite rifle = (Sprite)catalogType.GetMethod("Get").Invoke(
                 catalog,
@@ -124,7 +124,7 @@ namespace FPS.Tests.PlayMode
                 yield return null;
             }
 
-            Type hudType = Type.GetType("UnifiedGameHud, Assembly-CSharp");
+            Type hudType = RuntimeTypeResolver.GetType("UnifiedGameHud");
             Assert.That(hudType, Is.Not.Null);
             UnityEngine.Object[] huds = UnityEngine.Object.FindObjectsByType(
                 hudType, FindObjectsInactive.Include);
@@ -148,20 +148,20 @@ namespace FPS.Tests.PlayMode
             Transform reserveAmmo = weaponHud.Find("ReserveAmmo");
             Assert.That(currentAmmo, Is.Not.Null);
             Assert.That(reserveAmmo, Is.Not.Null);
-            Type uiTextType = Type.GetType(
+            Type uiTextType = RuntimeTypeResolver.GetType(
                 "UnityEngine.UI.Text, UnityEngine.UI");
             Assert.That(currentAmmo.GetComponent(uiTextType), Is.Not.Null,
                 "弹药数字应使用不支持下划线装饰的 UGUI Text。");
             Assert.That(reserveAmmo.GetComponent(uiTextType), Is.Not.Null);
 
-            Type scalerType = Type.GetType(
+            Type scalerType = RuntimeTypeResolver.GetType(
                 "UnityEngine.UI.CanvasScaler, UnityEngine.UI");
             Component scaler = hud.GetComponent(scalerType);
             Vector2 referenceResolution = (Vector2)scalerType
                 .GetProperty("referenceResolution").GetValue(scaler);
             Assert.That(referenceResolution, Is.EqualTo(new Vector2(1920f, 1080f)));
 
-            Type eventSystemType = Type.GetType(
+            Type eventSystemType = RuntimeTypeResolver.GetType(
                 "UnityEngine.EventSystems.EventSystem, UnityEngine.UI");
             Assert.That(UnityEngine.Object.FindAnyObjectByType(eventSystemType), Is.Not.Null);
 
@@ -169,7 +169,7 @@ namespace FPS.Tests.PlayMode
                 "health", BindingFlags.Instance | BindingFlags.NonPublic);
             object health = healthField.GetValue(hud);
             Type healthType = health.GetType();
-            Type damageInfoType = Type.GetType("DamageInfo, Assembly-CSharp");
+            Type damageInfoType = RuntimeTypeResolver.GetType("DamageInfo");
             int refreshBefore = (int)hudType.GetProperty("VitalsRefreshCount")
                 .GetValue(hud);
             object damage = Activator.CreateInstance(
@@ -217,10 +217,10 @@ namespace FPS.Tests.PlayMode
             yield return null;
             yield return null;
 
-            Type coordinatorType = Type.GetType(
-                "GameplayLockCoordinator, Assembly-CSharp");
-            Type reasonType = Type.GetType(
-                "GameplayLockReason, Assembly-CSharp");
+            Type coordinatorType = RuntimeTypeResolver.GetType(
+                "GameplayLockCoordinator");
+            Type reasonType = RuntimeTypeResolver.GetType(
+                "GameplayLockReason");
             Component coordinator = (Component)UnityEngine.Object
                 .FindAnyObjectByType(coordinatorType);
             Assert.That(coordinator, Is.Not.Null);
@@ -235,9 +235,9 @@ namespace FPS.Tests.PlayMode
                 {
                     Enum.Parse(reasonType, "Inventory")
                 });
-            Type playerType = Type.GetType("PlayerController, Assembly-CSharp");
-            Type combatType = Type.GetType(
-                "PlayerCombatController, Assembly-CSharp");
+            Type playerType = RuntimeTypeResolver.GetType("PlayerController");
+            Type combatType = RuntimeTypeResolver.GetType(
+                "PlayerCombatController");
             Component player = coordinator.GetComponent(playerType);
             Component combat = coordinator.GetComponent(combatType);
 

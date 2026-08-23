@@ -384,7 +384,7 @@ namespace FPS.Tests.PlayMode
             (Component)UnityEngine.Object.FindAnyObjectByType(type);
 
         private static Type RuntimeType(string name) =>
-            Type.GetType(name + ", Assembly-CSharp") ??
+            RuntimeTypeResolver.GetType(name) ??
             throw new InvalidOperationException("Missing runtime type: " + name);
 
         private static T Get<T>(Type type, object instance, string property) =>

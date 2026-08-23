@@ -37,8 +37,8 @@ public sealed class Issue13DisplayPerformanceTests
         int height,
         int maximumPixels)
     {
-        Type type = Type.GetType(
-            "PerformanceDisplayBootstrap, Assembly-CSharp");
+        Type type = RuntimeTypeResolver.GetType(
+            "PerformanceDisplayBootstrap");
         Assert.That(type, Is.Not.Null);
         MethodInfo method = type.GetMethod(
             "CalculateBudgetedResolution",

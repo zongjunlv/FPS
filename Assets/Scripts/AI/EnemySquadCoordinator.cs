@@ -262,18 +262,4 @@ public sealed class EnemySquadCoordinator : MonoBehaviour
         return false;
     }
 
-    private void OnDrawGizmos()
-    {
-        if (BroadcastCount <= 0)
-        {
-            return;
-        }
-
-        Gizmos.color = new Color(1f, 0.25f, 0.08f, 0.45f);
-        Gizmos.DrawWireSphere(
-            LastAlert.SourcePosition,
-            LastAlert.Radius);
-        Gizmos.DrawSphere(LastAlert.LastKnownPosition, 0.25f);
-
-    }
 }

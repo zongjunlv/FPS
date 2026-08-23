@@ -23,10 +23,10 @@ namespace FPS.Tests.PlayMode
         [Test]
         public void AddReportsAcceptedAndRemainingAfterFillingExistingStacks()
         {
-            Type inventoryType = Type.GetType(
-                "InventoryState, Assembly-CSharp");
-            Type specType = Type.GetType(
-                "InventoryItemSpec, Assembly-CSharp");
+            Type inventoryType = RuntimeTypeResolver.GetType(
+                "InventoryState");
+            Type specType = RuntimeTypeResolver.GetType(
+                "InventoryItemSpec");
             object inventory = Activator.CreateInstance(inventoryType, 2);
             object spec = Activator.CreateInstance(
                 specType, "armor_pack", 3);
@@ -62,14 +62,14 @@ namespace FPS.Tests.PlayMode
         [Test]
         public void ArmorPackOnlySucceedsWhenArmorCanBeRestored()
         {
-            Type definitionType = Type.GetType(
-                "ItemDefinition, Assembly-CSharp");
-            Type registryType = Type.GetType(
-                "ItemEffectRegistry, Assembly-CSharp");
-            Type contextType = Type.GetType(
-                "ItemUseContext, Assembly-CSharp");
-            Type healthType = Type.GetType("Health, Assembly-CSharp");
-            Type damageType = Type.GetType("DamageInfo, Assembly-CSharp");
+            Type definitionType = RuntimeTypeResolver.GetType(
+                "ItemDefinition");
+            Type registryType = RuntimeTypeResolver.GetType(
+                "ItemEffectRegistry");
+            Type contextType = RuntimeTypeResolver.GetType(
+                "ItemUseContext");
+            Type healthType = RuntimeTypeResolver.GetType("Health");
+            Type damageType = RuntimeTypeResolver.GetType("DamageInfo");
             ScriptableObject armorPack = CreateItem(
                 definitionType,
                 "armor_pack",
@@ -120,8 +120,8 @@ namespace FPS.Tests.PlayMode
         [Test]
         public void ReserveAmmoApiClampsToConfiguredMaximumAndPublishesOnce()
         {
-            Type ammoStateType = Type.GetType(
-                "WeaponAmmoState, Assembly-CSharp");
+            Type ammoStateType = RuntimeTypeResolver.GetType(
+                "WeaponAmmoState");
             object state = Activator.CreateInstance(
                 ammoStateType, 30, 80, 100);
 
@@ -140,14 +140,14 @@ namespace FPS.Tests.PlayMode
         [Test]
         public void PartialWorldPickupPreservesEveryItemUntilFullyClaimed()
         {
-            Type definitionType = Type.GetType(
-                "ItemDefinition, Assembly-CSharp");
-            Type controllerType = Type.GetType(
-                "PlayerInventoryController, Assembly-CSharp");
-            Type inventoryType = Type.GetType(
-                "InventoryState, Assembly-CSharp");
-            Type pickupType = Type.GetType(
-                "WorldItemPickup, Assembly-CSharp");
+            Type definitionType = RuntimeTypeResolver.GetType(
+                "ItemDefinition");
+            Type controllerType = RuntimeTypeResolver.GetType(
+                "PlayerInventoryController");
+            Type inventoryType = RuntimeTypeResolver.GetType(
+                "InventoryState");
+            Type pickupType = RuntimeTypeResolver.GetType(
+                "WorldItemPickup");
             ScriptableObject item = CreateItem(
                 definitionType,
                 "rifle_ammo",
@@ -210,14 +210,14 @@ namespace FPS.Tests.PlayMode
         [Test]
         public void ArmorItemsConsumeOneOnlyAfterActualRestoration()
         {
-            Type definitionType = Type.GetType(
-                "ItemDefinition, Assembly-CSharp");
-            Type controllerType = Type.GetType(
-                "PlayerInventoryController, Assembly-CSharp");
-            Type inventoryType = Type.GetType(
-                "InventoryState, Assembly-CSharp");
-            Type healthType = Type.GetType("Health, Assembly-CSharp");
-            Type damageType = Type.GetType("DamageInfo, Assembly-CSharp");
+            Type definitionType = RuntimeTypeResolver.GetType(
+                "ItemDefinition");
+            Type controllerType = RuntimeTypeResolver.GetType(
+                "PlayerInventoryController");
+            Type inventoryType = RuntimeTypeResolver.GetType(
+                "InventoryState");
+            Type healthType = RuntimeTypeResolver.GetType("Health");
+            Type damageType = RuntimeTypeResolver.GetType("DamageInfo");
             ScriptableObject armorPack = CreateItem(
                 definitionType,
                 "armor_pack",
@@ -269,12 +269,12 @@ namespace FPS.Tests.PlayMode
         {
             LogAssert.ignoreFailingMessages = true;
             yield return LoadCityNew();
-            Type inventoryControllerType = Type.GetType(
-                "PlayerInventoryController, Assembly-CSharp");
-            Type bootstrapType = Type.GetType(
-                "CityNewInventoryBootstrap, Assembly-CSharp");
-            Type combatType = Type.GetType(
-                "PlayerCombatController, Assembly-CSharp");
+            Type inventoryControllerType = RuntimeTypeResolver.GetType(
+                "PlayerInventoryController");
+            Type bootstrapType = RuntimeTypeResolver.GetType(
+                "CityNewInventoryBootstrap");
+            Type combatType = RuntimeTypeResolver.GetType(
+                "PlayerCombatController");
             Component inventory = (Component)UnityEngine.Object
                 .FindAnyObjectByType(inventoryControllerType);
             Component bootstrap = inventory.GetComponent(bootstrapType);
@@ -324,15 +324,15 @@ namespace FPS.Tests.PlayMode
         {
             LogAssert.ignoreFailingMessages = true;
             yield return LoadCityNew();
-            Type controllerType = Type.GetType(
-                "PlayerInventoryController, Assembly-CSharp");
-            Type bootstrapType = Type.GetType(
-                "CityNewInventoryBootstrap, Assembly-CSharp");
-            Type combatType = Type.GetType(
-                "PlayerCombatController, Assembly-CSharp");
-            Type inventoryType = Type.GetType(
-                "InventoryState, Assembly-CSharp");
-            Type viewType = Type.GetType("InventoryView, Assembly-CSharp");
+            Type controllerType = RuntimeTypeResolver.GetType(
+                "PlayerInventoryController");
+            Type bootstrapType = RuntimeTypeResolver.GetType(
+                "CityNewInventoryBootstrap");
+            Type combatType = RuntimeTypeResolver.GetType(
+                "PlayerCombatController");
+            Type inventoryType = RuntimeTypeResolver.GetType(
+                "InventoryState");
+            Type viewType = RuntimeTypeResolver.GetType("InventoryView");
             Component controller = (Component)UnityEngine.Object
                 .FindAnyObjectByType(controllerType);
             Component bootstrap = controller.GetComponent(bootstrapType);
@@ -390,8 +390,8 @@ namespace FPS.Tests.PlayMode
             float amount,
             int maximumStack)
         {
-            Type itemType = Type.GetType("ItemType, Assembly-CSharp");
-            Type effectType = Type.GetType("ItemEffectType, Assembly-CSharp");
+            Type itemType = RuntimeTypeResolver.GetType("ItemType");
+            Type effectType = RuntimeTypeResolver.GetType("ItemEffectType");
             ScriptableObject definition = ScriptableObject.CreateInstance(
                 definitionType);
             definitionType.GetMethod("Configure").Invoke(

@@ -13,16 +13,16 @@ namespace FPS.Tests.PlayMode
         public void DamageContractUsesPlainDataAndCorrectInterface()
         {
             Type damageInfoType =
-                Type.GetType("DamageInfo, Assembly-CSharp");
+                RuntimeTypeResolver.GetType("DamageInfo");
             Type damageableType =
-                Type.GetType("IDamageable, Assembly-CSharp");
+                RuntimeTypeResolver.GetType("IDamageable");
 
             Assert.That(damageInfoType, Is.Not.Null);
             Assert.That(damageInfoType.IsValueType, Is.True);
             Assert.That(damageableType, Is.Not.Null);
             Assert.That(damageableType.IsInterface, Is.True);
             Assert.That(
-                Type.GetType("IDamagable, Assembly-CSharp"),
+                RuntimeTypeResolver.GetType("IDamagable"),
                 Is.Null,
                 "The misspelled legacy damage type must be removed.");
         }
@@ -30,9 +30,9 @@ namespace FPS.Tests.PlayMode
         [Test]
         public void HealthAppliesOrdinaryDamage()
         {
-            Type healthType = Type.GetType("Health, Assembly-CSharp");
+            Type healthType = RuntimeTypeResolver.GetType("Health");
             Type damageInfoType =
-                Type.GetType("DamageInfo, Assembly-CSharp");
+                RuntimeTypeResolver.GetType("DamageInfo");
             GameObject target = new GameObject("Ordinary Damage Target");
 
             try
@@ -75,9 +75,9 @@ namespace FPS.Tests.PlayMode
         [Test]
         public void HealthClampsOverkillAndRejectsDamageAfterDeath()
         {
-            Type healthType = Type.GetType("Health, Assembly-CSharp");
+            Type healthType = RuntimeTypeResolver.GetType("Health");
             Type damageInfoType =
-                Type.GetType("DamageInfo, Assembly-CSharp");
+                RuntimeTypeResolver.GetType("DamageInfo");
 
             Assert.That(healthType, Is.Not.Null);
             Assert.That(damageInfoType, Is.Not.Null);
@@ -143,9 +143,9 @@ namespace FPS.Tests.PlayMode
         [Test]
         public void HealthRaisesDeathEventOnlyOnce()
         {
-            Type healthType = Type.GetType("Health, Assembly-CSharp");
+            Type healthType = RuntimeTypeResolver.GetType("Health");
             Type damageInfoType =
-                Type.GetType("DamageInfo, Assembly-CSharp");
+                RuntimeTypeResolver.GetType("DamageInfo");
             GameObject target = new GameObject("Death Event Target");
 
             try
@@ -184,11 +184,11 @@ namespace FPS.Tests.PlayMode
         [Test]
         public void DamageHitboxAppliesConfiguredHeadMultiplier()
         {
-            Type healthType = Type.GetType("Health, Assembly-CSharp");
+            Type healthType = RuntimeTypeResolver.GetType("Health");
             Type damageInfoType =
-                Type.GetType("DamageInfo, Assembly-CSharp");
+                RuntimeTypeResolver.GetType("DamageInfo");
             Type hitboxType =
-                Type.GetType("DamageHitbox, Assembly-CSharp");
+                RuntimeTypeResolver.GetType("DamageHitbox");
 
             Assert.That(
                 hitboxType,
@@ -238,10 +238,10 @@ namespace FPS.Tests.PlayMode
         public IEnumerator CompletedTracerIsReusedByFixedPool()
         {
             Type poolType =
-                Type.GetType("ShotTracerPool, Assembly-CSharp");
+                RuntimeTypeResolver.GetType("ShotTracerPool");
             Type tracerType =
-                Type.GetType(
-                    "ShotTracerController, Assembly-CSharp");
+                RuntimeTypeResolver.GetType(
+                    "ShotTracerController");
 
             Assert.That(
                 poolType,

@@ -2,6 +2,13 @@
   "name": "FPS.PlayModeTests",
   "rootNamespace": "FPS.Tests.PlayMode",
   "references": [
+    "FPS.Core",
+    "FPS.Combat",
+    "FPS.GameplayEffects",
+    "FPS.AI",
+    "FPS.Inventory",
+    "FPS.UI",
+    "FPS.Composition",
     "Unity.InputSystem",
     "Unity.InputSystem.TestFramework"
   ],

@@ -24,8 +24,8 @@ namespace FPS.Tests.PlayMode
         [Test]
         public void HealthRecoveryAndCapacityChangesPreserveMissingAmount()
         {
-            Type healthType = Type.GetType("Health, Assembly-CSharp");
-            Type damageType = Type.GetType("DamageInfo, Assembly-CSharp");
+            Type healthType = RuntimeTypeResolver.GetType("Health");
+            Type damageType = RuntimeTypeResolver.GetType("DamageInfo");
             var target = new GameObject("Survival Target");
 
             try
@@ -109,16 +109,16 @@ namespace FPS.Tests.PlayMode
         [Test]
         public void SurvivalModifiersStackAdditivelyAndMovementKeepsRatios()
         {
-            Type definitionType = Type.GetType(
-                "UpgradeDefinition, Assembly-CSharp");
-            Type rarityType = Type.GetType(
-                "UpgradeRarity, Assembly-CSharp");
-            Type effectType = Type.GetType(
-                "UpgradeEffectType, Assembly-CSharp");
-            Type stateType = Type.GetType(
-                "RunUpgradeState, Assembly-CSharp");
-            Type statsType = Type.GetType(
-                "PlayerRuntimeCombatStats, Assembly-CSharp");
+            Type definitionType = RuntimeTypeResolver.GetType(
+                "UpgradeDefinition");
+            Type rarityType = RuntimeTypeResolver.GetType(
+                "UpgradeRarity");
+            Type effectType = RuntimeTypeResolver.GetType(
+                "UpgradeEffectType");
+            Type stateType = RuntimeTypeResolver.GetType(
+                "RunUpgradeState");
+            Type statsType = RuntimeTypeResolver.GetType(
+                "PlayerRuntimeCombatStats");
             ScriptableObject healthUpgrade = ScriptableObject.CreateInstance(
                 definitionType);
             ScriptableObject armorUpgrade = ScriptableObject.CreateInstance(
@@ -184,8 +184,8 @@ namespace FPS.Tests.PlayMode
         {
             LogAssert.ignoreFailingMessages = true;
             yield return LoadCityNew();
-            Type controllerType = Type.GetType(
-                "PlayerUpgradeController, Assembly-CSharp");
+            Type controllerType = RuntimeTypeResolver.GetType(
+                "PlayerUpgradeController");
             Component controller = (Component)UnityEngine.Object
                 .FindAnyObjectByType(controllerType);
             IEnumerable catalog = (IEnumerable)controllerType
@@ -213,8 +213,8 @@ namespace FPS.Tests.PlayMode
         {
             LogAssert.ignoreFailingMessages = true;
             yield return LoadCityNew();
-            Type controllerType = Type.GetType(
-                "PlayerUpgradeController, Assembly-CSharp");
+            Type controllerType = RuntimeTypeResolver.GetType(
+                "PlayerUpgradeController");
             Component controller = (Component)UnityEngine.Object
                 .FindAnyObjectByType(controllerType);
             ScriptableObject definition = CreateDefinition(
@@ -248,11 +248,11 @@ namespace FPS.Tests.PlayMode
         {
             LogAssert.ignoreFailingMessages = true;
             yield return LoadCityNew();
-            Type controllerType = Type.GetType(
-                "PlayerUpgradeController, Assembly-CSharp");
-            Type healthType = Type.GetType("Health, Assembly-CSharp");
-            Type damageType = Type.GetType("DamageInfo, Assembly-CSharp");
-            Type hudType = Type.GetType("UnifiedGameHud, Assembly-CSharp");
+            Type controllerType = RuntimeTypeResolver.GetType(
+                "PlayerUpgradeController");
+            Type healthType = RuntimeTypeResolver.GetType("Health");
+            Type damageType = RuntimeTypeResolver.GetType("DamageInfo");
+            Type hudType = RuntimeTypeResolver.GetType("UnifiedGameHud");
             Component controller = (Component)UnityEngine.Object
                 .FindAnyObjectByType(controllerType);
             Component health = controller.GetComponent(healthType);
@@ -298,12 +298,12 @@ namespace FPS.Tests.PlayMode
         {
             LogAssert.ignoreFailingMessages = true;
             yield return LoadCityNew();
-            Type controllerType = Type.GetType(
-                "PlayerUpgradeController, Assembly-CSharp");
-            Type playerType = Type.GetType("PlayerController, Assembly-CSharp");
-            Type statsType = Type.GetType(
-                "PlayerRuntimeCombatStats, Assembly-CSharp");
-            Type hudType = Type.GetType("UnifiedGameHud, Assembly-CSharp");
+            Type controllerType = RuntimeTypeResolver.GetType(
+                "PlayerUpgradeController");
+            Type playerType = RuntimeTypeResolver.GetType("PlayerController");
+            Type statsType = RuntimeTypeResolver.GetType(
+                "PlayerRuntimeCombatStats");
+            Type hudType = RuntimeTypeResolver.GetType("UnifiedGameHud");
             Component controller = (Component)UnityEngine.Object
                 .FindAnyObjectByType(controllerType);
             Component player = controller.GetComponent(playerType);
@@ -379,12 +379,12 @@ namespace FPS.Tests.PlayMode
             string effect,
             float amount)
         {
-            Type definitionType = Type.GetType(
-                "UpgradeDefinition, Assembly-CSharp");
-            Type rarityType = Type.GetType(
-                "UpgradeRarity, Assembly-CSharp");
-            Type effectType = Type.GetType(
-                "UpgradeEffectType, Assembly-CSharp");
+            Type definitionType = RuntimeTypeResolver.GetType(
+                "UpgradeDefinition");
+            Type rarityType = RuntimeTypeResolver.GetType(
+                "UpgradeRarity");
+            Type effectType = RuntimeTypeResolver.GetType(
+                "UpgradeEffectType");
             ScriptableObject definition = ScriptableObject.CreateInstance(
                 definitionType);
             Configure(definitionType, rarityType, effectType,

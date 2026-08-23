@@ -25,8 +25,8 @@ namespace FPS.Tests.PlayMode
         [Test]
         public void WaveNeverSpawnsAboveConcurrentLimit()
         {
-            Type stateType = Type.GetType(
-                "SingleWaveState, Assembly-CSharp");
+            Type stateType = RuntimeTypeResolver.GetType(
+                "SingleWaveState");
             Assert.That(stateType, Is.Not.Null);
             object state = Activator.CreateInstance(
                 stateType,
@@ -50,8 +50,8 @@ namespace FPS.Tests.PlayMode
         [Test]
         public void LastEnemyCompletesOnceAcrossDeathAndDisableSignals()
         {
-            Type stateType = Type.GetType(
-                "SingleWaveState, Assembly-CSharp");
+            Type stateType = RuntimeTypeResolver.GetType(
+                "SingleWaveState");
             object state = Activator.CreateInstance(
                 stateType,
                 new object[] { 1, 1 });
@@ -74,8 +74,8 @@ namespace FPS.Tests.PlayMode
         [Test]
         public void WaveRegistersExactlyConfiguredTotal()
         {
-            Type stateType = Type.GetType(
-                "SingleWaveState, Assembly-CSharp");
+            Type stateType = RuntimeTypeResolver.GetType(
+                "SingleWaveState");
             object state = Activator.CreateInstance(
                 stateType,
                 new object[] { 5, 2 });
@@ -116,8 +116,8 @@ namespace FPS.Tests.PlayMode
             int totalCount,
             int maximumAlive)
         {
-            Type stateType = Type.GetType(
-                "SingleWaveState, Assembly-CSharp");
+            Type stateType = RuntimeTypeResolver.GetType(
+                "SingleWaveState");
 
             TargetInvocationException error = Assert.Throws<
                 TargetInvocationException>(() =>
@@ -148,10 +148,10 @@ namespace FPS.Tests.PlayMode
             yield return SceneManager.LoadSceneAsync(
                 CityNewScene,
                 LoadSceneMode.Single);
-            Type directorType = Type.GetType(
-                "WaveDirector, Assembly-CSharp");
-            Type hudType = Type.GetType(
-                "UnifiedGameHud, Assembly-CSharp");
+            Type directorType = RuntimeTypeResolver.GetType(
+                "WaveDirector");
+            Type hudType = RuntimeTypeResolver.GetType(
+                "UnifiedGameHud");
             Component director = null;
             float deadline = Time.realtimeSinceStartup + 20f;
 
@@ -228,8 +228,8 @@ namespace FPS.Tests.PlayMode
                 Is.EqualTo("REMAINING 4"));
 
             deadline = Time.realtimeSinceStartup + 30f;
-            Type damageInfoType = Type.GetType(
-                "DamageInfo, Assembly-CSharp");
+            Type damageInfoType = RuntimeTypeResolver.GetType(
+                "DamageInfo");
 
             while ((int)directorType.GetProperty("CompletedWaveCount")
                        .GetValue(director) < 1 &&

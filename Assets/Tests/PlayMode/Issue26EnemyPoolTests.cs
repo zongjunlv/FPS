@@ -214,7 +214,7 @@ namespace FPS.Tests.PlayMode
 
         private static Type RuntimeType(string name)
         {
-            return Type.GetType($"{name}, Assembly-CSharp", true);
+            return RuntimeTypeResolver.GetType(name, true);
         }
 
         private static Component Find(Type type)

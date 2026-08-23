@@ -1,0 +1,16 @@
+{
+  "name": "FPS.Combat",
+  "rootNamespace": "FPS.Combat",
+  "references": [
+    "FPS.Core"
+  ],
+  "includePlatforms": [],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": true,
+  "defineConstraints": [],
+  "versionDefines": [],
+  "noEngineReferences": false
+}

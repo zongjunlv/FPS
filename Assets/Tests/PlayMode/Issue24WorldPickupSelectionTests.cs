@@ -31,10 +31,10 @@ namespace FPS.Tests.PlayMode
                 LoadSceneMode.Single);
             yield return null;
             yield return null;
-            Type inputType = Type.GetType(
-                "PlayerInputReader, Assembly-CSharp");
-            Type pickupControllerType = Type.GetType(
-                "PlayerWorldPickupController, Assembly-CSharp");
+            Type inputType = RuntimeTypeResolver.GetType(
+                "PlayerInputReader");
+            Type pickupControllerType = RuntimeTypeResolver.GetType(
+                "PlayerWorldPickupController");
             GameObject player = GameObject.FindGameObjectWithTag("Player");
             Component input = player.GetComponent(inputType);
             InputActionAsset asset = (InputActionAsset)inputType
@@ -76,12 +76,12 @@ namespace FPS.Tests.PlayMode
                 LoadSceneMode.Single);
             yield return null;
             yield return null;
-            Type pickupControllerType = Type.GetType(
-                "PlayerWorldPickupController, Assembly-CSharp");
-            Type viewType = Type.GetType(
-                "WorldPickupListHud, Assembly-CSharp");
-            Type combatType = Type.GetType(
-                "PlayerCombatController, Assembly-CSharp");
+            Type pickupControllerType = RuntimeTypeResolver.GetType(
+                "PlayerWorldPickupController");
+            Type viewType = RuntimeTypeResolver.GetType(
+                "WorldPickupListHud");
+            Type combatType = RuntimeTypeResolver.GetType(
+                "PlayerCombatController");
             GameObject player = GameObject.FindGameObjectWithTag("Player");
             Component controller = player.GetComponent(pickupControllerType);
             Component combat = player.GetComponent(combatType);
@@ -161,8 +161,8 @@ namespace FPS.Tests.PlayMode
             Assert.That(visited.Count, Is.EqualTo(4),
                 "Items added to an already visible stack must all become scroll-selectable.");
 
-            Type inputType = Type.GetType(
-                "PlayerInputReader, Assembly-CSharp");
+            Type inputType = RuntimeTypeResolver.GetType(
+                "PlayerInputReader");
             Component input = player.GetComponent(inputType);
             MethodInfo clearInput = inputType.GetMethod(
                 "ClearBufferedGameplayInput",
@@ -238,14 +238,14 @@ namespace FPS.Tests.PlayMode
                 LoadSceneMode.Single);
             yield return null;
             yield return null;
-            Type controllerType = Type.GetType(
-                "PlayerWorldPickupController, Assembly-CSharp");
-            Type pickupType = Type.GetType(
-                "WorldItemPickup, Assembly-CSharp");
-            Type definitionType = Type.GetType(
-                "ItemDefinition, Assembly-CSharp");
-            Type playerControllerType = Type.GetType(
-                "PlayerController, Assembly-CSharp");
+            Type controllerType = RuntimeTypeResolver.GetType(
+                "PlayerWorldPickupController");
+            Type pickupType = RuntimeTypeResolver.GetType(
+                "WorldItemPickup");
+            Type definitionType = RuntimeTypeResolver.GetType(
+                "ItemDefinition");
+            Type playerControllerType = RuntimeTypeResolver.GetType(
+                "PlayerController");
             GameObject player = GameObject.FindGameObjectWithTag("Player");
             Component controller = player.GetComponent(controllerType);
             Component playerController =
@@ -341,9 +341,9 @@ namespace FPS.Tests.PlayMode
 
         private static ScriptableObject CreateDefinition(Type definitionType)
         {
-            Type itemType = Type.GetType("ItemType, Assembly-CSharp");
-            Type effectType = Type.GetType(
-                "ItemEffectType, Assembly-CSharp");
+            Type itemType = RuntimeTypeResolver.GetType("ItemType");
+            Type effectType = RuntimeTypeResolver.GetType(
+                "ItemEffectType");
             ScriptableObject definition = ScriptableObject.CreateInstance(
                 definitionType);
             definitionType.GetMethod("Configure").Invoke(

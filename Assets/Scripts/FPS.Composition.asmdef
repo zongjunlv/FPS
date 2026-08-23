@@ -1,0 +1,26 @@
+{
+  "name": "FPS.Composition",
+  "rootNamespace": "FPS",
+  "references": [
+    "FPS.Core",
+    "FPS.Combat",
+    "FPS.GameplayEffects",
+    "FPS.AI",
+    "FPS.Inventory",
+    "FPS.UI",
+    "Unity.InputSystem",
+    "Unity.InputSystem.ForUI",
+    "Unity.AI.Navigation",
+    "UnityEngine.UI",
+    "Unity.TextMeshPro"
+  ],
+  "includePlatforms": [],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": true,
+  "defineConstraints": [],
+  "versionDefines": [],
+  "noEngineReferences": false
+}

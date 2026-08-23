@@ -27,16 +27,16 @@ namespace FPS.Tests.PlayMode
         [Test]
         public void SameSeedAndHistoryProduceSameCandidateSequence()
         {
-            Type definitionType = Type.GetType(
-                "UpgradeDefinition, Assembly-CSharp");
-            Type rarityType = Type.GetType(
-                "UpgradeRarity, Assembly-CSharp");
-            Type effectType = Type.GetType(
-                "UpgradeEffectType, Assembly-CSharp");
-            Type stateType = Type.GetType(
-                "RunUpgradeState, Assembly-CSharp");
-            Type generatorType = Type.GetType(
-                "UpgradeCandidateGenerator, Assembly-CSharp");
+            Type definitionType = RuntimeTypeResolver.GetType(
+                "UpgradeDefinition");
+            Type rarityType = RuntimeTypeResolver.GetType(
+                "UpgradeRarity");
+            Type effectType = RuntimeTypeResolver.GetType(
+                "UpgradeEffectType");
+            Type stateType = RuntimeTypeResolver.GetType(
+                "RunUpgradeState");
+            Type generatorType = RuntimeTypeResolver.GetType(
+                "UpgradeCandidateGenerator");
             IList definitions = (IList)Activator.CreateInstance(
                 typeof(List<>).MakeGenericType(definitionType));
 
@@ -108,16 +108,16 @@ namespace FPS.Tests.PlayMode
         [Test]
         public void FullLevelsAreExcludedAndShortageIsExplicit()
         {
-            Type definitionType = Type.GetType(
-                "UpgradeDefinition, Assembly-CSharp");
-            Type rarityType = Type.GetType(
-                "UpgradeRarity, Assembly-CSharp");
-            Type effectType = Type.GetType(
-                "UpgradeEffectType, Assembly-CSharp");
-            Type stateType = Type.GetType(
-                "RunUpgradeState, Assembly-CSharp");
-            Type generatorType = Type.GetType(
-                "UpgradeCandidateGenerator, Assembly-CSharp");
+            Type definitionType = RuntimeTypeResolver.GetType(
+                "UpgradeDefinition");
+            Type rarityType = RuntimeTypeResolver.GetType(
+                "UpgradeRarity");
+            Type effectType = RuntimeTypeResolver.GetType(
+                "UpgradeEffectType");
+            Type stateType = RuntimeTypeResolver.GetType(
+                "RunUpgradeState");
+            Type generatorType = RuntimeTypeResolver.GetType(
+                "UpgradeCandidateGenerator");
             ScriptableObject full = ScriptableObject.CreateInstance(
                 definitionType);
             ScriptableObject remaining = ScriptableObject.CreateInstance(
@@ -181,16 +181,16 @@ namespace FPS.Tests.PlayMode
         [Test]
         public void CandidateGenerationDoesNotTouchUnityRandomState()
         {
-            Type definitionType = Type.GetType(
-                "UpgradeDefinition, Assembly-CSharp");
-            Type rarityType = Type.GetType(
-                "UpgradeRarity, Assembly-CSharp");
-            Type effectType = Type.GetType(
-                "UpgradeEffectType, Assembly-CSharp");
-            Type stateType = Type.GetType(
-                "RunUpgradeState, Assembly-CSharp");
-            Type generatorType = Type.GetType(
-                "UpgradeCandidateGenerator, Assembly-CSharp");
+            Type definitionType = RuntimeTypeResolver.GetType(
+                "UpgradeDefinition");
+            Type rarityType = RuntimeTypeResolver.GetType(
+                "UpgradeRarity");
+            Type effectType = RuntimeTypeResolver.GetType(
+                "UpgradeEffectType");
+            Type stateType = RuntimeTypeResolver.GetType(
+                "RunUpgradeState");
+            Type generatorType = RuntimeTypeResolver.GetType(
+                "UpgradeCandidateGenerator");
             ScriptableObject definition = ScriptableObject.CreateInstance(
                 definitionType);
 
@@ -225,10 +225,10 @@ namespace FPS.Tests.PlayMode
         [Test]
         public void DamageUpgradeChangesRuntimeValueWithoutMutatingAsset()
         {
-            Type weaponDefinitionType = Type.GetType(
-                "WeaponDefinition, Assembly-CSharp");
-            Type statsType = Type.GetType(
-                "PlayerRuntimeCombatStats, Assembly-CSharp");
+            Type weaponDefinitionType = RuntimeTypeResolver.GetType(
+                "WeaponDefinition");
+            Type statsType = RuntimeTypeResolver.GetType(
+                "PlayerRuntimeCombatStats");
             ScriptableObject weapon = ScriptableObject.CreateInstance(
                 weaponDefinitionType);
             var player = new GameObject("Player");
@@ -270,15 +270,15 @@ namespace FPS.Tests.PlayMode
             yield return LoadRuntime();
             RuntimeContext context = FindRuntimeContext();
             Assert.That(context.UpgradeController, Is.Not.Null);
-            Type progressionType = Type.GetType(
-                "PlayerRunProgression, Assembly-CSharp");
+            Type progressionType = RuntimeTypeResolver.GetType(
+                "PlayerRunProgression");
             Component progression = context.UpgradeController
                 .GetComponent(progressionType);
             progressionType.GetMethod("ConfigureThresholds").Invoke(
                 progression,
                 new object[] { new[] { 1, 100 } });
-            Type directorType = Type.GetType(
-                "WaveDirector, Assembly-CSharp");
+            Type directorType = RuntimeTypeResolver.GetType(
+                "WaveDirector");
             Component director = (Component)UnityEngine.Object
                 .FindAnyObjectByType(directorType);
             Component enemy = null;
@@ -299,11 +299,11 @@ namespace FPS.Tests.PlayMode
             }
 
             Assert.That(enemy, Is.Not.Null);
-            Type healthType = Type.GetType("Health, Assembly-CSharp");
+            Type healthType = RuntimeTypeResolver.GetType("Health");
             Component health = enemy.GetComponent(healthType);
             float maxHealth = (float)healthType.GetProperty("MaxHealth")
                 .GetValue(health);
-            Type damageType = Type.GetType("DamageInfo, Assembly-CSharp");
+            Type damageType = RuntimeTypeResolver.GetType("DamageInfo");
             object lethal = Activator.CreateInstance(
                 damageType,
                 maxHealth + 100f,
@@ -391,12 +391,12 @@ namespace FPS.Tests.PlayMode
             LogAssert.ignoreFailingMessages = true;
             yield return LoadRuntime();
             RuntimeContext context = FindRuntimeContext();
-            Type definitionType = Type.GetType(
-                "UpgradeDefinition, Assembly-CSharp");
-            Type rarityType = Type.GetType(
-                "UpgradeRarity, Assembly-CSharp");
-            Type effectType = Type.GetType(
-                "UpgradeEffectType, Assembly-CSharp");
+            Type definitionType = RuntimeTypeResolver.GetType(
+                "UpgradeDefinition");
+            Type rarityType = RuntimeTypeResolver.GetType(
+                "UpgradeRarity");
+            Type effectType = RuntimeTypeResolver.GetType(
+                "UpgradeEffectType");
             ScriptableObject definition = ScriptableObject.CreateInstance(
                 definitionType);
             ConfigureDefinition(
@@ -463,8 +463,8 @@ namespace FPS.Tests.PlayMode
             LogAssert.ignoreFailingMessages = true;
             yield return LoadRuntime();
             RuntimeContext context = FindRuntimeContext();
-            Type reasonType = Type.GetType(
-                "GameplayLockReason, Assembly-CSharp");
+            Type reasonType = RuntimeTypeResolver.GetType(
+                "GameplayLockReason");
             IDisposable outer = (IDisposable)context.CoordinatorType
                 .GetMethod("Acquire")
                 .Invoke(
@@ -536,16 +536,16 @@ namespace FPS.Tests.PlayMode
 
         private static RuntimeContext FindRuntimeContext()
         {
-            Type upgradeType = Type.GetType(
-                "PlayerUpgradeController, Assembly-CSharp");
-            Type coordinatorType = Type.GetType(
-                "GameplayLockCoordinator, Assembly-CSharp");
-            Type hudType = Type.GetType(
-                "UnifiedGameHud, Assembly-CSharp");
-            Type combatType = Type.GetType(
-                "PlayerCombatController, Assembly-CSharp");
-            Type weaponType = Type.GetType(
-                "WeaponController, Assembly-CSharp");
+            Type upgradeType = RuntimeTypeResolver.GetType(
+                "PlayerUpgradeController");
+            Type coordinatorType = RuntimeTypeResolver.GetType(
+                "GameplayLockCoordinator");
+            Type hudType = RuntimeTypeResolver.GetType(
+                "UnifiedGameHud");
+            Type combatType = RuntimeTypeResolver.GetType(
+                "PlayerCombatController");
+            Type weaponType = RuntimeTypeResolver.GetType(
+                "WeaponController");
             Component upgrade = (Component)UnityEngine.Object
                 .FindAnyObjectByType(upgradeType);
             Component coordinator = upgrade.GetComponent(coordinatorType);

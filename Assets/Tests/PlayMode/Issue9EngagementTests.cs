@@ -19,8 +19,8 @@ namespace FPS.Tests.PlayMode
         [Test]
         public void AttackRequiresAimTimeAndRespectsCooldown()
         {
-            Type attackType = Type.GetType(
-                "EnemyAttackStateMachine, Assembly-CSharp");
+            Type attackType = RuntimeTypeResolver.GetType(
+                "EnemyAttackStateMachine");
             Assert.That(attackType, Is.Not.Null);
             object attack = Activator.CreateInstance(attackType);
             attackType.GetMethod("Configure")
@@ -54,8 +54,8 @@ namespace FPS.Tests.PlayMode
         [Test]
         public void EnemyCombatPresentationUsesExistingAttackAssets()
         {
-            Type profileType = Type.GetType(
-                "EnemyCombatPresentationProfile, Assembly-CSharp");
+            Type profileType = RuntimeTypeResolver.GetType(
+                "EnemyCombatPresentationProfile");
             UnityEngine.Object profile = Resources.Load(
                 "EnemyCombatPresentation",
                 profileType);
@@ -72,14 +72,14 @@ namespace FPS.Tests.PlayMode
         [UnityTest]
         public IEnumerator AlertEnemyDamagesPlayerOnceBeforeCooldownEnds()
         {
-            Type enemyType = Type.GetType(
-                "EnemyController, Assembly-CSharp");
-            Type perceptionType = Type.GetType(
-                "EnemyPerceptionController, Assembly-CSharp");
-            Type combatType = Type.GetType(
-                "EnemyCombatController, Assembly-CSharp");
-            Type healthType = Type.GetType(
-                "Health, Assembly-CSharp");
+            Type enemyType = RuntimeTypeResolver.GetType(
+                "EnemyController");
+            Type perceptionType = RuntimeTypeResolver.GetType(
+                "EnemyPerceptionController");
+            Type combatType = RuntimeTypeResolver.GetType(
+                "EnemyCombatController");
+            Type healthType = RuntimeTypeResolver.GetType(
+                "Health");
             GameObject enemy = new GameObject("Combat Enemy");
             GameObject player = new GameObject("Combat Player");
             player.transform.position = Vector3.forward * 1.5f;
@@ -150,8 +150,8 @@ namespace FPS.Tests.PlayMode
                 player.GetComponent("PlayerFailureFlowController");
 
             Assert.That(failure, Is.Not.Null);
-            Type damageInfoType = Type.GetType(
-                "DamageInfo, Assembly-CSharp");
+            Type damageInfoType = RuntimeTypeResolver.GetType(
+                "DamageInfo");
             object lethalDamage = Activator.CreateInstance(
                 damageInfoType,
                 new object[]
@@ -200,8 +200,8 @@ namespace FPS.Tests.PlayMode
 
             try
             {
-                Type damageInfoType = Type.GetType(
-                    "DamageInfo, Assembly-CSharp");
+                Type damageInfoType = RuntimeTypeResolver.GetType(
+                    "DamageInfo");
                 object damage = Activator.CreateInstance(
                     damageInfoType,
                     new object[]
@@ -246,8 +246,8 @@ namespace FPS.Tests.PlayMode
             Component health = player.GetComponent("Health");
             Component failure =
                 player.GetComponent("PlayerFailureFlowController");
-            Type damageInfoType = Type.GetType(
-                "DamageInfo, Assembly-CSharp");
+            Type damageInfoType = RuntimeTypeResolver.GetType(
+                "DamageInfo");
             object lethalDamage = Activator.CreateInstance(
                 damageInfoType,
                 new object[]

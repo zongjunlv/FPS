@@ -11,8 +11,8 @@ namespace FPS.Tests.PlayMode
         [Test]
         public void FixedPoolPrewarmsAndNeverReclaimsBorrowedObjects()
         {
-            Type poolType = Type.GetType(
-                "RuntimeGameObjectPool, Assembly-CSharp");
+            Type poolType = RuntimeTypeResolver.GetType(
+                "RuntimeGameObjectPool");
             Assert.That(
                 poolType,
                 Is.Not.Null,
@@ -112,16 +112,16 @@ namespace FPS.Tests.PlayMode
         [Test]
         public void CombatImpactPoolHasHardCapacityAndReusesMetalEffects()
         {
-            Type poolType = Type.GetType(
-                "CombatEffectPool, Assembly-CSharp");
-            Type shotResultType = Type.GetType(
-                "ShotResult, Assembly-CSharp");
-            Type damageResultType = Type.GetType(
-                "DamageResult, Assembly-CSharp");
-            Type surfaceType = Type.GetType(
-                "SurfaceType, Assembly-CSharp");
-            Type metalControllerType = Type.GetType(
-                "MetalImpactVisualController, Assembly-CSharp");
+            Type poolType = RuntimeTypeResolver.GetType(
+                "CombatEffectPool");
+            Type shotResultType = RuntimeTypeResolver.GetType(
+                "ShotResult");
+            Type damageResultType = RuntimeTypeResolver.GetType(
+                "DamageResult");
+            Type surfaceType = RuntimeTypeResolver.GetType(
+                "SurfaceType");
+            Type metalControllerType = RuntimeTypeResolver.GetType(
+                "MetalImpactVisualController");
             Assert.That(
                 poolType,
                 Is.Not.Null,
@@ -192,14 +192,14 @@ namespace FPS.Tests.PlayMode
         [Test]
         public void StablePooledImpactLoopDoesNotAllocateManagedMemory()
         {
-            Type poolType = Type.GetType(
-                "CombatEffectPool, Assembly-CSharp");
-            Type shotResultType = Type.GetType(
-                "ShotResult, Assembly-CSharp");
-            Type damageResultType = Type.GetType(
-                "DamageResult, Assembly-CSharp");
-            Type surfaceType = Type.GetType(
-                "SurfaceType, Assembly-CSharp");
+            Type poolType = RuntimeTypeResolver.GetType(
+                "CombatEffectPool");
+            Type shotResultType = RuntimeTypeResolver.GetType(
+                "ShotResult");
+            Type damageResultType = RuntimeTypeResolver.GetType(
+                "DamageResult");
+            Type surfaceType = RuntimeTypeResolver.GetType(
+                "SurfaceType");
             GameObject host = new GameObject("Pool Allocation Test");
 
             try

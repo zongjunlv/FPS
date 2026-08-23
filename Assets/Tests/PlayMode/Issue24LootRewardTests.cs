@@ -69,10 +69,10 @@ namespace FPS.Tests.PlayMode
 
             try
             {
-                Type resolverType = Type.GetType(
-                    "DeterministicLootResolver, Assembly-CSharp");
-                Type contextType = Type.GetType(
-                    "LootRewardContext, Assembly-CSharp");
+                Type resolverType = RuntimeTypeResolver.GetType(
+                    "DeterministicLootResolver");
+                Type contextType = RuntimeTypeResolver.GetType(
+                    "LootRewardContext");
                 object first = Activator.CreateInstance(resolverType, 24024);
                 object second = Activator.CreateInstance(resolverType, 24024);
                 UnityEngine.Random.InitState(9917);
@@ -126,15 +126,15 @@ namespace FPS.Tests.PlayMode
         public void DuplicateDeathAndFinalWaveTimingAreIdempotent()
         {
             LootFixture fixture = CreateFixture();
-            Type controllerType = Type.GetType(
-                "PlayerLootRewardController, Assembly-CSharp");
-            Type deathType = Type.GetType(
-                "EnemyDeathEvent, Assembly-CSharp");
-            Type damageType = Type.GetType("DamageInfo, Assembly-CSharp");
-            Type inventoryType = Type.GetType(
-                "PlayerInventoryController, Assembly-CSharp");
-            Type definitionType = Type.GetType(
-                "ItemDefinition, Assembly-CSharp");
+            Type controllerType = RuntimeTypeResolver.GetType(
+                "PlayerLootRewardController");
+            Type deathType = RuntimeTypeResolver.GetType(
+                "EnemyDeathEvent");
+            Type damageType = RuntimeTypeResolver.GetType("DamageInfo");
+            Type inventoryType = RuntimeTypeResolver.GetType(
+                "PlayerInventoryController");
+            Type definitionType = RuntimeTypeResolver.GetType(
+                "ItemDefinition");
             GameObject player = new("Loot Reward Player");
             ScriptableObject medicalKit = CreateItem(
                 definitionType, "medical_kit", "医疗包");
@@ -198,12 +198,12 @@ namespace FPS.Tests.PlayMode
         [Test]
         public void FullInventoryLeavesWorldItemAndShowsClearFeedback()
         {
-            Type controllerType = Type.GetType(
-                "PlayerInventoryController, Assembly-CSharp");
-            Type definitionType = Type.GetType(
-                "ItemDefinition, Assembly-CSharp");
-            Type pickupType = Type.GetType(
-                "WorldItemPickup, Assembly-CSharp");
+            Type controllerType = RuntimeTypeResolver.GetType(
+                "PlayerInventoryController");
+            Type definitionType = RuntimeTypeResolver.GetType(
+                "ItemDefinition");
+            Type pickupType = RuntimeTypeResolver.GetType(
+                "WorldItemPickup");
             ScriptableObject occupied = CreateItem(
                 definitionType, "occupied", "占位物品");
             ScriptableObject reward = CreateItem(
@@ -250,12 +250,12 @@ namespace FPS.Tests.PlayMode
             yield return SceneManager.LoadSceneAsync(
                 CityNewScene,
                 LoadSceneMode.Single);
-            Type directorType = Type.GetType(
-                "WaveDirector, Assembly-CSharp");
-            Type rewardsType = Type.GetType(
-                "PlayerLootRewardController, Assembly-CSharp");
-            Type hudType = Type.GetType(
-                "UnifiedGameHud, Assembly-CSharp");
+            Type directorType = RuntimeTypeResolver.GetType(
+                "WaveDirector");
+            Type rewardsType = RuntimeTypeResolver.GetType(
+                "PlayerLootRewardController");
+            Type hudType = RuntimeTypeResolver.GetType(
+                "UnifiedGameHud");
             Component director = null;
             Component rewards = null;
             Component hud = null;
@@ -301,20 +301,20 @@ namespace FPS.Tests.PlayMode
             yield return SceneManager.LoadSceneAsync(
                 CityNewScene,
                 LoadSceneMode.Single);
-            Type directorType = Type.GetType(
-                "WaveDirector, Assembly-CSharp");
-            Type rewardsType = Type.GetType(
-                "PlayerLootRewardController, Assembly-CSharp");
-            Type factoryType = Type.GetType(
-                "WorldItemFactory, Assembly-CSharp");
-            Type pickupType = Type.GetType(
-                "WorldItemPickup, Assembly-CSharp");
-            Type healthType = Type.GetType("Health, Assembly-CSharp");
-            Type damageType = Type.GetType("DamageInfo, Assembly-CSharp");
-            Type hudType = Type.GetType(
-                "UnifiedGameHud, Assembly-CSharp");
-            Type upgradeType = Type.GetType(
-                "PlayerUpgradeController, Assembly-CSharp");
+            Type directorType = RuntimeTypeResolver.GetType(
+                "WaveDirector");
+            Type rewardsType = RuntimeTypeResolver.GetType(
+                "PlayerLootRewardController");
+            Type factoryType = RuntimeTypeResolver.GetType(
+                "WorldItemFactory");
+            Type pickupType = RuntimeTypeResolver.GetType(
+                "WorldItemPickup");
+            Type healthType = RuntimeTypeResolver.GetType("Health");
+            Type damageType = RuntimeTypeResolver.GetType("DamageInfo");
+            Type hudType = RuntimeTypeResolver.GetType(
+                "UnifiedGameHud");
+            Type upgradeType = RuntimeTypeResolver.GetType(
+                "PlayerUpgradeController");
             Component director = null;
             Component rewards = null;
             Component hud = null;
@@ -418,14 +418,14 @@ namespace FPS.Tests.PlayMode
             yield return SceneManager.LoadSceneAsync(
                 CityNewScene,
                 LoadSceneMode.Single);
-            Type rewardsType = Type.GetType(
-                "PlayerLootRewardController, Assembly-CSharp");
-            Type factoryType = Type.GetType(
-                "WorldItemFactory, Assembly-CSharp");
-            Type missionType = Type.GetType(
-                "CityNewMissionController, Assembly-CSharp");
-            Type healthType = Type.GetType("Health, Assembly-CSharp");
-            Type damageType = Type.GetType("DamageInfo, Assembly-CSharp");
+            Type rewardsType = RuntimeTypeResolver.GetType(
+                "PlayerLootRewardController");
+            Type factoryType = RuntimeTypeResolver.GetType(
+                "WorldItemFactory");
+            Type missionType = RuntimeTypeResolver.GetType(
+                "CityNewMissionController");
+            Type healthType = RuntimeTypeResolver.GetType("Health");
+            Type damageType = RuntimeTypeResolver.GetType("DamageInfo");
             Component rewards = null;
             Component mission = null;
             GameObject player = null;
@@ -520,14 +520,14 @@ namespace FPS.Tests.PlayMode
 
         private static LootFixture CreateFixture()
         {
-            Type tableType = Type.GetType(
-                "LootDropTableDefinition, Assembly-CSharp");
-            Type ruleType = Type.GetType(
-                "LootDropRule, Assembly-CSharp");
-            Type entryType = Type.GetType(
-                "LootDropEntry, Assembly-CSharp");
-            Type tierType = Type.GetType(
-                "LootRewardTier, Assembly-CSharp");
+            Type tableType = RuntimeTypeResolver.GetType(
+                "LootDropTableDefinition");
+            Type ruleType = RuntimeTypeResolver.GetType(
+                "LootDropRule");
+            Type entryType = RuntimeTypeResolver.GetType(
+                "LootDropEntry");
+            Type tierType = RuntimeTypeResolver.GetType(
+                "LootRewardTier");
             ScriptableObject table = ScriptableObject.CreateInstance(tableType);
             Array normalEntries = Array.CreateInstance(entryType, 2);
             normalEntries.SetValue(Activator.CreateInstance(
@@ -577,9 +577,9 @@ namespace FPS.Tests.PlayMode
             string stableId,
             string displayName)
         {
-            Type itemType = Type.GetType("ItemType, Assembly-CSharp");
-            Type effectType = Type.GetType(
-                "ItemEffectType, Assembly-CSharp");
+            Type itemType = RuntimeTypeResolver.GetType("ItemType");
+            Type effectType = RuntimeTypeResolver.GetType(
+                "ItemEffectType");
             ScriptableObject item = ScriptableObject.CreateInstance(
                 definitionType);
             definitionType.GetMethod("Configure").Invoke(

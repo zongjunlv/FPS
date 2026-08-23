@@ -98,12 +98,12 @@ namespace FPS.Tests.PlayMode
             yield return SceneManager.LoadSceneAsync(
                 CityNewScene,
                 LoadSceneMode.Single);
-            Type directorType = Type.GetType(
-                "WaveDirector, Assembly-CSharp");
-            Type missionType = Type.GetType(
-                "CityNewMissionController, Assembly-CSharp");
-            Type hudType = Type.GetType(
-                "UnifiedGameHud, Assembly-CSharp");
+            Type directorType = RuntimeTypeResolver.GetType(
+                "WaveDirector");
+            Type missionType = RuntimeTypeResolver.GetType(
+                "CityNewMissionController");
+            Type hudType = RuntimeTypeResolver.GetType(
+                "UnifiedGameHud");
             Component director = null;
             Component mission = null;
             Component hud = null;
@@ -252,10 +252,10 @@ namespace FPS.Tests.PlayMode
             yield return SceneManager.LoadSceneAsync(
                 CityNewScene,
                 LoadSceneMode.Single);
-            Type directorType = Type.GetType(
-                "WaveDirector, Assembly-CSharp");
-            Type missionType = Type.GetType(
-                "CityNewMissionController, Assembly-CSharp");
+            Type directorType = RuntimeTypeResolver.GetType(
+                "WaveDirector");
+            Type missionType = RuntimeTypeResolver.GetType(
+                "CityNewMissionController");
             Component oldDirector = null;
             Component mission = null;
             GameObject player = null;
@@ -507,10 +507,10 @@ namespace FPS.Tests.PlayMode
             Component terminal = (Component)missionType
                 .GetProperty("Terminal").GetValue(mission);
             Type terminalType = terminal.GetType();
-            Type interruptionType = Type.GetType(
-                "TerminalInterruptionProgressMode, Assembly-CSharp");
-            Type completionType = Type.GetType(
-                "TerminalCompletionMode, Assembly-CSharp");
+            Type interruptionType = RuntimeTypeResolver.GetType(
+                "TerminalInterruptionProgressMode");
+            Type completionType = RuntimeTypeResolver.GetType(
+                "TerminalCompletionMode");
             terminalType.GetMethod("Configure").Invoke(
                 terminal,
                 new object[]
@@ -529,8 +529,8 @@ namespace FPS.Tests.PlayMode
 
         private static void ApplyLethalDamage(Component health)
         {
-            Type damageInfoType = Type.GetType(
-                "DamageInfo, Assembly-CSharp");
+            Type damageInfoType = RuntimeTypeResolver.GetType(
+                "DamageInfo");
             object damage = Activator.CreateInstance(
                 damageInfoType,
                 new object[]
@@ -616,10 +616,10 @@ namespace FPS.Tests.PlayMode
         private static (Type, object) CreateFlow(
             params (int total, int maximumAlive, float rest)[] stages)
         {
-            Type flowType = Type.GetType(
-                "MultiWaveFlowState, Assembly-CSharp");
-            Type rulesType = Type.GetType(
-                "WaveStageRules, Assembly-CSharp");
+            Type flowType = RuntimeTypeResolver.GetType(
+                "MultiWaveFlowState");
+            Type rulesType = RuntimeTypeResolver.GetType(
+                "WaveStageRules");
             Assert.That(flowType, Is.Not.Null);
             Assert.That(rulesType, Is.Not.Null);
             Array rules = Array.CreateInstance(rulesType, stages.Length);

@@ -24,10 +24,10 @@ namespace FPS.Tests.PlayMode
         [Test]
         public void MoveSwapMergeAndSplitPreserveEveryStableId()
         {
-            Type inventoryType = Type.GetType(
-                "InventoryState, Assembly-CSharp");
-            Type specType = Type.GetType(
-                "InventoryItemSpec, Assembly-CSharp");
+            Type inventoryType = RuntimeTypeResolver.GetType(
+                "InventoryState");
+            Type specType = RuntimeTypeResolver.GetType(
+                "InventoryItemSpec");
             object inventory = Activator.CreateInstance(inventoryType, 6);
             object medkit = Activator.CreateInstance(
                 specType, "medical_kit", 5);
@@ -74,10 +74,10 @@ namespace FPS.Tests.PlayMode
         [Test]
         public void InvalidInventoryOperationsAreAtomicAndSilent()
         {
-            Type inventoryType = Type.GetType(
-                "InventoryState, Assembly-CSharp");
-            Type specType = Type.GetType(
-                "InventoryItemSpec, Assembly-CSharp");
+            Type inventoryType = RuntimeTypeResolver.GetType(
+                "InventoryState");
+            Type specType = RuntimeTypeResolver.GetType(
+                "InventoryItemSpec");
             object inventory = Activator.CreateInstance(inventoryType, 3);
             object medkit = Activator.CreateInstance(
                 specType, "medical_kit", 5);
@@ -112,10 +112,10 @@ namespace FPS.Tests.PlayMode
         [Test]
         public void CompactFillsGapsInStableOrderAndPublishesOnce()
         {
-            Type inventoryType = Type.GetType(
-                "InventoryState, Assembly-CSharp");
-            Type specType = Type.GetType(
-                "InventoryItemSpec, Assembly-CSharp");
+            Type inventoryType = RuntimeTypeResolver.GetType(
+                "InventoryState");
+            Type specType = RuntimeTypeResolver.GetType(
+                "InventoryItemSpec");
             object inventory = Activator.CreateInstance(inventoryType, 6);
             object medkit = Activator.CreateInstance(
                 specType, "medical_kit", 5);
@@ -162,12 +162,12 @@ namespace FPS.Tests.PlayMode
         [Test]
         public void DragTransferMovesMergesOrSwapsByDestinationContent()
         {
-            Type definitionType = Type.GetType(
-                "ItemDefinition, Assembly-CSharp");
-            Type controllerType = Type.GetType(
-                "PlayerInventoryController, Assembly-CSharp");
-            Type inventoryType = Type.GetType(
-                "InventoryState, Assembly-CSharp");
+            Type definitionType = RuntimeTypeResolver.GetType(
+                "ItemDefinition");
+            Type controllerType = RuntimeTypeResolver.GetType(
+                "PlayerInventoryController");
+            Type inventoryType = RuntimeTypeResolver.GetType(
+                "InventoryState");
             ScriptableObject medkit = CreateItem(definitionType);
             ScriptableObject armor = CreateItem(
                 definitionType,
@@ -213,8 +213,8 @@ namespace FPS.Tests.PlayMode
         [Test]
         public void QuickSlotsBindStableIdsAndSurviveInventoryReordering()
         {
-            Type quickType = Type.GetType(
-                "QuickSlotState, Assembly-CSharp");
+            Type quickType = RuntimeTypeResolver.GetType(
+                "QuickSlotState");
             object quick = Activator.CreateInstance(quickType, 2);
             int changes = 0;
             Action changed = () => changes++;
@@ -237,10 +237,10 @@ namespace FPS.Tests.PlayMode
         [Test]
         public void ConsumeTransactionRejectsReentrantInventoryMutation()
         {
-            Type inventoryType = Type.GetType(
-                "InventoryState, Assembly-CSharp");
-            Type specType = Type.GetType(
-                "InventoryItemSpec, Assembly-CSharp");
+            Type inventoryType = RuntimeTypeResolver.GetType(
+                "InventoryState");
+            Type specType = RuntimeTypeResolver.GetType(
+                "InventoryItemSpec");
             object inventory = Activator.CreateInstance(inventoryType, 3);
             object medkit = Activator.CreateInstance(
                 specType, "medical_kit", 5);
@@ -277,16 +277,16 @@ namespace FPS.Tests.PlayMode
         {
             LogAssert.ignoreFailingMessages = true;
             yield return LoadCityNew();
-            Type controllerType = Type.GetType(
-                "PlayerInventoryController, Assembly-CSharp");
-            Type bootstrapType = Type.GetType(
-                "CityNewInventoryBootstrap, Assembly-CSharp");
-            Type factoryType = Type.GetType(
-                "WorldItemFactory, Assembly-CSharp");
-            Type inventoryType = Type.GetType(
-                "InventoryState, Assembly-CSharp");
-            Type pickupType = Type.GetType(
-                "WorldItemPickup, Assembly-CSharp");
+            Type controllerType = RuntimeTypeResolver.GetType(
+                "PlayerInventoryController");
+            Type bootstrapType = RuntimeTypeResolver.GetType(
+                "CityNewInventoryBootstrap");
+            Type factoryType = RuntimeTypeResolver.GetType(
+                "WorldItemFactory");
+            Type inventoryType = RuntimeTypeResolver.GetType(
+                "InventoryState");
+            Type pickupType = RuntimeTypeResolver.GetType(
+                "WorldItemPickup");
             Component controller = (Component)UnityEngine.Object
                 .FindAnyObjectByType(controllerType);
             Component bootstrap = controller.GetComponent(bootstrapType);
@@ -329,14 +329,14 @@ namespace FPS.Tests.PlayMode
         [UnityTest]
         public IEnumerator FailedDropDoesNotRemoveInventoryOrCreateWorldItem()
         {
-            Type definitionType = Type.GetType(
-                "ItemDefinition, Assembly-CSharp");
-            Type controllerType = Type.GetType(
-                "PlayerInventoryController, Assembly-CSharp");
-            Type factoryType = Type.GetType(
-                "WorldItemFactory, Assembly-CSharp");
-            Type inventoryType = Type.GetType(
-                "InventoryState, Assembly-CSharp");
+            Type definitionType = RuntimeTypeResolver.GetType(
+                "ItemDefinition");
+            Type controllerType = RuntimeTypeResolver.GetType(
+                "PlayerInventoryController");
+            Type factoryType = RuntimeTypeResolver.GetType(
+                "WorldItemFactory");
+            Type inventoryType = RuntimeTypeResolver.GetType(
+                "InventoryState");
             ScriptableObject medkit = CreateItem(definitionType);
             GameObject player = new GameObject("No Ground Player");
             player.transform.position = new Vector3(10000f, 500f, 10000f);
@@ -370,16 +370,16 @@ namespace FPS.Tests.PlayMode
         {
             LogAssert.ignoreFailingMessages = true;
             yield return LoadCityNew();
-            Type controllerType = Type.GetType(
-                "PlayerInventoryController, Assembly-CSharp");
-            Type bootstrapType = Type.GetType(
-                "CityNewInventoryBootstrap, Assembly-CSharp");
-            Type inventoryType = Type.GetType(
-                "InventoryState, Assembly-CSharp");
-            Type healthType = Type.GetType("Health, Assembly-CSharp");
-            Type damageType = Type.GetType("DamageInfo, Assembly-CSharp");
-            Type quickHudType = Type.GetType(
-                "ConsumableQuickSlotHud, Assembly-CSharp");
+            Type controllerType = RuntimeTypeResolver.GetType(
+                "PlayerInventoryController");
+            Type bootstrapType = RuntimeTypeResolver.GetType(
+                "CityNewInventoryBootstrap");
+            Type inventoryType = RuntimeTypeResolver.GetType(
+                "InventoryState");
+            Type healthType = RuntimeTypeResolver.GetType("Health");
+            Type damageType = RuntimeTypeResolver.GetType("DamageInfo");
+            Type quickHudType = RuntimeTypeResolver.GetType(
+                "ConsumableQuickSlotHud");
             Component controller = (Component)UnityEngine.Object
                 .FindAnyObjectByType(controllerType);
             Component bootstrap = controller.GetComponent(bootstrapType);
@@ -426,16 +426,16 @@ namespace FPS.Tests.PlayMode
         {
             LogAssert.ignoreFailingMessages = true;
             yield return LoadCityNew();
-            Type controllerType = Type.GetType(
-                "PlayerInventoryController, Assembly-CSharp");
-            Type quickHudType = Type.GetType(
-                "ConsumableQuickSlotHud, Assembly-CSharp");
-            Type viewType = Type.GetType("InventoryView, Assembly-CSharp");
-            Type locksType = Type.GetType(
-                "GameplayLockCoordinator, Assembly-CSharp");
-            Type reasonType = Type.GetType(
-                "GameplayLockReason, Assembly-CSharp");
-            Type inputModuleType = Type.GetType(
+            Type controllerType = RuntimeTypeResolver.GetType(
+                "PlayerInventoryController");
+            Type quickHudType = RuntimeTypeResolver.GetType(
+                "ConsumableQuickSlotHud");
+            Type viewType = RuntimeTypeResolver.GetType("InventoryView");
+            Type locksType = RuntimeTypeResolver.GetType(
+                "GameplayLockCoordinator");
+            Type reasonType = RuntimeTypeResolver.GetType(
+                "GameplayLockReason");
+            Type inputModuleType = RuntimeTypeResolver.GetType(
                 "UnityEngine.InputSystem.UI.InputSystemUIInputModule, " +
                 "Unity.InputSystem");
             Component controller = (Component)UnityEngine.Object
@@ -497,8 +497,8 @@ namespace FPS.Tests.PlayMode
             string stableId = "medical_kit",
             string displayName = "医疗包")
         {
-            Type itemType = Type.GetType("ItemType, Assembly-CSharp");
-            Type effectType = Type.GetType("ItemEffectType, Assembly-CSharp");
+            Type itemType = RuntimeTypeResolver.GetType("ItemType");
+            Type effectType = RuntimeTypeResolver.GetType("ItemEffectType");
             ScriptableObject item = ScriptableObject.CreateInstance(
                 definitionType);
             definitionType.GetMethod("Configure").Invoke(

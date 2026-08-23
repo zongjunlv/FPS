@@ -14,8 +14,8 @@ namespace FPS.Tests.PlayMode
         [Test]
         public void TerminalHoldCompletesExactlyOnce()
         {
-            Type stateMachineType = Type.GetType(
-                "TerminalInteractionStateMachine, Assembly-CSharp");
+            Type stateMachineType = RuntimeTypeResolver.GetType(
+                "TerminalInteractionStateMachine");
             Assert.That(stateMachineType, Is.Not.Null);
             object stateMachine =
                 Activator.CreateInstance(stateMachineType);
@@ -63,8 +63,8 @@ namespace FPS.Tests.PlayMode
         [Test]
         public void TerminalInterruptUsesConfiguredProgressRule()
         {
-            Type stateMachineType = Type.GetType(
-                "TerminalInteractionStateMachine, Assembly-CSharp");
+            Type stateMachineType = RuntimeTypeResolver.GetType(
+                "TerminalInteractionStateMachine");
 
             object resetMachine =
                 Activator.CreateInstance(stateMachineType);
@@ -100,16 +100,16 @@ namespace FPS.Tests.PlayMode
         [Test]
         public void AlarmTerminalPublishesOneDecoupledSoundEvent()
         {
-            Type terminalType = Type.GetType(
-                "TerminalInteractable, Assembly-CSharp");
-            Type completionModeType = Type.GetType(
-                "TerminalCompletionMode, Assembly-CSharp");
-            Type progressModeType = Type.GetType(
-                "TerminalInterruptionProgressMode, Assembly-CSharp");
-            Type channelType = Type.GetType(
-                "CombatSoundEventChannel, Assembly-CSharp");
-            Type interactionContractType = Type.GetType(
-                "IInteractable, Assembly-CSharp");
+            Type terminalType = RuntimeTypeResolver.GetType(
+                "TerminalInteractable");
+            Type completionModeType = RuntimeTypeResolver.GetType(
+                "TerminalCompletionMode");
+            Type progressModeType = RuntimeTypeResolver.GetType(
+                "TerminalInterruptionProgressMode");
+            Type channelType = RuntimeTypeResolver.GetType(
+                "CombatSoundEventChannel");
+            Type interactionContractType = RuntimeTypeResolver.GetType(
+                "IInteractable");
             Assert.That(terminalType, Is.Not.Null);
             Assert.That(
                 interactionContractType.IsAssignableFrom(terminalType),
@@ -206,12 +206,12 @@ namespace FPS.Tests.PlayMode
             yield return null;
             yield return null;
 
-            Type terminalType = Type.GetType(
-                "TerminalInteractable, Assembly-CSharp");
-            Type interactionType = Type.GetType(
-                "PlayerInteractionController, Assembly-CSharp");
-            Type missionHudType = Type.GetType(
-                "TerminalMissionHudPresenter, Assembly-CSharp");
+            Type terminalType = RuntimeTypeResolver.GetType(
+                "TerminalInteractable");
+            Type interactionType = RuntimeTypeResolver.GetType(
+                "PlayerInteractionController");
+            Type missionHudType = RuntimeTypeResolver.GetType(
+                "TerminalMissionHudPresenter");
             GameObject terminalObject = GameObject.Find("controlunit");
             GameObject player =
                 GameObject.FindGameObjectWithTag("Player");
@@ -234,8 +234,8 @@ namespace FPS.Tests.PlayMode
 
             Component terminal =
                 terminalObject.GetComponent(terminalType);
-            Type channelType = Type.GetType(
-                "CombatSoundEventChannel, Assembly-CSharp");
+            Type channelType = RuntimeTypeResolver.GetType(
+                "CombatSoundEventChannel");
             UnityEngine.Object channel = Resources.Load(
                 "CombatSoundEvents",
                 channelType);
@@ -247,13 +247,12 @@ namespace FPS.Tests.PlayMode
                 {
                     0.1f,
                     Enum.Parse(
-                        Type.GetType(
-                            "TerminalInterruptionProgressMode, " +
-                            "Assembly-CSharp"),
+                        RuntimeTypeResolver.GetType(
+                            "TerminalInterruptionProgressMode"),
                         "Reset"),
                     Enum.Parse(
-                        Type.GetType(
-                            "TerminalCompletionMode, Assembly-CSharp"),
+                        RuntimeTypeResolver.GetType(
+                            "TerminalCompletionMode"),
                         "Silent"),
                     32f,
                     1f
@@ -283,10 +282,10 @@ namespace FPS.Tests.PlayMode
             yield return null;
             yield return null;
 
-            Type interactionType = Type.GetType(
-                "PlayerInteractionController, Assembly-CSharp");
-            Type terminalType = Type.GetType(
-                "TerminalInteractable, Assembly-CSharp");
+            Type interactionType = RuntimeTypeResolver.GetType(
+                "PlayerInteractionController");
+            Type terminalType = RuntimeTypeResolver.GetType(
+                "TerminalInteractable");
             GameObject player =
                 GameObject.FindGameObjectWithTag("Player");
             Component interaction =
@@ -363,14 +362,14 @@ namespace FPS.Tests.PlayMode
             yield return null;
             yield return null;
 
-            Type interactionType = Type.GetType(
-                "PlayerInteractionController, Assembly-CSharp");
-            Type terminalType = Type.GetType(
-                "TerminalInteractable, Assembly-CSharp");
-            Type progressModeType = Type.GetType(
-                "TerminalInterruptionProgressMode, Assembly-CSharp");
-            Type completionModeType = Type.GetType(
-                "TerminalCompletionMode, Assembly-CSharp");
+            Type interactionType = RuntimeTypeResolver.GetType(
+                "PlayerInteractionController");
+            Type terminalType = RuntimeTypeResolver.GetType(
+                "TerminalInteractable");
+            Type progressModeType = RuntimeTypeResolver.GetType(
+                "TerminalInterruptionProgressMode");
+            Type completionModeType = RuntimeTypeResolver.GetType(
+                "TerminalCompletionMode");
             GameObject player =
                 GameObject.FindGameObjectWithTag("Player");
             Component interaction =
@@ -449,14 +448,14 @@ namespace FPS.Tests.PlayMode
             yield return null;
             yield return null;
 
-            Type interactionType = Type.GetType(
-                "PlayerInteractionController, Assembly-CSharp");
-            Type terminalType = Type.GetType(
-                "TerminalInteractable, Assembly-CSharp");
-            Type progressModeType = Type.GetType(
-                "TerminalInterruptionProgressMode, Assembly-CSharp");
-            Type completionModeType = Type.GetType(
-                "TerminalCompletionMode, Assembly-CSharp");
+            Type interactionType = RuntimeTypeResolver.GetType(
+                "PlayerInteractionController");
+            Type terminalType = RuntimeTypeResolver.GetType(
+                "TerminalInteractable");
+            Type progressModeType = RuntimeTypeResolver.GetType(
+                "TerminalInterruptionProgressMode");
+            Type completionModeType = RuntimeTypeResolver.GetType(
+                "TerminalCompletionMode");
             GameObject player =
                 GameObject.FindGameObjectWithTag("Player");
             Component interaction =
@@ -491,8 +490,8 @@ namespace FPS.Tests.PlayMode
                         .GetValue(interaction),
                     Is.EqualTo(true));
 
-                Type damageInfoType = Type.GetType(
-                    "DamageInfo, Assembly-CSharp");
+                Type damageInfoType = RuntimeTypeResolver.GetType(
+                    "DamageInfo");
                 object damage = Activator.CreateInstance(
                     damageInfoType,
                     new object[]

@@ -1,0 +1,27 @@
+{
+  "name": "FPS.ArchitectureTests",
+  "rootNamespace": "FPS.Tests.Architecture",
+  "references": [
+    "FPS.Core",
+    "FPS.Combat",
+    "FPS.GameplayEffects",
+    "FPS.AI",
+    "FPS.Inventory",
+    "FPS.UI",
+    "FPS.Composition"
+  ],
+  "includePlatforms": [
+    "Editor"
+  ],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": true,
+  "defineConstraints": [],
+  "versionDefines": [],
+  "noEngineReferences": false,
+  "optionalUnityReferences": [
+    "TestAssemblies"
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "name": "FPS.AI",
+  "rootNamespace": "FPS.AI",
+  "references": [
+    "FPS.Core"
+  ],
+  "includePlatforms": [],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": true,
+  "defineConstraints": [],
+  "versionDefines": [],
+  "noEngineReferences": false
+}

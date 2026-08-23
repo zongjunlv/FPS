@@ -99,9 +99,9 @@ namespace FPS.Tests.PlayMode
         [Test]
         public void HealthKeepsLastAcceptedDamageContext()
         {
-            Type healthType = Type.GetType("Health, Assembly-CSharp");
-            Type damageType = Type.GetType("DamageInfo, Assembly-CSharp");
-            Type kindType = Type.GetType("DamageType, Assembly-CSharp");
+            Type healthType = RuntimeTypeResolver.GetType("Health");
+            Type damageType = RuntimeTypeResolver.GetType("DamageInfo");
+            Type kindType = RuntimeTypeResolver.GetType("DamageType");
             var target = new GameObject("Target");
             var source = new GameObject("Player Source");
 
@@ -142,13 +142,13 @@ namespace FPS.Tests.PlayMode
         [Test]
         public void PlayerOwnershipAndSpawnIdentityGateRewards()
         {
-            Type progressionType = Type.GetType(
-                "PlayerRunProgression, Assembly-CSharp");
-            Type enemyType = Type.GetType(
-                "EnemyController, Assembly-CSharp");
-            Type deathType = Type.GetType(
-                "EnemyDeathEvent, Assembly-CSharp");
-            Type damageType = Type.GetType("DamageInfo, Assembly-CSharp");
+            Type progressionType = RuntimeTypeResolver.GetType(
+                "PlayerRunProgression");
+            Type enemyType = RuntimeTypeResolver.GetType(
+                "EnemyController");
+            Type deathType = RuntimeTypeResolver.GetType(
+                "EnemyDeathEvent");
+            Type damageType = RuntimeTypeResolver.GetType("DamageInfo");
             var player = new GameObject("Player");
             var childSource = new GameObject("Weapon Source");
             var outsider = new GameObject("Environment Source");
@@ -228,12 +228,12 @@ namespace FPS.Tests.PlayMode
             yield return SceneManager.LoadSceneAsync(
                 CityNewScene,
                 LoadSceneMode.Single);
-            Type directorType = Type.GetType(
-                "WaveDirector, Assembly-CSharp");
-            Type progressionType = Type.GetType(
-                "PlayerRunProgression, Assembly-CSharp");
-            Type hudType = Type.GetType(
-                "UnifiedGameHud, Assembly-CSharp");
+            Type directorType = RuntimeTypeResolver.GetType(
+                "WaveDirector");
+            Type progressionType = RuntimeTypeResolver.GetType(
+                "PlayerRunProgression");
+            Type hudType = RuntimeTypeResolver.GetType(
+                "UnifiedGameHud");
             Component director = null;
             Component progression = null;
             Component hud = null;
@@ -266,10 +266,10 @@ namespace FPS.Tests.PlayMode
             Component enemy = GetFirstActiveEnemy(directorType, director);
             Assert.That(enemy, Is.Not.Null);
             Component health = enemy.GetComponent(
-                Type.GetType("Health, Assembly-CSharp"));
+                RuntimeTypeResolver.GetType("Health"));
             Type healthType = health.GetType();
-            Type damageType = Type.GetType("DamageInfo, Assembly-CSharp");
-            Type kindType = Type.GetType("DamageType, Assembly-CSharp");
+            Type damageType = RuntimeTypeResolver.GetType("DamageInfo");
+            Type kindType = RuntimeTypeResolver.GetType("DamageType");
             float maxHealth = (float)healthType.GetProperty("MaxHealth")
                 .GetValue(health);
             object lethal = Activator.CreateInstance(
@@ -337,14 +337,14 @@ namespace FPS.Tests.PlayMode
             yield return SceneManager.LoadSceneAsync(
                 CityNewScene,
                 LoadSceneMode.Single);
-            Type directorType = Type.GetType(
-                "WaveDirector, Assembly-CSharp");
-            Type progressionType = Type.GetType(
-                "PlayerRunProgression, Assembly-CSharp");
-            Type missionType = Type.GetType(
-                "CityNewMissionController, Assembly-CSharp");
-            Type healthType = Type.GetType("Health, Assembly-CSharp");
-            Type damageType = Type.GetType("DamageInfo, Assembly-CSharp");
+            Type directorType = RuntimeTypeResolver.GetType(
+                "WaveDirector");
+            Type progressionType = RuntimeTypeResolver.GetType(
+                "PlayerRunProgression");
+            Type missionType = RuntimeTypeResolver.GetType(
+                "CityNewMissionController");
+            Type healthType = RuntimeTypeResolver.GetType("Health");
+            Type damageType = RuntimeTypeResolver.GetType("DamageInfo");
             Component oldProgression = null;
             Component mission = null;
             Component director = null;
@@ -455,8 +455,8 @@ namespace FPS.Tests.PlayMode
         private static (Type type, object state) CreateState(
             params int[] thresholds)
         {
-            Type type = Type.GetType(
-                "RunExperienceState, Assembly-CSharp");
+            Type type = RuntimeTypeResolver.GetType(
+                "RunExperienceState");
             object state = Activator.CreateInstance(
                 type,
                 new object[] { thresholds });

@@ -22,14 +22,14 @@ namespace FPS.Tests.PlayMode
         [Test]
         public void WeaponEffectsAggregateInAStableOrderIndependentSnapshot()
         {
-            Type definitionType = Type.GetType(
-                "UpgradeDefinition, Assembly-CSharp");
-            Type rarityType = Type.GetType(
-                "UpgradeRarity, Assembly-CSharp");
-            Type effectType = Type.GetType(
-                "UpgradeEffectType, Assembly-CSharp");
-            Type stateType = Type.GetType(
-                "RunUpgradeState, Assembly-CSharp");
+            Type definitionType = RuntimeTypeResolver.GetType(
+                "UpgradeDefinition");
+            Type rarityType = RuntimeTypeResolver.GetType(
+                "UpgradeRarity");
+            Type effectType = RuntimeTypeResolver.GetType(
+                "UpgradeEffectType");
+            Type stateType = RuntimeTypeResolver.GetType(
+                "RunUpgradeState");
             string[] effects =
             {
                 "WeaponDamage",
@@ -118,14 +118,14 @@ namespace FPS.Tests.PlayMode
         [Test]
         public void SameAndDifferentUpgradesStackUntilTheirOwnMaximumLevels()
         {
-            Type definitionType = Type.GetType(
-                "UpgradeDefinition, Assembly-CSharp");
-            Type rarityType = Type.GetType(
-                "UpgradeRarity, Assembly-CSharp");
-            Type effectType = Type.GetType(
-                "UpgradeEffectType, Assembly-CSharp");
-            Type stateType = Type.GetType(
-                "RunUpgradeState, Assembly-CSharp");
+            Type definitionType = RuntimeTypeResolver.GetType(
+                "UpgradeDefinition");
+            Type rarityType = RuntimeTypeResolver.GetType(
+                "UpgradeRarity");
+            Type effectType = RuntimeTypeResolver.GetType(
+                "UpgradeEffectType");
+            Type stateType = RuntimeTypeResolver.GetType(
+                "RunUpgradeState");
             ScriptableObject rapid = ScriptableObject.CreateInstance(
                 definitionType);
             ScriptableObject tuned = ScriptableObject.CreateInstance(
@@ -183,10 +183,10 @@ namespace FPS.Tests.PlayMode
         [Test]
         public void RuntimeStatsApplyTheSameFormulaToEveryWeaponBaseValue()
         {
-            Type statsType = Type.GetType(
-                "PlayerRuntimeCombatStats, Assembly-CSharp");
-            Type modifiersType = Type.GetType(
-                "WeaponRuntimeModifiers, Assembly-CSharp");
+            Type statsType = RuntimeTypeResolver.GetType(
+                "PlayerRuntimeCombatStats");
+            Type modifiersType = RuntimeTypeResolver.GetType(
+                "WeaponRuntimeModifiers");
             var player = new GameObject("Runtime Stats");
 
             try
@@ -253,10 +253,10 @@ namespace FPS.Tests.PlayMode
         [Test]
         public void DefaultModifierInputIsNormalizedToFiniteValues()
         {
-            Type statsType = Type.GetType(
-                "PlayerRuntimeCombatStats, Assembly-CSharp");
-            Type modifiersType = Type.GetType(
-                "WeaponRuntimeModifiers, Assembly-CSharp");
+            Type statsType = RuntimeTypeResolver.GetType(
+                "PlayerRuntimeCombatStats");
+            Type modifiersType = RuntimeTypeResolver.GetType(
+                "WeaponRuntimeModifiers");
             var player = new GameObject("Normalized Runtime Stats");
 
             try
@@ -294,8 +294,8 @@ namespace FPS.Tests.PlayMode
         [Test]
         public void MagazineGrowthPreservesSpentRoundsAndActiveReloadProgress()
         {
-            Type ammoType = Type.GetType(
-                "WeaponAmmoState, Assembly-CSharp");
+            Type ammoType = RuntimeTypeResolver.GetType(
+                "WeaponAmmoState");
             object ammo = Activator.CreateInstance(ammoType, 30, 90);
             var consume = ammoType.GetMethod("TryConsumeRound");
 
@@ -363,14 +363,14 @@ namespace FPS.Tests.PlayMode
                 yield return null;
             }
 
-            Type combatType = Type.GetType(
-                "PlayerCombatController, Assembly-CSharp");
-            Type statsType = Type.GetType(
-                "PlayerRuntimeCombatStats, Assembly-CSharp");
-            Type modifiersType = Type.GetType(
-                "WeaponRuntimeModifiers, Assembly-CSharp");
-            Type weaponType = Type.GetType(
-                "WeaponController, Assembly-CSharp");
+            Type combatType = RuntimeTypeResolver.GetType(
+                "PlayerCombatController");
+            Type statsType = RuntimeTypeResolver.GetType(
+                "PlayerRuntimeCombatStats");
+            Type modifiersType = RuntimeTypeResolver.GetType(
+                "WeaponRuntimeModifiers");
+            Type weaponType = RuntimeTypeResolver.GetType(
+                "WeaponController");
             Component combat = (Component)UnityEngine.Object
                 .FindAnyObjectByType(combatType);
             Component stats = combat.GetComponent(statsType);
@@ -456,8 +456,8 @@ namespace FPS.Tests.PlayMode
                 yield return null;
             }
 
-            Type controllerType = Type.GetType(
-                "PlayerUpgradeController, Assembly-CSharp");
+            Type controllerType = RuntimeTypeResolver.GetType(
+                "PlayerUpgradeController");
             Component controller = (Component)UnityEngine.Object
                 .FindAnyObjectByType(controllerType);
             IEnumerable catalog = (IEnumerable)controllerType
@@ -509,14 +509,14 @@ namespace FPS.Tests.PlayMode
                 yield return null;
             }
 
-            Type controllerType = Type.GetType(
-                "PlayerUpgradeController, Assembly-CSharp");
-            Type definitionType = Type.GetType(
-                "UpgradeDefinition, Assembly-CSharp");
-            Type rarityType = Type.GetType(
-                "UpgradeRarity, Assembly-CSharp");
-            Type effectType = Type.GetType(
-                "UpgradeEffectType, Assembly-CSharp");
+            Type controllerType = RuntimeTypeResolver.GetType(
+                "PlayerUpgradeController");
+            Type definitionType = RuntimeTypeResolver.GetType(
+                "UpgradeDefinition");
+            Type rarityType = RuntimeTypeResolver.GetType(
+                "UpgradeRarity");
+            Type effectType = RuntimeTypeResolver.GetType(
+                "UpgradeEffectType");
             Component controller = (Component)UnityEngine.Object
                 .FindAnyObjectByType(controllerType);
             ScriptableObject definition = ScriptableObject.CreateInstance(
@@ -559,7 +559,7 @@ namespace FPS.Tests.PlayMode
                 Assert.That(
                     ReadText(card, "Stack"),
                     Does.Contain("1 / 1"));
-                Type textType = Type.GetType(
+                Type textType = RuntimeTypeResolver.GetType(
                     "TMPro.TMP_Text, Unity.TextMeshPro");
                 Component effectText = card.Find("Effect")
                     .GetComponent(textType);
@@ -596,16 +596,16 @@ namespace FPS.Tests.PlayMode
                 yield return null;
             }
 
-            Type controllerType = Type.GetType(
-                "PlayerUpgradeController, Assembly-CSharp");
-            Type definitionType = Type.GetType(
-                "UpgradeDefinition, Assembly-CSharp");
-            Type rarityType = Type.GetType(
-                "UpgradeRarity, Assembly-CSharp");
-            Type effectType = Type.GetType(
-                "UpgradeEffectType, Assembly-CSharp");
-            Type combatType = Type.GetType(
-                "PlayerCombatController, Assembly-CSharp");
+            Type controllerType = RuntimeTypeResolver.GetType(
+                "PlayerUpgradeController");
+            Type definitionType = RuntimeTypeResolver.GetType(
+                "UpgradeDefinition");
+            Type rarityType = RuntimeTypeResolver.GetType(
+                "UpgradeRarity");
+            Type effectType = RuntimeTypeResolver.GetType(
+                "UpgradeEffectType");
+            Type combatType = RuntimeTypeResolver.GetType(
+                "PlayerCombatController");
             Component controller = (Component)UnityEngine.Object
                 .FindAnyObjectByType(controllerType);
             Component combat = controller.GetComponent(combatType);
@@ -690,14 +690,14 @@ namespace FPS.Tests.PlayMode
                 yield return null;
             }
 
-            Type upgradeType = Type.GetType(
-                "PlayerUpgradeController, Assembly-CSharp");
-            Type combatType = Type.GetType(
-                "PlayerCombatController, Assembly-CSharp");
-            Type coordinatorType = Type.GetType(
-                "GameplayLockCoordinator, Assembly-CSharp");
-            Type reasonType = Type.GetType(
-                "GameplayLockReason, Assembly-CSharp");
+            Type upgradeType = RuntimeTypeResolver.GetType(
+                "PlayerUpgradeController");
+            Type combatType = RuntimeTypeResolver.GetType(
+                "PlayerCombatController");
+            Type coordinatorType = RuntimeTypeResolver.GetType(
+                "GameplayLockCoordinator");
+            Type reasonType = RuntimeTypeResolver.GetType(
+                "GameplayLockReason");
             Component upgrade = (Component)UnityEngine.Object
                 .FindAnyObjectByType(upgradeType);
             Component combat = upgrade.GetComponent(combatType);
@@ -749,12 +749,12 @@ namespace FPS.Tests.PlayMode
                 yield return null;
             }
 
-            Type combatType = Type.GetType(
-                "PlayerCombatController, Assembly-CSharp");
-            Type statsType = Type.GetType(
-                "PlayerRuntimeCombatStats, Assembly-CSharp");
-            Type modifiersType = Type.GetType(
-                "WeaponRuntimeModifiers, Assembly-CSharp");
+            Type combatType = RuntimeTypeResolver.GetType(
+                "PlayerCombatController");
+            Type statsType = RuntimeTypeResolver.GetType(
+                "PlayerRuntimeCombatStats");
+            Type modifiersType = RuntimeTypeResolver.GetType(
+                "WeaponRuntimeModifiers");
             Component combat = (Component)UnityEngine.Object
                 .FindAnyObjectByType(combatType);
             Component stats = combat.GetComponent(statsType);
@@ -803,10 +803,10 @@ namespace FPS.Tests.PlayMode
                 yield return null;
             }
 
-            Type statsType = Type.GetType(
-                "PlayerRuntimeCombatStats, Assembly-CSharp");
-            Type modifiersType = Type.GetType(
-                "WeaponRuntimeModifiers, Assembly-CSharp");
+            Type statsType = RuntimeTypeResolver.GetType(
+                "PlayerRuntimeCombatStats");
+            Type modifiersType = RuntimeTypeResolver.GetType(
+                "WeaponRuntimeModifiers");
             Component stats = (Component)UnityEngine.Object
                 .FindAnyObjectByType(statsType);
             object modified = Activator.CreateInstance(
@@ -866,7 +866,7 @@ namespace FPS.Tests.PlayMode
 
         private static string ReadText(Transform parent, string childName)
         {
-            Type textType = Type.GetType(
+            Type textType = RuntimeTypeResolver.GetType(
                 "TMPro.TMP_Text, Unity.TextMeshPro");
             Component text = parent.Find(childName).GetComponent(textType);
             return (string)textType.GetProperty("text").GetValue(text);

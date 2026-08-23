@@ -24,10 +24,10 @@ namespace FPS.Tests.PlayMode
         [Test]
         public void InventoryStacksAcrossSlotsAndRejectsOverflowAtomically()
         {
-            Type definitionType = Type.GetType(
-                "ItemDefinition, Assembly-CSharp");
-            Type inventoryType = Type.GetType(
-                "InventoryState, Assembly-CSharp");
+            Type definitionType = RuntimeTypeResolver.GetType(
+                "ItemDefinition");
+            Type inventoryType = RuntimeTypeResolver.GetType(
+                "InventoryState");
             ScriptableObject medkit = CreateItem(
                 definitionType, "medical_kit", 3, 35f);
 
@@ -71,14 +71,14 @@ namespace FPS.Tests.PlayMode
         [Test]
         public void MedicalKitOnlyConsumesAfterSuccessfulHealing()
         {
-            Type definitionType = Type.GetType(
-                "ItemDefinition, Assembly-CSharp");
-            Type inventoryType = Type.GetType(
-                "InventoryState, Assembly-CSharp");
-            Type registryType = Type.GetType(
-                "ItemEffectRegistry, Assembly-CSharp");
-            Type healthType = Type.GetType("Health, Assembly-CSharp");
-            Type damageType = Type.GetType("DamageInfo, Assembly-CSharp");
+            Type definitionType = RuntimeTypeResolver.GetType(
+                "ItemDefinition");
+            Type inventoryType = RuntimeTypeResolver.GetType(
+                "InventoryState");
+            Type registryType = RuntimeTypeResolver.GetType(
+                "ItemEffectRegistry");
+            Type healthType = RuntimeTypeResolver.GetType("Health");
+            Type damageType = RuntimeTypeResolver.GetType("DamageInfo");
             ScriptableObject medkit = CreateItem(
                 definitionType, "medical_kit", 5, 35f);
             GameObject player = new GameObject("Inventory Player");
@@ -125,14 +125,14 @@ namespace FPS.Tests.PlayMode
         [Test]
         public void WorldPickupSettlesOnceAndRemainsWhenInventoryIsFull()
         {
-            Type definitionType = Type.GetType(
-                "ItemDefinition, Assembly-CSharp");
-            Type inventoryType = Type.GetType(
-                "InventoryState, Assembly-CSharp");
-            Type controllerType = Type.GetType(
-                "PlayerInventoryController, Assembly-CSharp");
-            Type pickupType = Type.GetType(
-                "WorldItemPickup, Assembly-CSharp");
+            Type definitionType = RuntimeTypeResolver.GetType(
+                "ItemDefinition");
+            Type inventoryType = RuntimeTypeResolver.GetType(
+                "InventoryState");
+            Type controllerType = RuntimeTypeResolver.GetType(
+                "PlayerInventoryController");
+            Type pickupType = RuntimeTypeResolver.GetType(
+                "WorldItemPickup");
             ScriptableObject medkit = CreateItem(
                 definitionType, "medical_kit", 1, 35f);
             GameObject player = new GameObject("Pickup Player");
@@ -186,8 +186,8 @@ namespace FPS.Tests.PlayMode
         [Test]
         public void PausedPerceptionCannotTurnAlertIntoSearch()
         {
-            Type awarenessType = Type.GetType(
-                "EnemyAwarenessStateMachine, Assembly-CSharp");
+            Type awarenessType = RuntimeTypeResolver.GetType(
+                "EnemyAwarenessStateMachine");
             object awareness = Activator.CreateInstance(awarenessType);
             awarenessType.GetMethod("Configure").Invoke(
                 awareness, new object[] { 1f, 0.5f, 4f });
@@ -212,28 +212,28 @@ namespace FPS.Tests.PlayMode
         {
             LogAssert.ignoreFailingMessages = true;
             yield return LoadCityNew();
-            Type controllerType = Type.GetType(
-                "PlayerInventoryController, Assembly-CSharp");
-            Type bootstrapType = Type.GetType(
-                "CityNewInventoryBootstrap, Assembly-CSharp");
-            Type pickupType = Type.GetType(
-                "WorldItemPickup, Assembly-CSharp");
-            Type inventoryType = Type.GetType(
-                "InventoryState, Assembly-CSharp");
-            Type viewType = Type.GetType("InventoryView, Assembly-CSharp");
-            Type inputType = Type.GetType("PlayerInputReader, Assembly-CSharp");
-            Type hudType = Type.GetType("UnifiedGameHud, Assembly-CSharp");
-            Type playerType = Type.GetType("PlayerController, Assembly-CSharp");
-            Type combatType = Type.GetType(
-                "PlayerCombatController, Assembly-CSharp");
-            Type schedulerType = Type.GetType(
-                "EnemyPerceptionScheduler, Assembly-CSharp");
-            Type healthType = Type.GetType("Health, Assembly-CSharp");
-            Type damageType = Type.GetType("DamageInfo, Assembly-CSharp");
-            Type locksType = Type.GetType(
-                "GameplayLockCoordinator, Assembly-CSharp");
-            Type reasonType = Type.GetType(
-                "GameplayLockReason, Assembly-CSharp");
+            Type controllerType = RuntimeTypeResolver.GetType(
+                "PlayerInventoryController");
+            Type bootstrapType = RuntimeTypeResolver.GetType(
+                "CityNewInventoryBootstrap");
+            Type pickupType = RuntimeTypeResolver.GetType(
+                "WorldItemPickup");
+            Type inventoryType = RuntimeTypeResolver.GetType(
+                "InventoryState");
+            Type viewType = RuntimeTypeResolver.GetType("InventoryView");
+            Type inputType = RuntimeTypeResolver.GetType("PlayerInputReader");
+            Type hudType = RuntimeTypeResolver.GetType("UnifiedGameHud");
+            Type playerType = RuntimeTypeResolver.GetType("PlayerController");
+            Type combatType = RuntimeTypeResolver.GetType(
+                "PlayerCombatController");
+            Type schedulerType = RuntimeTypeResolver.GetType(
+                "EnemyPerceptionScheduler");
+            Type healthType = RuntimeTypeResolver.GetType("Health");
+            Type damageType = RuntimeTypeResolver.GetType("DamageInfo");
+            Type locksType = RuntimeTypeResolver.GetType(
+                "GameplayLockCoordinator");
+            Type reasonType = RuntimeTypeResolver.GetType(
+                "GameplayLockReason");
             Component controller = (Component)UnityEngine.Object
                 .FindAnyObjectByType(controllerType);
             Component bootstrap = controller.GetComponent(bootstrapType);
@@ -341,8 +341,8 @@ namespace FPS.Tests.PlayMode
             int maximumStack,
             float amount)
         {
-            Type itemType = Type.GetType("ItemType, Assembly-CSharp");
-            Type effectType = Type.GetType("ItemEffectType, Assembly-CSharp");
+            Type itemType = RuntimeTypeResolver.GetType("ItemType");
+            Type effectType = RuntimeTypeResolver.GetType("ItemEffectType");
             ScriptableObject definition = ScriptableObject.CreateInstance(
                 definitionType);
             definitionType.GetMethod("Configure").Invoke(

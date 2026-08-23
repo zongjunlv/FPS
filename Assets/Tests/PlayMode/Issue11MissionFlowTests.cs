@@ -20,8 +20,8 @@ namespace FPS.Tests.PlayMode
         [Test]
         public void ExtractionRequiresTerminalAndAllTargets()
         {
-            Type flowType = Type.GetType(
-                "MissionFlowStateMachine, Assembly-CSharp");
+            Type flowType = RuntimeTypeResolver.GetType(
+                "MissionFlowStateMachine");
             Assert.That(
                 flowType,
                 Is.Not.Null,
@@ -72,8 +72,8 @@ namespace FPS.Tests.PlayMode
         [Test]
         public void EarlyTargetEliminationDoesNotSoftLockMission()
         {
-            Type flowType = Type.GetType(
-                "MissionFlowStateMachine, Assembly-CSharp");
+            Type flowType = RuntimeTypeResolver.GetType(
+                "MissionFlowStateMachine");
             object flow = Activator.CreateInstance(flowType);
             flowType.GetMethod("Configure")
                 .Invoke(flow, new object[] { 1 });
@@ -102,8 +102,8 @@ namespace FPS.Tests.PlayMode
         [Test]
         public void TerminalStaysLockedUntilEnemyObjectiveIsComplete()
         {
-            Type terminalType = Type.GetType(
-                "TerminalInteractable, Assembly-CSharp");
+            Type terminalType = RuntimeTypeResolver.GetType(
+                "TerminalInteractable");
             GameObject terminalObject = new GameObject("Locked Terminal");
             GameObject actor = new GameObject("Terminal Actor");
 
@@ -117,13 +117,12 @@ namespace FPS.Tests.PlayMode
                     {
                         0.05f,
                         Enum.Parse(
-                            Type.GetType(
-                                "TerminalInterruptionProgressMode, " +
-                                "Assembly-CSharp"),
+                            RuntimeTypeResolver.GetType(
+                                "TerminalInterruptionProgressMode"),
                             "Reset"),
                         Enum.Parse(
-                            Type.GetType(
-                                "TerminalCompletionMode, Assembly-CSharp"),
+                            RuntimeTypeResolver.GetType(
+                                "TerminalCompletionMode"),
                             "Silent"),
                         20f,
                         1f
@@ -163,18 +162,18 @@ namespace FPS.Tests.PlayMode
         [Test]
         public void StatisticsCountCombatActionsWithCorrectSemantics()
         {
-            Type statisticsType = Type.GetType(
-                "MissionRunStatistics, Assembly-CSharp");
-            Type shotType = Type.GetType(
-                "ShotResult, Assembly-CSharp");
-            Type damageType = Type.GetType(
-                "DamageResult, Assembly-CSharp");
-            Type regionType = Type.GetType(
-                "HitRegion, Assembly-CSharp");
-            Type surfaceType = Type.GetType(
-                "SurfaceType, Assembly-CSharp");
-            Type enemyType = Type.GetType(
-                "EnemyController, Assembly-CSharp");
+            Type statisticsType = RuntimeTypeResolver.GetType(
+                "MissionRunStatistics");
+            Type shotType = RuntimeTypeResolver.GetType(
+                "ShotResult");
+            Type damageType = RuntimeTypeResolver.GetType(
+                "DamageResult");
+            Type regionType = RuntimeTypeResolver.GetType(
+                "HitRegion");
+            Type surfaceType = RuntimeTypeResolver.GetType(
+                "SurfaceType");
+            Type enemyType = RuntimeTypeResolver.GetType(
+                "EnemyController");
 
             Assert.That(statisticsType, Is.Not.Null);
             object statistics = Activator.CreateInstance(statisticsType);
@@ -269,14 +268,14 @@ namespace FPS.Tests.PlayMode
             yield return null;
             yield return null;
 
-            Type missionType = Type.GetType(
-                "CityNewMissionController, Assembly-CSharp");
-            Type terminalType = Type.GetType(
-                "TerminalInteractable, Assembly-CSharp");
-            Type healthType = Type.GetType(
-                "Health, Assembly-CSharp");
-            Type damageInfoType = Type.GetType(
-                "DamageInfo, Assembly-CSharp");
+            Type missionType = RuntimeTypeResolver.GetType(
+                "CityNewMissionController");
+            Type terminalType = RuntimeTypeResolver.GetType(
+                "TerminalInteractable");
+            Type healthType = RuntimeTypeResolver.GetType(
+                "Health");
+            Type damageInfoType = RuntimeTypeResolver.GetType(
+                "DamageInfo");
             Component playerController =
                 FindFirstComponent("PlayerController");
             GameObject player = playerController.gameObject;
@@ -300,13 +299,12 @@ namespace FPS.Tests.PlayMode
                 {
                     0.05f,
                     Enum.Parse(
-                        Type.GetType(
-                            "TerminalInterruptionProgressMode, " +
-                            "Assembly-CSharp"),
+                        RuntimeTypeResolver.GetType(
+                            "TerminalInterruptionProgressMode"),
                         "Reset"),
                     Enum.Parse(
-                        Type.GetType(
-                            "TerminalCompletionMode, Assembly-CSharp"),
+                        RuntimeTypeResolver.GetType(
+                            "TerminalCompletionMode"),
                         "Silent"),
                     32f,
                     1f
@@ -326,12 +324,12 @@ namespace FPS.Tests.PlayMode
                     .ToString(),
                 Is.EqualTo("EliminateTargets"));
 
-            Type directorType = Type.GetType(
-                "WaveDirector, Assembly-CSharp");
+            Type directorType = RuntimeTypeResolver.GetType(
+                "WaveDirector");
             Component director = (Component)UnityEngine.Object
                 .FindAnyObjectByType(directorType);
-            Type upgradeType = Type.GetType(
-                "PlayerUpgradeController, Assembly-CSharp");
+            Type upgradeType = RuntimeTypeResolver.GetType(
+                "PlayerUpgradeController");
             Component upgrades = player.GetComponent(upgradeType);
             Assert.That(director, Is.Not.Null);
             float deadline = Time.realtimeSinceStartup + 30f;
@@ -453,8 +451,8 @@ namespace FPS.Tests.PlayMode
             yield return null;
             yield return null;
 
-            Type missionType = Type.GetType(
-                "CityNewMissionController, Assembly-CSharp");
+            Type missionType = RuntimeTypeResolver.GetType(
+                "CityNewMissionController");
             Component playerController =
                 FindFirstComponent("PlayerController");
             Component mission =
@@ -480,8 +478,8 @@ namespace FPS.Tests.PlayMode
                     .GetValue(mission),
                 Is.EqualTo(true));
 
-            Type damageInfoType = Type.GetType(
-                "DamageInfo, Assembly-CSharp");
+            Type damageInfoType = RuntimeTypeResolver.GetType(
+                "DamageInfo");
             object lethalDamage = Activator.CreateInstance(
                 damageInfoType,
                 new object[]
@@ -521,8 +519,8 @@ namespace FPS.Tests.PlayMode
             yield return null;
             yield return null;
 
-            Type missionType = Type.GetType(
-                "CityNewMissionController, Assembly-CSharp");
+            Type missionType = RuntimeTypeResolver.GetType(
+                "CityNewMissionController");
             Component playerController =
                 FindFirstComponent("PlayerController");
             Component mission =

@@ -505,43 +505,26 @@ public sealed class Issue13PerformanceBenchmark : MonoBehaviour
 
     private static long ReadPerceptionChecks()
     {
-        Type type = Type.GetType(
-            "EnemyPerceptionScheduler, Assembly-CSharp");
-        object instance = type?.GetProperty(
-                "Instance",
-                BindingFlags.Public | BindingFlags.Static)
-            ?.GetValue(null);
-        object count = instance != null
-            ? type.GetProperty("TotalCheckCount")?.GetValue(instance)
-            : null;
-        return count is long value ? value : -1L;
+        EnemyPerceptionScheduler scheduler =
+            EnemyPerceptionScheduler.Instance;
+        return scheduler != null
+            ? scheduler.TotalCheckCount
+            : -1L;
     }
 
     private static string ReadPoolSummary()
     {
-        Type type = Type.GetType(
-            "CombatEffectPool, Assembly-CSharp");
-
-        if (type == null)
-        {
-            return "not available";
-        }
-
-        Component pool =
-            FindFirstObjectByType(type) as Component;
+        CombatEffectPool pool =
+            FindFirstObjectByType<CombatEffectPool>();
 
         if (pool == null)
         {
             return "not active";
         }
 
-        object concrete = type.GetProperty("ConcreteCapacity")
-            ?.GetValue(pool);
-        object metal = type.GetProperty("MetalCapacity")
-            ?.GetValue(pool);
-        object audio = type.GetProperty("AudioCapacityValue")
-            ?.GetValue(pool);
-        return $"concrete={concrete}, metal={metal}, audio={audio}";
+        return $"concrete={pool.ConcreteCapacity}, " +
+               $"metal={pool.MetalCapacity}, " +
+               $"audio={pool.AudioCapacityValue}";
     }
 
     private static void FailAndQuit(string reason)

@@ -360,7 +360,7 @@ namespace FPS.Tests.PlayMode
             target.transform.position = aimRay.GetPoint(3f);
 
             System.Type healthType =
-                System.Type.GetType("Health, Assembly-CSharp");
+                RuntimeTypeResolver.GetType("Health");
             Component health = target.AddComponent(healthType);
             healthType.GetMethod("Initialize", new[] { typeof(float) })
                 .Invoke(health, new object[] { 100f });
@@ -419,7 +419,7 @@ namespace FPS.Tests.PlayMode
             target.transform.position = aimRay.GetPoint(5f);
             target.transform.localScale = Vector3.one * 0.5f;
             System.Type healthType =
-                System.Type.GetType("Health, Assembly-CSharp");
+                RuntimeTypeResolver.GetType("Health");
             Component health = target.AddComponent(healthType);
             healthType.GetMethod("Initialize", new[] { typeof(float) })
                 .Invoke(health, new object[] { 100f });
@@ -498,8 +498,8 @@ namespace FPS.Tests.PlayMode
                 "Spider must use the common Health module.");
 
             System.Type hitboxType =
-                System.Type.GetType(
-                    "DamageHitbox, Assembly-CSharp");
+                RuntimeTypeResolver.GetType(
+                    "DamageHitbox");
             Component[] hitboxes =
                 enemy.GetComponentsInChildren(
                     hitboxType,
@@ -526,8 +526,8 @@ namespace FPS.Tests.PlayMode
             Assert.That(hasHead, Is.True);
 
             object lethalDamage = System.Activator.CreateInstance(
-                System.Type.GetType(
-                    "DamageInfo, Assembly-CSharp"),
+                RuntimeTypeResolver.GetType(
+                    "DamageInfo"),
                 new object[]
                 {
                     10000f,
@@ -550,8 +550,8 @@ namespace FPS.Tests.PlayMode
                 Is.Not.Null,
                 "Spider death must spawn its explosion effect.");
             Component deathEffectController = deathEffect.GetComponent(
-                System.Type.GetType(
-                    "EnemyDeathEffectController, Assembly-CSharp"));
+                RuntimeTypeResolver.GetType(
+                    "EnemyDeathEffectController"));
             Assert.That(deathEffectController, Is.Not.Null);
             Assert.That(
                 (float)deathEffectController.GetType()
@@ -603,7 +603,7 @@ namespace FPS.Tests.PlayMode
         public void RuntimeAmmoStatePartiallyReloadsWithoutChangingCapacity()
         {
             System.Type ammoStateType =
-                System.Type.GetType("WeaponAmmoState, Assembly-CSharp");
+                RuntimeTypeResolver.GetType("WeaponAmmoState");
 
             Assert.That(
                 ammoStateType,
@@ -648,7 +648,7 @@ namespace FPS.Tests.PlayMode
         public void RuntimeAmmoStateUsesOnlyAvailableReserve()
         {
             System.Type ammoStateType =
-                System.Type.GetType("WeaponAmmoState, Assembly-CSharp");
+                RuntimeTypeResolver.GetType("WeaponAmmoState");
             object ammoState = System.Activator.CreateInstance(
                 ammoStateType,
                 new object[] { 3, 2 });
@@ -697,7 +697,7 @@ namespace FPS.Tests.PlayMode
         public void CancellingReloadDoesNotTransferAmmo()
         {
             System.Type ammoStateType =
-                System.Type.GetType("WeaponAmmoState, Assembly-CSharp");
+                RuntimeTypeResolver.GetType("WeaponAmmoState");
             object ammoState = System.Activator.CreateInstance(
                 ammoStateType,
                 new object[] { 30, 90 });
@@ -734,7 +734,7 @@ namespace FPS.Tests.PlayMode
         public void WeaponSwitchStateStartsCompletesAndInterrupts()
         {
             System.Type switchStateType =
-                System.Type.GetType("WeaponSwitchState, Assembly-CSharp");
+                RuntimeTypeResolver.GetType("WeaponSwitchState");
 
             Assert.That(
                 switchStateType,
@@ -1579,8 +1579,8 @@ namespace FPS.Tests.PlayMode
             MethodInfo tryFire = pistol.GetType().GetMethod("TryFire");
             Component muzzleFeedback =
                 pistol.GetComponentInChildren(
-                    System.Type.GetType(
-                        "MuzzleFlashController, Assembly-CSharp"),
+                    RuntimeTypeResolver.GetType(
+                        "MuzzleFlashController"),
                     true);
             PropertyInfo playCount =
                 muzzleFeedback.GetType().GetProperty("PlayCount");
@@ -1632,8 +1632,8 @@ namespace FPS.Tests.PlayMode
                 Is.EqualTo(100f));
             Assert.That(
                 player.GetComponent(
-                    System.Type.GetType(
-                        "PlayerVitalsHudPresenter, Assembly-CSharp")),
+                    RuntimeTypeResolver.GetType(
+                        "PlayerVitalsHudPresenter")),
                 Is.Not.Null);
             Assert.That(
                 player.GetComponentsInChildren<AudioListener>(true).Length,

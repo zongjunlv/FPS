@@ -19,10 +19,10 @@ namespace FPS.Tests.PlayMode
         [Test]
         public void ReceiverAcceptsOnlyFreshInRangeNewIntel()
         {
-            Type alertType = Type.GetType(
-                "EnemySquadAlert, Assembly-CSharp");
-            Type memoryType = Type.GetType(
-                "EnemyAlertMemory, Assembly-CSharp");
+            Type alertType = RuntimeTypeResolver.GetType(
+                "EnemySquadAlert");
+            Type memoryType = RuntimeTypeResolver.GetType(
+                "EnemyAlertMemory");
             Assert.That(alertType, Is.Not.Null);
             Assert.That(memoryType, Is.Not.Null);
             GameObject source = new GameObject("Alert Source");
@@ -156,10 +156,10 @@ namespace FPS.Tests.PlayMode
         [Test]
         public void CoordinatorFiltersRangeAndAppliesSourceCooldown()
         {
-            Type coordinatorType = Type.GetType(
-                "EnemySquadCoordinator, Assembly-CSharp");
-            Type perceptionType = Type.GetType(
-                "EnemyPerceptionController, Assembly-CSharp");
+            Type coordinatorType = RuntimeTypeResolver.GetType(
+                "EnemySquadCoordinator");
+            Type perceptionType = RuntimeTypeResolver.GetType(
+                "EnemyPerceptionController");
             Assert.That(coordinatorType, Is.Not.Null);
             GameObject coordinatorObject =
                 new GameObject("Test Squad Coordinator");
@@ -279,8 +279,8 @@ namespace FPS.Tests.PlayMode
         [Test]
         public void SharedIntelConfidenceSelectsSearchOrAlertState()
         {
-            Type awarenessType = Type.GetType(
-                "EnemyAwarenessStateMachine, Assembly-CSharp");
+            Type awarenessType = RuntimeTypeResolver.GetType(
+                "EnemyAwarenessStateMachine");
             Assert.That(awarenessType, Is.Not.Null);
             object lowConfidenceReceiver =
                 Activator.CreateInstance(awarenessType);
@@ -316,14 +316,14 @@ namespace FPS.Tests.PlayMode
         }
 
         [Test]
-        public void BroadcastKeepsRangeButDoesNotDrawRelationLines()
+        public void BroadcastKeepsDebugDataWithoutWorldVisuals()
         {
-            Type coordinatorType = Type.GetType(
-                "EnemySquadCoordinator, Assembly-CSharp");
-            Type perceptionType = Type.GetType(
-                "EnemyPerceptionController, Assembly-CSharp");
-            Type debugViewType = Type.GetType(
-                "EnemySquadAlertDebugView, Assembly-CSharp");
+            Type coordinatorType = RuntimeTypeResolver.GetType(
+                "EnemySquadCoordinator");
+            Type perceptionType = RuntimeTypeResolver.GetType(
+                "EnemyPerceptionController");
+            Type debugViewType = RuntimeTypeResolver.GetType(
+                "EnemySquadAlertDebugView");
             GameObject coordinatorObject =
                 new GameObject("Debug Coordinator");
             GameObject sourceObject =
@@ -380,8 +380,8 @@ namespace FPS.Tests.PlayMode
                     coordinatorObject
                         .GetComponentsInChildren<LineRenderer>(true)
                         .Length,
-                    Is.EqualTo(1),
-                    "只保留警戒范围圈，不得绘制怪物之间的连接线。");
+                    Is.EqualTo(0),
+                    "警报调试数据不得生成连接线或侦查范围圈。");
             }
             finally
             {
@@ -399,12 +399,12 @@ namespace FPS.Tests.PlayMode
                 LoadSceneMode.Single);
             yield return null;
 
-            Type perceptionType = Type.GetType(
-                "EnemyPerceptionController, Assembly-CSharp");
-            Type navigationType = Type.GetType(
-                "EnemyNavigationController, Assembly-CSharp");
-            Type coordinatorType = Type.GetType(
-                "EnemySquadCoordinator, Assembly-CSharp");
+            Type perceptionType = RuntimeTypeResolver.GetType(
+                "EnemyPerceptionController");
+            Type navigationType = RuntimeTypeResolver.GetType(
+                "EnemyNavigationController");
+            Type coordinatorType = RuntimeTypeResolver.GetType(
+                "EnemySquadCoordinator");
             Component[] perceptions = Array.Empty<Component>();
             float spawnDeadline = Time.realtimeSinceStartup + 15f;
 

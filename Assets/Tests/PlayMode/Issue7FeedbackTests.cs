@@ -12,16 +12,16 @@ namespace FPS.Tests.PlayMode
         [UnityTest]
         public IEnumerator DamageTargetImpactFollowsHitObjectAndReturnsWhenDisabled()
         {
-            Type poolType = Type.GetType(
-                "CombatEffectPool, Assembly-CSharp");
-            Type shotResultType = Type.GetType(
-                "ShotResult, Assembly-CSharp");
-            Type damageResultType = Type.GetType(
-                "DamageResult, Assembly-CSharp");
-            Type hitRegionType = Type.GetType(
-                "HitRegion, Assembly-CSharp");
-            Type surfaceType = Type.GetType(
-                "SurfaceType, Assembly-CSharp");
+            Type poolType = RuntimeTypeResolver.GetType(
+                "CombatEffectPool");
+            Type shotResultType = RuntimeTypeResolver.GetType(
+                "ShotResult");
+            Type damageResultType = RuntimeTypeResolver.GetType(
+                "DamageResult");
+            Type hitRegionType = RuntimeTypeResolver.GetType(
+                "HitRegion");
+            Type surfaceType = RuntimeTypeResolver.GetType(
+                "SurfaceType");
             GameObject host = new GameObject("Impact Pool Host");
             GameObject target = new GameObject("Moving Damage Target");
             GameObject impactPrefab = new GameObject("Impact Prefab");
@@ -95,8 +95,8 @@ namespace FPS.Tests.PlayMode
         [UnityTest]
         public IEnumerator CombatFeedbackVisualProfileKeepsBuildShaders()
         {
-            Type profileType = Type.GetType(
-                "CombatFeedbackVisualProfile, Assembly-CSharp");
+            Type profileType = RuntimeTypeResolver.GetType(
+                "CombatFeedbackVisualProfile");
             UnityEngine.Object profile = Resources.Load(
                 "CombatFeedbackVisual",
                 profileType);
@@ -123,11 +123,11 @@ namespace FPS.Tests.PlayMode
         [Test]
         public void HealthReturnsObservableDamageResult()
         {
-            Type healthType = Type.GetType("Health, Assembly-CSharp");
+            Type healthType = RuntimeTypeResolver.GetType("Health");
             Type damageInfoType =
-                Type.GetType("DamageInfo, Assembly-CSharp");
+                RuntimeTypeResolver.GetType("DamageInfo");
             Type damageResultType =
-                Type.GetType("DamageResult, Assembly-CSharp");
+                RuntimeTypeResolver.GetType("DamageResult");
 
             Assert.That(
                 damageResultType,
@@ -176,9 +176,9 @@ namespace FPS.Tests.PlayMode
         [Test]
         public void PlayerArmorAbsorbsDamageBeforeHealth()
         {
-            Type healthType = Type.GetType("Health, Assembly-CSharp");
+            Type healthType = RuntimeTypeResolver.GetType("Health");
             Type damageInfoType =
-                Type.GetType("DamageInfo, Assembly-CSharp");
+                RuntimeTypeResolver.GetType("DamageInfo");
             GameObject player = new GameObject("Armored Player");
 
             try
@@ -225,9 +225,9 @@ namespace FPS.Tests.PlayMode
         [Test]
         public void VitalsHudTracksHealthAndArmor()
         {
-            Type healthType = Type.GetType("Health, Assembly-CSharp");
+            Type healthType = RuntimeTypeResolver.GetType("Health");
             Type hudType =
-                Type.GetType("PlayerVitalsHudPresenter, Assembly-CSharp");
+                RuntimeTypeResolver.GetType("PlayerVitalsHudPresenter");
 
             Assert.That(
                 hudType,
@@ -266,13 +266,13 @@ namespace FPS.Tests.PlayMode
         public void DamageResultClassifiesBodyHeadshotAndKillFeedback()
         {
             Type damageResultType =
-                Type.GetType("DamageResult, Assembly-CSharp");
+                RuntimeTypeResolver.GetType("DamageResult");
             Type hitRegionType =
-                Type.GetType("HitRegion, Assembly-CSharp");
+                RuntimeTypeResolver.GetType("HitRegion");
             Type shotResultType =
-                Type.GetType("ShotResult, Assembly-CSharp");
+                RuntimeTypeResolver.GetType("ShotResult");
             Type surfaceType =
-                Type.GetType("SurfaceType, Assembly-CSharp");
+                RuntimeTypeResolver.GetType("SurfaceType");
 
             object body = CreateShotResult(
                 damageResultType,
@@ -310,7 +310,7 @@ namespace FPS.Tests.PlayMode
         public void WeaponSpreadDistinguishesAdsMovementSprintAndBloom()
         {
             Type spreadType =
-                Type.GetType("WeaponSpreadState, Assembly-CSharp");
+                RuntimeTypeResolver.GetType("WeaponSpreadState");
             object spread = Activator.CreateInstance(spreadType);
             spreadType.GetMethod("Configure").Invoke(
                 spread,
@@ -342,8 +342,8 @@ namespace FPS.Tests.PlayMode
         [Test]
         public void RecoilAccumulatesAcrossContinuousFire()
         {
-            Type recoilType = Type.GetType(
-                "PlayerRecoilController, Assembly-CSharp");
+            Type recoilType = RuntimeTypeResolver.GetType(
+                "PlayerRecoilController");
             GameObject player = new GameObject("Recoil Accumulation");
             GameObject pivot = new GameObject("Recoil Pivot");
             pivot.transform.SetParent(player.transform);
@@ -378,11 +378,11 @@ namespace FPS.Tests.PlayMode
         public void SurfaceDescriptorOverridesFallbackClassification()
         {
             Type descriptorType =
-                Type.GetType("SurfaceDescriptor, Assembly-CSharp");
+                RuntimeTypeResolver.GetType("SurfaceDescriptor");
             Type surfaceType =
-                Type.GetType("SurfaceType, Assembly-CSharp");
+                RuntimeTypeResolver.GetType("SurfaceType");
             Type resolverType =
-                Type.GetType("SurfaceResolver, Assembly-CSharp");
+                RuntimeTypeResolver.GetType("SurfaceResolver");
             GameObject target = GameObject.CreatePrimitive(PrimitiveType.Cube);
 
             try
@@ -410,9 +410,9 @@ namespace FPS.Tests.PlayMode
         public void ConcreteAndMetalUseDistinctImpactStyles()
         {
             Type styleType =
-                Type.GetType("SurfaceImpactStyle, Assembly-CSharp");
+                RuntimeTypeResolver.GetType("SurfaceImpactStyle");
             Type surfaceType =
-                Type.GetType("SurfaceType, Assembly-CSharp");
+                RuntimeTypeResolver.GetType("SurfaceType");
 
             Assert.That(
                 styleType,
@@ -457,14 +457,14 @@ namespace FPS.Tests.PlayMode
         [Test]
         public void MetalImpactDoesNotReuseConcreteVisual()
         {
-            Type controllerType = Type.GetType(
-                "WeaponImpactFeedbackController, Assembly-CSharp");
+            Type controllerType = RuntimeTypeResolver.GetType(
+                "WeaponImpactFeedbackController");
             Type shotResultType =
-                Type.GetType("ShotResult, Assembly-CSharp");
+                RuntimeTypeResolver.GetType("ShotResult");
             Type damageResultType =
-                Type.GetType("DamageResult, Assembly-CSharp");
+                RuntimeTypeResolver.GetType("DamageResult");
             Type surfaceType =
-                Type.GetType("SurfaceType, Assembly-CSharp");
+                RuntimeTypeResolver.GetType("SurfaceType");
             GameObject host = new GameObject("Impact Feedback Test");
 
             try
@@ -517,9 +517,9 @@ namespace FPS.Tests.PlayMode
         public void CrosshairShowsDistinctFeedbackAndDynamicGap()
         {
             Type crosshairType =
-                Type.GetType("PlayerCrosshairPresenter, Assembly-CSharp");
+                RuntimeTypeResolver.GetType("PlayerCrosshairPresenter");
             Type feedbackType =
-                Type.GetType("HitFeedbackKind, Assembly-CSharp");
+                RuntimeTypeResolver.GetType("HitFeedbackKind");
             GameObject player = new GameObject("Crosshair Test");
 
             try
@@ -561,8 +561,8 @@ namespace FPS.Tests.PlayMode
         [Test]
         public void CombatFeedbackAudioProfileContainsRequiredClips()
         {
-            Type profileType = Type.GetType(
-                "CombatFeedbackAudioProfile, Assembly-CSharp");
+            Type profileType = RuntimeTypeResolver.GetType(
+                "CombatFeedbackAudioProfile");
             UnityEngine.Object profile = Resources.Load(
                 "CombatFeedbackAudio",
                 profileType);
@@ -582,11 +582,11 @@ namespace FPS.Tests.PlayMode
         [UnityTest]
         public IEnumerator PlayerDamageTriggersDedicatedFeedback()
         {
-            Type feedbackType = Type.GetType(
-                "PlayerCombatFeedbackController, Assembly-CSharp");
-            Type healthType = Type.GetType("Health, Assembly-CSharp");
+            Type feedbackType = RuntimeTypeResolver.GetType(
+                "PlayerCombatFeedbackController");
+            Type healthType = RuntimeTypeResolver.GetType("Health");
             Type damageInfoType =
-                Type.GetType("DamageInfo, Assembly-CSharp");
+                RuntimeTypeResolver.GetType("DamageInfo");
             GameObject player = new GameObject("Damage Feedback Player");
 
             try

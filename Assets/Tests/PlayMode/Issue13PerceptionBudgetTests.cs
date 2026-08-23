@@ -11,10 +11,10 @@ namespace FPS.Tests.PlayMode
         [UnityTest]
         public IEnumerator PerceptionChecksRespectBudgetAndRotateMembers()
         {
-            Type schedulerType = Type.GetType(
-                "EnemyPerceptionScheduler, Assembly-CSharp");
-            Type perceptionType = Type.GetType(
-                "EnemyPerceptionController, Assembly-CSharp");
+            Type schedulerType = RuntimeTypeResolver.GetType(
+                "EnemyPerceptionScheduler");
+            Type perceptionType = RuntimeTypeResolver.GetType(
+                "EnemyPerceptionController");
             Assert.That(
                 schedulerType,
                 Is.Not.Null,

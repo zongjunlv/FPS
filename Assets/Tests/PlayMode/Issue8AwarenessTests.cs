@@ -14,8 +14,8 @@ namespace FPS.Tests.PlayMode
         [Test]
         public void SustainedVisionRaisesAlertAndLosingSightStartsSearch()
         {
-            Type stateMachineType = Type.GetType(
-                "EnemyAwarenessStateMachine, Assembly-CSharp");
+            Type stateMachineType = RuntimeTypeResolver.GetType(
+                "EnemyAwarenessStateMachine");
             Assert.That(stateMachineType, Is.Not.Null);
 
             object stateMachine =
@@ -76,8 +76,8 @@ namespace FPS.Tests.PlayMode
         [Test]
         public void HearingGunshotStartsInvestigationAtSoundPosition()
         {
-            Type stateMachineType = Type.GetType(
-                "EnemyAwarenessStateMachine, Assembly-CSharp");
+            Type stateMachineType = RuntimeTypeResolver.GetType(
+                "EnemyAwarenessStateMachine");
             object stateMachine =
                 Activator.CreateInstance(stateMachineType);
             stateMachineType.GetMethod("Configure")
@@ -114,8 +114,8 @@ namespace FPS.Tests.PlayMode
         [Test]
         public void SearchTimeoutStartsOnlyAfterDestinationIsReached()
         {
-            Type stateMachineType = Type.GetType(
-                "EnemyAwarenessStateMachine, Assembly-CSharp");
+            Type stateMachineType = RuntimeTypeResolver.GetType(
+                "EnemyAwarenessStateMachine");
             object stateMachine =
                 Activator.CreateInstance(stateMachineType);
             stateMachineType.GetMethod("Configure")
@@ -166,8 +166,8 @@ namespace FPS.Tests.PlayMode
         [Test]
         public void UnreachableSearchDestinationEventuallyReturnsToPatrol()
         {
-            Type stateMachineType = Type.GetType(
-                "EnemyAwarenessStateMachine, Assembly-CSharp");
+            Type stateMachineType = RuntimeTypeResolver.GetType(
+                "EnemyAwarenessStateMachine");
             object stateMachine =
                 Activator.CreateInstance(stateMachineType);
             stateMachineType.GetMethod("Configure")
@@ -204,8 +204,8 @@ namespace FPS.Tests.PlayMode
         [Test]
         public void PatrolAdvancesAndWrapsConfiguredWaypoints()
         {
-            Type navigationType = Type.GetType(
-                "EnemyNavigationController, Assembly-CSharp");
+            Type navigationType = RuntimeTypeResolver.GetType(
+                "EnemyNavigationController");
             GameObject enemy = new GameObject("Patrol Enemy");
 
             try
@@ -250,8 +250,8 @@ namespace FPS.Tests.PlayMode
         [Test]
         public void ReachingSoundSourceIgnoresSourceHeight()
         {
-            Type navigationType = Type.GetType(
-                "EnemyNavigationController, Assembly-CSharp");
+            Type navigationType = RuntimeTypeResolver.GetType(
+                "EnemyNavigationController");
             GameObject enemy = new GameObject(
                 "Sound Investigation Enemy");
 
@@ -283,8 +283,8 @@ namespace FPS.Tests.PlayMode
         [Test]
         public void VisionHonorsRangeFovAndPhysicalOcclusion()
         {
-            Type perceptionType = Type.GetType(
-                "EnemyPerceptionController, Assembly-CSharp");
+            Type perceptionType = RuntimeTypeResolver.GetType(
+                "EnemyPerceptionController");
             GameObject enemy = new GameObject("Vision Enemy");
             GameObject target = new GameObject("Vision Target");
             GameObject wall = null;
@@ -344,8 +344,8 @@ namespace FPS.Tests.PlayMode
         [Test]
         public void VisionIgnoresEnemyOwnHitboxes()
         {
-            Type perceptionType = Type.GetType(
-                "EnemyPerceptionController, Assembly-CSharp");
+            Type perceptionType = RuntimeTypeResolver.GetType(
+                "EnemyPerceptionController");
             GameObject enemy = new GameObject(
                 "Enemy With Hitboxes");
             GameObject target = GameObject.CreatePrimitive(
@@ -401,14 +401,14 @@ namespace FPS.Tests.PlayMode
         [UnityTest]
         public IEnumerator HearingThenSeeingPlayerTracksPlayerNotSound()
         {
-            Type perceptionType = Type.GetType(
-                "EnemyPerceptionController, Assembly-CSharp");
-            Type combatType = Type.GetType(
-                "EnemyCombatController, Assembly-CSharp");
-            Type channelType = Type.GetType(
-                "CombatSoundEventChannel, Assembly-CSharp");
-            Type stimulusType = Type.GetType(
-                "SoundStimulus, Assembly-CSharp");
+            Type perceptionType = RuntimeTypeResolver.GetType(
+                "EnemyPerceptionController");
+            Type combatType = RuntimeTypeResolver.GetType(
+                "EnemyCombatController");
+            Type channelType = RuntimeTypeResolver.GetType(
+                "CombatSoundEventChannel");
+            Type stimulusType = RuntimeTypeResolver.GetType(
+                "SoundStimulus");
             GameObject enemy = new GameObject(
                 "Sound Alert Enemy");
             GameObject target = GameObject.CreatePrimitive(
@@ -483,10 +483,10 @@ namespace FPS.Tests.PlayMode
         [UnityTest]
         public IEnumerator AlertTracksLastSeenPositionBehindOcclusion()
         {
-            Type perceptionType = Type.GetType(
-                "EnemyPerceptionController, Assembly-CSharp");
-            Type combatType = Type.GetType(
-                "EnemyCombatController, Assembly-CSharp");
+            Type perceptionType = RuntimeTypeResolver.GetType(
+                "EnemyPerceptionController");
+            Type combatType = RuntimeTypeResolver.GetType(
+                "EnemyCombatController");
             GameObject enemy = new GameObject(
                 "Occlusion Tracking Enemy");
             GameObject target = GameObject.CreatePrimitive(
@@ -563,12 +563,12 @@ namespace FPS.Tests.PlayMode
         [UnityTest]
         public IEnumerator SoundInvestigationSearchesThenReturnsToPatrol()
         {
-            Type perceptionType = Type.GetType(
-                "EnemyPerceptionController, Assembly-CSharp");
-            Type channelType = Type.GetType(
-                "CombatSoundEventChannel, Assembly-CSharp");
-            Type stimulusType = Type.GetType(
-                "SoundStimulus, Assembly-CSharp");
+            Type perceptionType = RuntimeTypeResolver.GetType(
+                "EnemyPerceptionController");
+            Type channelType = RuntimeTypeResolver.GetType(
+                "CombatSoundEventChannel");
+            Type stimulusType = RuntimeTypeResolver.GetType(
+                "SoundStimulus");
             GameObject enemy = new GameObject(
                 "Completed Sound Investigation Enemy");
 
@@ -632,8 +632,8 @@ namespace FPS.Tests.PlayMode
                 LoadSceneMode.Single);
             yield return null;
 
-            Type channelType = Type.GetType(
-                "CombatSoundEventChannel, Assembly-CSharp");
+            Type channelType = RuntimeTypeResolver.GetType(
+                "CombatSoundEventChannel");
             UnityEngine.Object channel = Resources.Load(
                 "CombatSoundEvents",
                 channelType);
