@@ -49,6 +49,7 @@ public class EnemyController : MonoBehaviour
         configuredArmor = health.MaxArmor;
         health.Initialize(configuredHealth, configuredArmor);
         health.Died += HandleDeath;
+        EnsureBurnEffects();
         EnsureHitboxes();
         CacheRuntimeBaseline();
     }
@@ -66,6 +67,14 @@ public class EnemyController : MonoBehaviour
         if (GetComponent<EnemyCombatController>() == null)
         {
             gameObject.AddComponent<EnemyCombatController>();
+        }
+    }
+
+    private void EnsureBurnEffects()
+    {
+        if (GetComponent<EnemyBurnEffectController>() == null)
+        {
+            gameObject.AddComponent<EnemyBurnEffectController>();
         }
     }
 
@@ -113,6 +122,10 @@ public class EnemyController : MonoBehaviour
     public void ResetForSpawn(Transform target)
     {
         deathPresentationTriggered = false;
+        EnemyBurnEffectController burnEffects =
+            GetComponent<EnemyBurnEffectController>();
+        burnEffects?.ClearBurn();
+        burnEffects?.SetOverheadPresentationEnabled(true);
         RestoreColliderBaseline();
 
         foreach (Rigidbody body in rigidbodies)
@@ -148,6 +161,10 @@ public class EnemyController : MonoBehaviour
 
     public void PrepareForPool()
     {
+        EnemyBurnEffectController burnEffects =
+            GetComponent<EnemyBurnEffectController>();
+        burnEffects?.ClearBurn();
+        burnEffects?.SetOverheadPresentationEnabled(false);
         GetComponent<EnemyCombatController>()?.PrepareForPool();
         GetComponent<EnemyNavigationController>()?.PrepareForPool();
         GetComponent<EnemyPerceptionController>()?.PrepareForPool();

@@ -44,3 +44,11 @@ Issue 32 在同一套定义上增加 `Instant` 生命周期。医疗包和护甲
 2. `ExecuteInstant` 先计算全部属性，再按属性 ID 稳定提交；目标拒绝任一写入时，已提交值恢复到执行前快照。
 
 `PlayerInventoryController` 继续使用 `InventoryState.TryConsumeAt`：先暂扣一个物品，在 Effect 返回成功后提交库存、冷却和成功反馈；Effect 失败则恢复原槽位。因此背包、快捷栏、HUD 和提示只会看到最终成功状态，不需要各自实现补偿逻辑。
+
+## 燃烧持续效果
+
+Issue 33 增加 `Timed` 生命周期。燃烧定义包含 Tick 伤害、Tick 间隔、持续时间、叠层上限和刷新策略。可选策略包括不刷新、刷新全部层持续时间、在叠层上限时替换最旧层。
+
+同一目标上的同 ID 燃烧合并为一个运行时实例，但每层独立保存施加来源和剩余时间。每次 Tick 按层分别产生 `DamageInfo`，伤害类型为 `StatusEffect`，因此最后一层造成击杀时，`Health.LastAppliedDamage` 和波次奖励仍能获得正确来源。
+
+武器命中存活敌人后施加一层燃烧。存活敌人头顶常驻实时血条，血量降低时按绿、黄、红变化；燃烧期间追加橙色火星和 `BURN ×层数` 状态行。状态到期只隐藏状态行，死亡或 `PrepareForPool` 会隐藏整组信息，`ResetForSpawn` 恢复干净满血条，避免对象池复用污染下一代敌人。

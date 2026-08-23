@@ -39,6 +39,40 @@ namespace FPS.GameplayEffects
             GameplayEffectExecutionFailure failure) => new(false, failure, 0f);
     }
 
+    public readonly struct GameplayEffectApplicationResult
+    {
+        public GameplayEffectApplicationResult(
+            GameplayEffectInstance instance,
+            bool stackAdded,
+            bool durationRefreshed)
+        {
+            Instance = instance;
+            StackAdded = stackAdded;
+            DurationRefreshed = durationRefreshed;
+        }
+
+        public GameplayEffectInstance Instance { get; }
+        public bool Succeeded => Instance != null;
+        public bool StackAdded { get; }
+        public bool DurationRefreshed { get; }
+        public int StackCount => Instance?.StackCount ?? 0;
+    }
+
+    public readonly struct GameplayEffectTick
+    {
+        internal GameplayEffectTick(
+            GameplayEffectInstance instance,
+            GameplayEffectContext context)
+        {
+            Instance = instance;
+            Context = context;
+        }
+
+        public GameplayEffectInstance Instance { get; }
+        public GameplayEffectDefinition Definition => Instance?.Definition;
+        public GameplayEffectContext Context { get; }
+    }
+
     public interface IGameplayEffectAttributeTarget
     {
         bool TryGetGameplayAttribute(
@@ -72,6 +106,25 @@ namespace FPS.GameplayEffects
 
     public sealed class GameplayEffectInstance
     {
+        private sealed class TimedStack
+        {
+            public TimedStack(
+                GameplayEffectContext context,
+                float remainingDuration,
+                long order)
+            {
+                Context = context;
+                RemainingDuration = remainingDuration;
+                Order = order;
+            }
+
+            public GameplayEffectContext Context;
+            public float RemainingDuration;
+            public long Order;
+        }
+
+        private readonly List<TimedStack> timedStacks = new();
+
         internal GameplayEffectInstance(
             long instanceId,
             GameplayEffectDefinition definition,
@@ -80,16 +133,115 @@ namespace FPS.GameplayEffects
             InstanceId = instanceId;
             Definition = definition;
             Context = context;
+            TickRemaining = definition != null
+                ? definition.TickInterval
+                : 0f;
         }
 
         public long InstanceId { get; }
         public GameplayEffectDefinition Definition { get; }
         public GameplayEffectContext Context { get; }
+        public int StackCount => timedStacks.Count;
+        internal float TickRemaining { get; set; }
+
+        internal void AddTimedStack(
+            GameplayEffectContext context,
+            long order)
+        {
+            timedStacks.Add(new TimedStack(
+                context,
+                Definition.Duration,
+                order));
+        }
+
+        internal bool RefreshAllTimedStacks()
+        {
+            if (timedStacks.Count == 0)
+            {
+                return false;
+            }
+
+            for (int index = 0; index < timedStacks.Count; index++)
+            {
+                timedStacks[index].RemainingDuration = Definition.Duration;
+            }
+
+            return true;
+        }
+
+        internal bool ReplaceOldestTimedStack(
+            GameplayEffectContext context,
+            long order)
+        {
+            if (timedStacks.Count == 0)
+            {
+                return false;
+            }
+
+            int oldestIndex = 0;
+
+            for (int index = 1; index < timedStacks.Count; index++)
+            {
+                if (timedStacks[index].Order < timedStacks[oldestIndex].Order)
+                {
+                    oldestIndex = index;
+                }
+            }
+
+            timedStacks[oldestIndex].Context = context;
+            timedStacks[oldestIndex].RemainingDuration = Definition.Duration;
+            timedStacks[oldestIndex].Order = order;
+            return true;
+        }
+
+        internal float GetNextExpiry()
+        {
+            float next = float.PositiveInfinity;
+
+            for (int index = 0; index < timedStacks.Count; index++)
+            {
+                next = Mathf.Min(next, timedStacks[index].RemainingDuration);
+            }
+
+            return next;
+        }
+
+        internal void DecrementTimedStacks(float deltaTime)
+        {
+            for (int index = 0; index < timedStacks.Count; index++)
+            {
+                timedStacks[index].RemainingDuration -= deltaTime;
+            }
+        }
+
+        internal GameplayEffectContext[] SnapshotTickContexts()
+        {
+            var contexts = new GameplayEffectContext[timedStacks.Count];
+
+            for (int index = 0; index < timedStacks.Count; index++)
+            {
+                contexts[index] = timedStacks[index].Context;
+            }
+
+            return contexts;
+        }
+
+        internal void RemoveExpiredTimedStacks()
+        {
+            for (int index = timedStacks.Count - 1; index >= 0; index--)
+            {
+                if (timedStacks[index].RemainingDuration <= Mathf.Epsilon)
+                {
+                    timedStacks.RemoveAt(index);
+                }
+            }
+        }
     }
 
     public sealed class GameplayEffectRuntime
     {
         private static long nextInstanceId;
+        private static long nextStackOrder;
         private readonly List<GameplayEffectInstance> active = new();
         private readonly UnityEngine.Object target;
 
@@ -115,7 +267,7 @@ namespace FPS.GameplayEffects
                 GameplayEffectDurationPolicy.Persistent)
             {
                 throw new InvalidOperationException(
-                    "Instant gameplay effects cannot become active instances.");
+                    "Only persistent gameplay effects can use Apply.");
             }
 
             if (context.Target != target)
@@ -128,6 +280,109 @@ namespace FPS.GameplayEffects
             var instance = new GameplayEffectInstance(id, definition, context);
             active.Add(instance);
             return instance;
+        }
+
+        public GameplayEffectApplicationResult ApplyTimed(
+            GameplayEffectDefinition definition,
+            GameplayEffectContext context)
+        {
+            if (definition == null ||
+                definition.DurationPolicy != GameplayEffectDurationPolicy.Timed)
+            {
+                return default;
+            }
+
+            if (context.Target != target)
+            {
+                return default;
+            }
+
+            GameplayEffectInstance instance = FindTimedInstance(
+                definition.StableId);
+
+            if (instance == null)
+            {
+                instance = new GameplayEffectInstance(
+                    Interlocked.Increment(ref nextInstanceId),
+                    definition,
+                    context);
+                instance.AddTimedStack(
+                    context,
+                    Interlocked.Increment(ref nextStackOrder));
+                active.Add(instance);
+                return new GameplayEffectApplicationResult(
+                    instance,
+                    true,
+                    false);
+            }
+
+            bool stackAdded = false;
+            bool refreshed = false;
+            GameplayEffectDefinition activeDefinition = instance.Definition;
+
+            if (instance.StackCount < activeDefinition.MaximumStacks)
+            {
+                instance.AddTimedStack(
+                    context,
+                    Interlocked.Increment(ref nextStackOrder));
+                stackAdded = true;
+
+                if (activeDefinition.StackRefreshPolicy ==
+                    GameplayEffectStackRefreshPolicy.RefreshAllDurations)
+                {
+                    refreshed = instance.RefreshAllTimedStacks();
+                }
+            }
+            else
+            {
+                switch (activeDefinition.StackRefreshPolicy)
+                {
+                    case GameplayEffectStackRefreshPolicy.RefreshAllDurations:
+                        refreshed = instance.RefreshAllTimedStacks();
+                        break;
+                    case GameplayEffectStackRefreshPolicy.ReplaceOldestStack:
+                        refreshed = instance.ReplaceOldestTimedStack(
+                            context,
+                            Interlocked.Increment(ref nextStackOrder));
+                        break;
+                }
+            }
+
+            return new GameplayEffectApplicationResult(
+                instance,
+                stackAdded,
+                refreshed);
+        }
+
+        public void AdvanceTimed(
+            float deltaTime,
+            Action<GameplayEffectTick> onTick)
+        {
+            if (deltaTime <= 0f || active.Count == 0)
+            {
+                return;
+            }
+
+            GameplayEffectInstance[] snapshot = active.ToArray();
+
+            for (int index = 0; index < snapshot.Length; index++)
+            {
+                GameplayEffectInstance instance = snapshot[index];
+
+                if (instance.Definition.DurationPolicy !=
+                        GameplayEffectDurationPolicy.Timed ||
+                    !active.Contains(instance))
+                {
+                    continue;
+                }
+
+                AdvanceTimedInstance(instance, deltaTime, onTick);
+
+                if (active.Contains(instance) && instance.StackCount == 0)
+                {
+                    active.Remove(instance);
+                }
+            }
         }
 
         public GameplayEffectExecutionResult PreviewInstant(
@@ -214,6 +469,79 @@ namespace FPS.GameplayEffects
                 attribute,
                 baseValue,
                 active);
+        }
+
+        private GameplayEffectInstance FindTimedInstance(string stableId)
+        {
+            for (int index = 0; index < active.Count; index++)
+            {
+                GameplayEffectInstance instance = active[index];
+
+                if (instance.Definition.DurationPolicy ==
+                        GameplayEffectDurationPolicy.Timed &&
+                    string.Equals(
+                        instance.Definition.StableId,
+                        stableId,
+                        StringComparison.Ordinal))
+                {
+                    return instance;
+                }
+            }
+
+            return null;
+        }
+
+        private void AdvanceTimedInstance(
+            GameplayEffectInstance instance,
+            float deltaTime,
+            Action<GameplayEffectTick> onTick)
+        {
+            float remaining = deltaTime;
+
+            while (remaining > Mathf.Epsilon &&
+                   instance.StackCount > 0 &&
+                   active.Contains(instance))
+            {
+                float step = Mathf.Min(
+                    remaining,
+                    instance.TickRemaining,
+                    instance.GetNextExpiry());
+
+                if (step > Mathf.Epsilon)
+                {
+                    instance.DecrementTimedStacks(step);
+                    instance.TickRemaining -= step;
+                    remaining -= step;
+                }
+
+                bool tickDue = instance.TickRemaining <= Mathf.Epsilon;
+
+                if (tickDue)
+                {
+                    GameplayEffectContext[] contexts =
+                        instance.SnapshotTickContexts();
+                    instance.TickRemaining = instance.Definition.TickInterval;
+
+                    for (int index = 0; index < contexts.Length; index++)
+                    {
+                        onTick?.Invoke(new GameplayEffectTick(
+                            instance,
+                            contexts[index]));
+
+                        if (!active.Contains(instance))
+                        {
+                            return;
+                        }
+                    }
+                }
+
+                instance.RemoveExpiredTimedStacks();
+
+                if (step <= Mathf.Epsilon && !tickDue)
+                {
+                    break;
+                }
+            }
         }
 
         private GameplayEffectExecutionResult PrepareInstant(

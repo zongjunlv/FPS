@@ -3,11 +3,6 @@ using UnityEngine;
 [RequireComponent(typeof(EnemyNavigationController))]
 public sealed class EnemyPerceptionController : MonoBehaviour
 {
-    private static readonly bool PlayerDebugOverlayEnabled =
-        System.Array.IndexOf(
-            System.Environment.GetCommandLineArgs(),
-            "-enemy-debug-overlay") >= 0;
-
     [Header("Vision")]
     [SerializeField, Min(1f)] private float sightDistance = 22f;
     [SerializeField, Range(1f, 360f)] private float fieldOfView = 110f;
@@ -16,9 +11,6 @@ public sealed class EnemyPerceptionController : MonoBehaviour
     [Header("Investigation")]
     [SerializeField, Min(0.1f)] private float searchDuration = 5f;
     [SerializeField, Min(0.1f)] private float hearingSensitivity = 1.35f;
-    [Header("Debug")]
-    [SerializeField] private bool showDebugOverlay = true;
-
     private EnemyAwarenessStateMachine awareness;
     private EnemyNavigationController navigation;
     private CombatSoundEventChannel soundEvents;
@@ -368,54 +360,6 @@ public sealed class EnemyPerceptionController : MonoBehaviour
         awareness.Hear(stimulus.Position, strength);
         investigatingSound = true;
         navigation.SetDestination(stimulus.Position);
-    }
-
-    private void OnGUI()
-    {
-        if (!Debug.isDebugBuild ||
-            !showDebugOverlay ||
-            (!Application.isEditor && !PlayerDebugOverlayEnabled))
-        {
-            return;
-        }
-
-        Vector3 screenPoint = Camera.main != null
-            ? Camera.main.WorldToScreenPoint(
-                transform.position + Vector3.up * 1.8f)
-            : Vector3.zero;
-
-        if (screenPoint.z <= 0f)
-        {
-            return;
-        }
-
-        Rect rect = new Rect(
-            screenPoint.x - 80f,
-            Screen.height - screenPoint.y,
-            160f,
-            62f);
-        GUI.color = State switch
-        {
-            EnemyAwarenessState.Alert => Color.red,
-            EnemyAwarenessState.Search => Color.yellow,
-            EnemyAwarenessState.Suspicious =>
-                new Color(1f, 0.65f, 0.1f),
-            _ => Color.cyan
-        };
-        EnemySquadAlert latestAlert =
-            squadAlertMemory.LatestAlert;
-        string squadIntel =
-            squadAlertMemory.HasAlert &&
-            latestAlert.Source != null
-                ? $"\n协同: {latestAlert.Source.name} " +
-                  $"{latestAlert.Confidence:P0}"
-                : string.Empty;
-        GUI.Label(
-            rect,
-            $"{State}  {Awareness:P0}\n" +
-            $"目标: {Destination.x:F1}, {Destination.z:F1}" +
-            squadIntel);
-        GUI.color = Color.white;
     }
 
     private void OnDrawGizmosSelected()

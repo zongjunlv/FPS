@@ -6,7 +6,8 @@ public enum DamageType
     Hitscan,
     Projectile,
     Melee,
-    Environment
+    Environment,
+    StatusEffect
 }
 
 public readonly struct DamageInfo

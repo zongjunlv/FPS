@@ -14,7 +14,15 @@ namespace FPS.GameplayEffects
     public enum GameplayEffectDurationPolicy
     {
         Persistent,
-        Instant
+        Instant,
+        Timed
+    }
+
+    public enum GameplayEffectStackRefreshPolicy
+    {
+        None,
+        RefreshAllDurations,
+        ReplaceOldestStack
     }
 
     public enum GameplayModifierOperation
@@ -57,11 +65,23 @@ namespace FPS.GameplayEffects
     {
         [SerializeField] private string stableId;
         [SerializeField] private GameplayEffectDurationPolicy durationPolicy;
+        [SerializeField, Min(0.01f)] private float duration = 1f;
+        [SerializeField, Min(0.01f)] private float tickInterval = 1f;
+        [SerializeField, Min(1)] private int maximumStacks = 1;
+        [SerializeField] private GameplayEffectStackRefreshPolicy
+            stackRefreshPolicy;
+        [SerializeField] private float periodicMagnitude;
         [SerializeField] private GameplayEffectModifier[] modifiers =
             Array.Empty<GameplayEffectModifier>();
 
         public string StableId => stableId;
         public GameplayEffectDurationPolicy DurationPolicy => durationPolicy;
+        public float Duration => Mathf.Max(0.01f, duration);
+        public float TickInterval => Mathf.Max(0.01f, tickInterval);
+        public int MaximumStacks => Mathf.Max(1, maximumStacks);
+        public GameplayEffectStackRefreshPolicy StackRefreshPolicy =>
+            stackRefreshPolicy;
+        public float PeriodicMagnitude => periodicMagnitude;
         public IReadOnlyList<GameplayEffectModifier> Modifiers => modifiers;
 
         public void Configure(
@@ -84,6 +104,26 @@ namespace FPS.GameplayEffects
                 configuredModifiers);
         }
 
+        public void ConfigureTimed(
+            string id,
+            float configuredPeriodicMagnitude,
+            float configuredTickInterval,
+            float configuredDuration,
+            int configuredMaximumStacks,
+            GameplayEffectStackRefreshPolicy configuredRefreshPolicy,
+            params GameplayEffectModifier[] configuredModifiers)
+        {
+            Configure(
+                id,
+                GameplayEffectDurationPolicy.Timed,
+                configuredModifiers);
+            periodicMagnitude = configuredPeriodicMagnitude;
+            tickInterval = Mathf.Max(0.01f, configuredTickInterval);
+            duration = Mathf.Max(0.01f, configuredDuration);
+            maximumStacks = Mathf.Max(1, configuredMaximumStacks);
+            stackRefreshPolicy = configuredRefreshPolicy;
+        }
+
         private void Configure(
             string id,
             GameplayEffectDurationPolicy configuredDuration,
@@ -98,6 +138,11 @@ namespace FPS.GameplayEffects
 
             stableId = id.Trim();
             durationPolicy = configuredDuration;
+            duration = 1f;
+            tickInterval = 1f;
+            maximumStacks = 1;
+            stackRefreshPolicy = GameplayEffectStackRefreshPolicy.None;
+            periodicMagnitude = 0f;
             modifiers = configuredModifiers != null
                 ? (GameplayEffectModifier[])configuredModifiers.Clone()
                 : Array.Empty<GameplayEffectModifier>();

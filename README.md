@@ -99,6 +99,8 @@
 
 生命强化卡牌已接入可追踪、可移除和可回滚的最小 Gameplay Effect 闭环，支持 Add、Multiply、Override 的确定性聚合；医疗包和护甲包也通过即时 Effect 完成预检、执行与库存失败回滚。设计与回滚规则见 [`docs/architecture/gameplay-effects.md`](docs/architecture/gameplay-effects.md)。
 
+敌人燃烧使用持续型 Effect 实现可配置 Tick、三种刷新策略、多来源叠层、击杀归属和对象池复用清理，并通过头顶实时血条、状态行、层数和轻量火星提供世界反馈。
+
 ## macOS Development Build
 
 ```bash

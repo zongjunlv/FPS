@@ -14,6 +14,7 @@ public class WeaponController : MonoBehaviour
     [SerializeField, Min(0.1f)] private float dryFireFeedbackInterval = 0.35f;
     [SerializeField, Min(1f)] private float maxAimDistance = 200f;
     [SerializeField, Min(200f)] private float tracerSpeed = 280f;
+    [SerializeField] private bool appliesBurnOnHit = true;
 
     public event Action AmmoChanged;
     public event Action DryFired;
@@ -517,6 +518,16 @@ public class WeaponController : MonoBehaviour
                         ? shooterRoot.gameObject
                         : gameObject,
                     DamageType.Hitscan));
+
+            if (appliesBurnOnHit && damageResult.WasApplied &&
+                !damageResult.WasKilled && targetHealth != null)
+            {
+                targetHealth.GetComponent<EnemyBurnEffectController>()?
+                    .ApplyBurn(
+                        shooterRoot != null
+                            ? shooterRoot.gameObject
+                            : gameObject);
+            }
         }
 
         return new ShotResult(
