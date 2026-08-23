@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using FPS.GameplayEffects;
 using UnityEngine;
 
 public enum ItemUseFailureReason
@@ -21,13 +22,25 @@ public readonly struct ItemUseContext
     public ItemUseContext(
         Health health,
         WeaponLoadoutController loadout)
+        : this(health, loadout, null)
+    {
+    }
+
+    public ItemUseContext(
+        Health health,
+        WeaponLoadoutController loadout,
+        GameplayEffectRuntime gameplayEffects)
     {
         Health = health;
         Loadout = loadout;
+        GameplayEffects = gameplayEffects ?? (health != null
+            ? new GameplayEffectRuntime(health)
+            : null);
     }
 
     public Health Health { get; }
     public WeaponLoadoutController Loadout { get; }
+    public GameplayEffectRuntime GameplayEffects { get; }
 }
 
 public readonly struct ItemUseResult
@@ -84,9 +97,10 @@ public sealed class HealthRestoreItemEffect : IItemEffect
             return ItemUseResult.Failure(ItemUseFailureReason.PlayerDead);
         }
 
-        return context.Health.CurrentHealth < context.Health.MaxHealth
-            ? ItemUseResult.Available
-            : ItemUseResult.Failure(ItemUseFailureReason.HealthFull);
+        return Preview(
+            definition,
+            context,
+            ItemUseFailureReason.HealthFull);
     }
 
     public ItemUseResult Apply(
@@ -100,11 +114,70 @@ public sealed class HealthRestoreItemEffect : IItemEffect
             return availability;
         }
 
-        float restored = context.Health.RestoreHealth(
-            definition.EffectAmount);
-        return restored > 0f
-            ? ItemUseResult.Success(restored)
-            : ItemUseResult.Failure(ItemUseFailureReason.HealthFull);
+        return Execute(
+            definition,
+            context,
+            ItemUseFailureReason.HealthFull);
+    }
+
+    internal static ItemUseResult Preview(
+        ItemDefinition definition,
+        ItemUseContext context,
+        ItemUseFailureReason noChangeReason)
+    {
+        if (definition?.GameplayEffect == null ||
+            context.GameplayEffects == null)
+        {
+            return ItemUseResult.Failure(
+                ItemUseFailureReason.EffectUnavailable);
+        }
+
+        GameplayEffectExecutionResult result =
+            context.GameplayEffects.PreviewInstant(
+                definition.GameplayEffect,
+                new GameplayEffectContext(
+                    definition.StableId,
+                    definition,
+                    context.Health),
+                context.Health);
+        return Convert(result, noChangeReason);
+    }
+
+    internal static ItemUseResult Execute(
+        ItemDefinition definition,
+        ItemUseContext context,
+        ItemUseFailureReason noChangeReason)
+    {
+        if (definition?.GameplayEffect == null ||
+            context.GameplayEffects == null)
+        {
+            return ItemUseResult.Failure(
+                ItemUseFailureReason.EffectUnavailable);
+        }
+
+        GameplayEffectExecutionResult result =
+            context.GameplayEffects.ExecuteInstant(
+                definition.GameplayEffect,
+                new GameplayEffectContext(
+                    definition.StableId,
+                    definition,
+                    context.Health),
+                context.Health);
+        return Convert(result, noChangeReason);
+    }
+
+    private static ItemUseResult Convert(
+        GameplayEffectExecutionResult result,
+        ItemUseFailureReason noChangeReason)
+    {
+        if (result.Succeeded)
+        {
+            return ItemUseResult.Success(result.AppliedAmount);
+        }
+
+        return result.Failure == GameplayEffectExecutionFailure.NoChange
+            ? ItemUseResult.Failure(noChangeReason)
+            : ItemUseResult.Failure(ItemUseFailureReason.EffectUnavailable);
     }
 }
 
@@ -124,9 +197,10 @@ public sealed class ArmorRestoreItemEffect : IItemEffect
             return ItemUseResult.Failure(ItemUseFailureReason.PlayerDead);
         }
 
-        return context.Health.CurrentArmor < context.Health.MaxArmor
-            ? ItemUseResult.Available
-            : ItemUseResult.Failure(ItemUseFailureReason.ArmorFull);
+        return HealthRestoreItemEffect.Preview(
+            definition,
+            context,
+            ItemUseFailureReason.ArmorFull);
     }
 
     public ItemUseResult Apply(
@@ -140,11 +214,10 @@ public sealed class ArmorRestoreItemEffect : IItemEffect
             return availability;
         }
 
-        float restored = context.Health.RestoreArmor(
-            definition.EffectAmount);
-        return restored > 0f
-            ? ItemUseResult.Success(restored)
-            : ItemUseResult.Failure(ItemUseFailureReason.ArmorFull);
+        return HealthRestoreItemEffect.Execute(
+            definition,
+            context,
+            ItemUseFailureReason.ArmorFull);
     }
 }
 

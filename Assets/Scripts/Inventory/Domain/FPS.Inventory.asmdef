@@ -2,7 +2,8 @@
   "name": "FPS.Inventory",
   "rootNamespace": "FPS.Inventory",
   "references": [
-    "FPS.Core"
+    "FPS.Core",
+    "FPS.GameplayEffects"
   ],
   "includePlatforms": [],
   "excludePlatforms": [],

@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using FPS.GameplayEffects;
 using UnityEngine;
 
 [DefaultExecutionOrder(-300)]
@@ -25,6 +26,7 @@ public sealed class PlayerInventoryController : MonoBehaviour
     private bool droppingItem;
     private float nextUseTime;
     private bool cooldownWasActive;
+    private GameplayEffectRuntime consumableEffects;
 
     public InventoryState Inventory { get; private set; }
     public QuickSlotState QuickSlots { get; private set; }
@@ -39,6 +41,9 @@ public sealed class PlayerInventoryController : MonoBehaviour
     {
         input = GetComponent<PlayerInputReader>();
         health = GetComponent<Health>();
+        consumableEffects = health != null
+            ? new GameplayEffectRuntime(health)
+            : null;
         loadout = GetComponent<WeaponLoadoutController>();
         gameplayLocks = GetComponent<GameplayLockCoordinator>();
         worldItemFactory = GetComponent<WorldItemFactory>();
@@ -258,7 +263,7 @@ public sealed class PlayerInventoryController : MonoBehaviour
 
         return effects.Evaluate(
             definition,
-            new ItemUseContext(health, loadout));
+            CreateItemUseContext());
     }
 
     public bool TryUse(int slotIndex)
@@ -427,7 +432,7 @@ public sealed class PlayerInventoryController : MonoBehaviour
                 {
                     result = effects.Apply(
                         definition,
-                        new ItemUseContext(health, loadout));
+                        CreateItemUseContext());
 
                     if (!result.Succeeded)
                     {
@@ -462,6 +467,11 @@ public sealed class PlayerInventoryController : MonoBehaviour
         {
             usingItem = false;
         }
+    }
+
+    private ItemUseContext CreateItemUseContext()
+    {
+        return new ItemUseContext(health, loadout, consumableEffects);
     }
 
     public bool Open()

@@ -1,7 +1,9 @@
 using System;
+using FPS.GameplayEffects;
 using UnityEngine;
 
-public sealed class Health : MonoBehaviour, IDamageable
+public sealed class Health : MonoBehaviour, IDamageable,
+    IGameplayEffectAttributeTarget
 {
     [SerializeField, Min(0.01f)] private float maxHealth = 100f;
     [SerializeField, Min(0f)] private float maxArmor;
@@ -144,6 +146,68 @@ public sealed class Health : MonoBehaviour, IDamageable
         MaxArmor = nextMaximum;
         CurrentArmor = Mathf.Clamp(CurrentArmor + delta, 0f, MaxArmor);
         VitalsChanged?.Invoke();
+        return true;
+    }
+
+    public bool TryGetGameplayAttribute(
+        GameplayAttributeId attribute,
+        out float currentValue,
+        out float minimumValue,
+        out float maximumValue)
+    {
+        switch (attribute)
+        {
+            case GameplayAttributeId.CurrentHealth:
+                currentValue = CurrentHealth;
+                minimumValue = 0f;
+                maximumValue = MaxHealth;
+                return !IsDead;
+            case GameplayAttributeId.CurrentArmor:
+                currentValue = CurrentArmor;
+                minimumValue = 0f;
+                maximumValue = MaxArmor;
+                return !IsDead;
+            default:
+                currentValue = 0f;
+                minimumValue = 0f;
+                maximumValue = 0f;
+                return false;
+        }
+    }
+
+    public bool TrySetGameplayAttribute(
+        GameplayAttributeId attribute,
+        float value,
+        out float appliedAmount)
+    {
+        appliedAmount = 0f;
+
+        if (IsDead || !IsFinite(value))
+        {
+            return false;
+        }
+
+        switch (attribute)
+        {
+            case GameplayAttributeId.CurrentHealth:
+                float nextHealth = Mathf.Clamp(value, 0f, MaxHealth);
+                appliedAmount = nextHealth - CurrentHealth;
+                CurrentHealth = nextHealth;
+                break;
+            case GameplayAttributeId.CurrentArmor:
+                float nextArmor = Mathf.Clamp(value, 0f, MaxArmor);
+                appliedAmount = nextArmor - CurrentArmor;
+                CurrentArmor = nextArmor;
+                break;
+            default:
+                return false;
+        }
+
+        if (!Mathf.Approximately(appliedAmount, 0f))
+        {
+            VitalsChanged?.Invoke();
+        }
+
         return true;
     }
 

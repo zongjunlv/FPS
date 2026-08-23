@@ -6,7 +6,15 @@ namespace FPS.GameplayEffects
 {
     public enum GameplayAttributeId
     {
-        MaximumHealth
+        MaximumHealth,
+        CurrentHealth,
+        CurrentArmor
+    }
+
+    public enum GameplayEffectDurationPolicy
+    {
+        Persistent,
+        Instant
     }
 
     public enum GameplayModifierOperation
@@ -48,15 +56,38 @@ namespace FPS.GameplayEffects
     public sealed class GameplayEffectDefinition : ScriptableObject
     {
         [SerializeField] private string stableId;
+        [SerializeField] private GameplayEffectDurationPolicy durationPolicy;
         [SerializeField] private GameplayEffectModifier[] modifiers =
             Array.Empty<GameplayEffectModifier>();
 
         public string StableId => stableId;
+        public GameplayEffectDurationPolicy DurationPolicy => durationPolicy;
         public IReadOnlyList<GameplayEffectModifier> Modifiers => modifiers;
 
         public void Configure(
             string id,
             params GameplayEffectModifier[] configuredModifiers)
+        {
+            Configure(
+                id,
+                GameplayEffectDurationPolicy.Persistent,
+                configuredModifiers);
+        }
+
+        public void ConfigureInstant(
+            string id,
+            params GameplayEffectModifier[] configuredModifiers)
+        {
+            Configure(
+                id,
+                GameplayEffectDurationPolicy.Instant,
+                configuredModifiers);
+        }
+
+        private void Configure(
+            string id,
+            GameplayEffectDurationPolicy configuredDuration,
+            GameplayEffectModifier[] configuredModifiers)
         {
             if (string.IsNullOrWhiteSpace(id))
             {
@@ -66,6 +97,7 @@ namespace FPS.GameplayEffects
             }
 
             stableId = id.Trim();
+            durationPolicy = configuredDuration;
             modifiers = configuredModifiers != null
                 ? (GameplayEffectModifier[])configuredModifiers.Clone()
                 : Array.Empty<GameplayEffectModifier>();

@@ -33,3 +33,14 @@ Issue 31 以“生命强化”卡牌作为第一条 tracer bullet，把升级卡
 示例：基础 `100/100`，受到20点伤害后为 `80/100`；选择两层生命强化变为 `120/140`；移除一层变为 `100/120`；结算清空后回到 `80/100`。
 
 场景重载会销毁运行时容器，胜利、失败和主动重开都会先调用 `PlayerUpgradeController.EndRun` 清空实例，因此不会把局内 Effect 带入下一局。
+
+## 即时消耗品效果
+
+Issue 32 在同一套定义上增加 `Instant` 生命周期。医疗包和护甲包分别以 `CurrentHealth / Add`、`CurrentArmor / Add` 描述恢复量；即时效果只执行一次，不进入持久实例列表。
+
+执行分为两个阶段：
+
+1. `PreviewInstant` 读取目标属性并计算钳制后的实际变化，不修改角色；满生命或满护甲会返回 `NoChange`。
+2. `ExecuteInstant` 先计算全部属性，再按属性 ID 稳定提交；目标拒绝任一写入时，已提交值恢复到执行前快照。
+
+`PlayerInventoryController` 继续使用 `InventoryState.TryConsumeAt`：先暂扣一个物品，在 Effect 返回成功后提交库存、冷却和成功反馈；Effect 失败则恢复原槽位。因此背包、快捷栏、HUD 和提示只会看到最终成功状态，不需要各自实现补偿逻辑。

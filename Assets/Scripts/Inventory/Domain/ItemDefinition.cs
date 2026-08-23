@@ -1,4 +1,5 @@
 using System;
+using FPS.GameplayEffects;
 using UnityEngine;
 
 public enum ItemType
@@ -28,6 +29,8 @@ public sealed class ItemDefinition : ScriptableObject
     [SerializeField] private ItemEffectType effectType =
         ItemEffectType.RestoreHealth;
     [SerializeField, Min(0f)] private float effectAmount;
+    [SerializeField] private GameplayEffectDefinition gameplayEffect;
+    [NonSerialized] private GameplayEffectDefinition runtimeGameplayEffect;
 
     public string StableId => stableId;
     public string DisplayName => displayName;
@@ -37,6 +40,10 @@ public sealed class ItemDefinition : ScriptableObject
     public int MaximumStack => Mathf.Max(1, maximumStack);
     public ItemEffectType EffectType => effectType;
     public float EffectAmount => Mathf.Max(0f, effectAmount);
+    public GameplayEffectDefinition GameplayEffect =>
+        gameplayEffect != null
+            ? gameplayEffect
+            : EnsureRuntimeGameplayEffect();
 
     public InventoryItemSpec ToSpec()
     {
@@ -68,5 +75,59 @@ public sealed class ItemDefinition : ScriptableObject
         maximumStack = Mathf.Max(1, maxStack);
         effectType = configuredEffect;
         effectAmount = Mathf.Max(0f, configuredAmount);
+        ConfigureRuntimeGameplayEffect();
+    }
+
+    private GameplayEffectDefinition EnsureRuntimeGameplayEffect()
+    {
+        if (runtimeGameplayEffect == null)
+        {
+            ConfigureRuntimeGameplayEffect();
+        }
+
+        return runtimeGameplayEffect;
+    }
+
+    private void ConfigureRuntimeGameplayEffect()
+    {
+        GameplayAttributeId? attribute = effectType switch
+        {
+            ItemEffectType.RestoreHealth => GameplayAttributeId.CurrentHealth,
+            ItemEffectType.RestoreArmor => GameplayAttributeId.CurrentArmor,
+            _ => null
+        };
+
+        if (!attribute.HasValue)
+        {
+            return;
+        }
+
+        runtimeGameplayEffect ??=
+            CreateInstance<GameplayEffectDefinition>();
+        runtimeGameplayEffect.name = $"{stableId} Instant Effect";
+        runtimeGameplayEffect.hideFlags = HideFlags.HideAndDontSave;
+        runtimeGameplayEffect.ConfigureInstant(
+            $"item.{stableId}",
+            new GameplayEffectModifier(
+                attribute.Value,
+                GameplayModifierOperation.Add,
+                EffectAmount));
+    }
+
+    private void OnDestroy()
+    {
+        if (runtimeGameplayEffect == null)
+        {
+            return;
+        }
+
+        if (Application.isPlaying)
+        {
+            Destroy(runtimeGameplayEffect);
+        }
+        else
+        {
+            DestroyImmediate(runtimeGameplayEffect);
+        }
     }
 }

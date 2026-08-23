@@ -97,7 +97,7 @@
 
 ## Gameplay Effect
 
-生命强化卡牌已接入可追踪、可移除和可回滚的最小 Gameplay Effect 闭环，支持 Add、Multiply、Override 的确定性聚合。设计与回滚规则见 [`docs/architecture/gameplay-effects.md`](docs/architecture/gameplay-effects.md)。
+生命强化卡牌已接入可追踪、可移除和可回滚的最小 Gameplay Effect 闭环，支持 Add、Multiply、Override 的确定性聚合；医疗包和护甲包也通过即时 Effect 完成预检、执行与库存失败回滚。设计与回滚规则见 [`docs/architecture/gameplay-effects.md`](docs/architecture/gameplay-effects.md)。
 
 ## macOS Development Build
 
