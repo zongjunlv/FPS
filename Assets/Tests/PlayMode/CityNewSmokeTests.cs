@@ -2179,15 +2179,25 @@ namespace FPS.Tests.PlayMode
             Vector3 backwardVelocity = (Vector3)calculateVelocity.Invoke(
                 controller,
                 new object[] { Vector2.down, true });
+            float configuredSprintSpeed = (float)controller.GetType()
+                .GetField(
+                    "sprintSpeed",
+                    BindingFlags.Instance | BindingFlags.NonPublic)
+                .GetValue(controller);
+            float configuredWalkSpeed = (float)controller.GetType()
+                .GetField(
+                    "walkSpeed",
+                    BindingFlags.Instance | BindingFlags.NonPublic)
+                .GetValue(controller);
 
             Assert.That(idleVelocity.magnitude, Is.EqualTo(0f).Within(0.01f));
             Assert.That(
                 diagonalSprintVelocity.magnitude,
-                Is.EqualTo(5f).Within(0.01f),
+                Is.EqualTo(configuredSprintSpeed).Within(0.01f),
                 "Diagonal movement must not exceed sprint speed.");
             Assert.That(
                 backwardVelocity.magnitude,
-                Is.EqualTo(2f).Within(0.01f),
+                Is.EqualTo(configuredWalkSpeed).Within(0.01f),
                 "Backward movement must use walk speed.");
 
             trySetCrouching.Invoke(controller, new object[] { true });

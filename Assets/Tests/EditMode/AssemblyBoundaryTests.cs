@@ -165,6 +165,58 @@ namespace FPS.Tests.Architecture
             }
         }
 
+        [Test]
+        public void MigratedPlayerCombatConsumersDoNotUseGlobalResolution()
+        {
+            string scriptsRoot = Path.Combine(Application.dataPath, "Scripts");
+            string[] migratedConsumers =
+            {
+                "Player/PlayerCombatController.cs",
+                "Player/PlayerCombatFeedbackController.cs",
+                "Player/PlayerVitalsHudPresenter.cs",
+                "Player/UnifiedGameHudBootstrap.cs",
+                "Combat/Weapons/WeaponController.cs"
+            };
+            string[] forbiddenGlobalResolution =
+            {
+                "Resources.Load",
+                "GameObject.Find",
+                "FindAnyObjectByType",
+                "FindFirstObjectByType",
+                "FindObjectOfType"
+            };
+
+            foreach (string relativePath in migratedConsumers)
+            {
+                string sourcePath = Path.Combine(scriptsRoot, relativePath);
+                string source = File.ReadAllText(sourcePath);
+
+                foreach (string forbidden in forbiddenGlobalResolution)
+                {
+                    StringAssert.DoesNotContain(
+                        forbidden,
+                        source,
+                        $"Composition root must inject combat services: " +
+                        sourcePath);
+                }
+            }
+
+            string[] dynamicallyWiredConsumers =
+            {
+                "Player/PlayerCombatController.cs",
+                "Player/PlayerCombatFeedbackController.cs"
+            };
+
+            foreach (string relativePath in dynamicallyWiredConsumers)
+            {
+                StringAssert.DoesNotContain(
+                    "AddComponent<",
+                    File.ReadAllText(Path.Combine(scriptsRoot, relativePath)),
+                    $"Runtime component creation belongs to " +
+                    "PlayerCombatCompositionRoot");
+            }
+        }
+
         private static Dictionary<string, AssemblyDefinitionData>
             LoadRuntimeDefinitions()
         {

@@ -111,9 +111,6 @@ public class WeaponController : MonoBehaviour
         fireAudioSource.maxDistance = 60f;
         fireAudioSource.rolloffMode = AudioRolloffMode.Logarithmic;
         spreadState = new WeaponSpreadState();
-        soundEventChannel =
-            Resources.Load<CombatSoundEventChannel>(
-                "CombatSoundEvents");
         spreadState.Configure(
             weapon.HipSpreadDegrees,
             weapon.AdsSpreadDegrees,
@@ -233,14 +230,15 @@ public class WeaponController : MonoBehaviour
     public void ConfigureAiming(
         Camera camera,
         Transform ownerRoot,
-        ShotTracerPool sharedTracerPool)
+        ShotTracerPool sharedTracerPool,
+        PlayerRuntimeCombatStats combatStats,
+        CombatSoundEventChannel combatSoundEvents)
     {
         aimCamera = camera;
         shooterRoot = ownerRoot;
         tracerPool = sharedTracerPool;
-        SetRuntimeCombatStats(ownerRoot != null
-            ? ownerRoot.GetComponent<PlayerRuntimeCombatStats>()
-            : null);
+        soundEventChannel = combatSoundEvents;
+        SetRuntimeCombatStats(combatStats);
     }
 
     public bool TryStartReload()

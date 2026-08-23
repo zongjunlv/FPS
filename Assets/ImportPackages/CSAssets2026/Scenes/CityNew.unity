@@ -11434,6 +11434,28 @@ MonoBehaviour:
   m_Name:
   m_EditorClassIdentifier: Assembly-CSharp::ShotTracerPool
   capacity: 16
+--- !u!114 &1073853159
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1073853136}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 2f7ec5e3de604f0c89870ece74dfa1bb, type: 3}
+  m_Name:
+  m_EditorClassIdentifier: FPS.Composition::PlayerCombatCompositionRoot
+  input: {fileID: 1073853149}
+  player: {fileID: 1073853139}
+  recoil: {fileID: 1073853156}
+  animator: {fileID: 1073853154}
+  combat: {fileID: 1073853155}
+  loadout: {fileID: 1073853157}
+  tracerPool: {fileID: 1073853158}
+  combatSoundEvents: {fileID: 11400000, guid: bd46fc5e275a43439238c631936d80bc, type: 2}
+  feedbackAudio: {fileID: 11400000, guid: 4dc09db4581f4011a857a81ed2808823, type: 2}
+  hudVisualProfile: {fileID: 11400000, guid: b5489d7bc832481496d723b540a79d70, type: 2}
 --- !u!1 &1074274927
 GameObject:
   m_ObjectHideFlags: 0
@@ -21419,6 +21441,9 @@ PrefabInstance:
     - targetCorrespondingSourceObject: {fileID: 2751027687307977091, guid: 19eadcf8fbed56b4da77ca94c1b4145f, type: 3}
       insertIndex: -1
       addedObject: {fileID: 1073853158}
+    - targetCorrespondingSourceObject: {fileID: 2751027687307977091, guid: 19eadcf8fbed56b4da77ca94c1b4145f, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 1073853159}
     - targetCorrespondingSourceObject: {fileID: 442530907946946506, guid: 19eadcf8fbed56b4da77ca94c1b4145f, type: 3}
       insertIndex: -1
       addedObject: {fileID: 1901628780}

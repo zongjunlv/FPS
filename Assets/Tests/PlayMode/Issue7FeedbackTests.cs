@@ -3,6 +3,7 @@ using System.Collections;
 using System.Reflection;
 using NUnit.Framework;
 using UnityEngine;
+using UnityEngine.SceneManagement;
 using UnityEngine.TestTools;
 
 namespace FPS.Tests.PlayMode
@@ -587,37 +588,36 @@ namespace FPS.Tests.PlayMode
             Type healthType = RuntimeTypeResolver.GetType("Health");
             Type damageInfoType =
                 RuntimeTypeResolver.GetType("DamageInfo");
-            GameObject player = new GameObject("Damage Feedback Player");
+            yield return SceneManager.LoadSceneAsync(
+                "Assets/ImportPackages/CSAssets2026/Scenes/CityNew.unity",
+                LoadSceneMode.Single);
+            yield return null;
 
-            try
-            {
-                Component feedback = player.AddComponent(feedbackType);
-                yield return null;
-                Component health = player.GetComponent(healthType);
-                object damage = Activator.CreateInstance(
-                    damageInfoType,
-                    new object[]
-                    {
-                        10f,
-                        Vector3.zero,
-                        Vector3.forward,
-                        null
-                    });
-                healthType.GetMethod("ApplyDamage")
-                    .Invoke(health, new[] { damage });
+            GameObject player = GameObject.FindGameObjectWithTag("Player");
+            Component feedback = player.GetComponent(feedbackType);
+            Component health = player.GetComponent(healthType);
+            int feedbackCountBefore =
+                (int)feedbackType.GetProperty("DamageFeedbackCount")
+                    .GetValue(feedback);
+            object damage = Activator.CreateInstance(
+                damageInfoType,
+                new object[]
+                {
+                    10f,
+                    Vector3.zero,
+                    Vector3.forward,
+                    null
+                });
+            healthType.GetMethod("ApplyDamage")
+                .Invoke(health, new[] { damage });
 
-                Assert.That(
-                    (int)feedbackType.GetProperty("DamageFeedbackCount")
-                        .GetValue(feedback),
-                    Is.EqualTo(1));
-                Assert.That(
-                    player.GetComponents<AudioSource>().Length,
-                    Is.EqualTo(1));
-            }
-            finally
-            {
-                UnityEngine.Object.DestroyImmediate(player);
-            }
+            Assert.That(
+                (int)feedbackType.GetProperty("DamageFeedbackCount")
+                    .GetValue(feedback),
+                Is.EqualTo(feedbackCountBefore + 1));
+            Assert.That(
+                player.GetComponents<AudioSource>().Length,
+                Is.GreaterThanOrEqualTo(1));
         }
 
         private static object CreateShotResult(

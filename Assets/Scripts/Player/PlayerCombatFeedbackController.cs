@@ -19,10 +19,12 @@ public sealed class PlayerCombatFeedbackController : MonoBehaviour
     private Health health;
     private AudioSource damageAudioSource;
     private AudioClip playerDamagedClip;
+    private PlayerVitalsHudPresenter vitalsHud;
 
     public event Action ViewChanged;
 
     public bool LegacyOnGuiEnabled { get; private set; } = true;
+    public bool IsInitialized { get; private set; }
 
     public int DamageFeedbackCount { get; private set; }
     public DamageIndicatorSide LastDamageSide { get; private set; }
@@ -30,47 +32,63 @@ public sealed class PlayerCombatFeedbackController : MonoBehaviour
 
     private void Start()
     {
-        combat = GetComponent<PlayerCombatController>();
-        player = GetComponent<PlayerController>();
-        input = GetComponent<PlayerInputReader>();
-        crosshair = GetComponent<PlayerCrosshairPresenter>();
-        health = GetComponent<Health>();
-        health.Initialize(100f, 100f);
-        PlayerVitalsHudPresenter vitalsHud =
-            GetComponent<PlayerVitalsHudPresenter>();
-
-        if (vitalsHud == null)
+        if (IsInitialized)
         {
-            vitalsHud =
-                gameObject.AddComponent<PlayerVitalsHudPresenter>();
+            return;
         }
 
-        vitalsHud.Bind(health);
+        Debug.LogError(
+            $"[{nameof(PlayerCombatFeedbackController)}] '{name}' was " +
+            "not initialized by PlayerCombatCompositionRoot.",
+            this);
+        enabled = false;
+    }
 
-        if (player != null &&
-            combat != null &&
-            GetComponent<PlayerFailureFlowController>() == null)
-        {
-            gameObject.AddComponent<PlayerFailureFlowController>();
-        }
-        damageAudioSource = gameObject.AddComponent<AudioSource>();
-        damageAudioSource.playOnAwake = false;
-        damageAudioSource.spatialBlend = 0f;
-        CombatFeedbackAudioProfile profile =
-            Resources.Load<CombatFeedbackAudioProfile>(
-                "CombatFeedbackAudio");
-        playerDamagedClip =
-            profile != null ? profile.PlayerDamaged : null;
+    public void Configure(
+        PlayerCombatController combatController,
+        PlayerController playerController,
+        PlayerInputReader inputReader,
+        PlayerCrosshairPresenter crosshairPresenter,
+        Health playerHealth,
+        PlayerVitalsHudPresenter vitalsPresenter,
+        AudioSource feedbackAudioSource,
+        CombatFeedbackAudioProfile audioProfile)
+    {
+        combat = combatController;
+        player = playerController;
+        input = inputReader;
+        crosshair = crosshairPresenter;
+        health = playerHealth;
+        vitalsHud = vitalsPresenter;
+        damageAudioSource = feedbackAudioSource;
+        playerDamagedClip = audioProfile != null
+            ? audioProfile.PlayerDamaged
+            : null;
+    }
 
-        if (combat != null)
+    public bool Initialize()
+    {
+        if (IsInitialized)
         {
-            combat.ShotResolved += HandleShotResolved;
+            return true;
         }
 
-        if (health != null)
+        if (combat == null || player == null || input == null ||
+            crosshair == null || health == null || vitalsHud == null ||
+            damageAudioSource == null)
         {
-            health.Damaged += HandlePlayerDamaged;
+            Debug.LogError(
+                $"[{nameof(PlayerCombatFeedbackController)}] '{name}' " +
+                "has incomplete injected dependencies.",
+                this);
+            enabled = false;
+            return false;
         }
+
+        combat.ShotResolved += HandleShotResolved;
+        health.Damaged += HandlePlayerDamaged;
+        IsInitialized = true;
+        return true;
     }
 
     private void Update()

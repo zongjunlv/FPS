@@ -29,6 +29,11 @@ public sealed class PlayerVitalsHudPresenter : MonoBehaviour
     public float TrailingHealthNormalized => trailingHealth;
     public float TrailingArmorNormalized => trailingArmor;
 
+    public void Configure(PlayerHudVisualProfile visualProfile)
+    {
+        profile = visualProfile;
+    }
+
     public void Bind(Health target)
     {
         if (health != null)
@@ -37,8 +42,6 @@ public sealed class PlayerVitalsHudPresenter : MonoBehaviour
         }
 
         health = target;
-        profile = Resources.Load<PlayerHudVisualProfile>(
-            "PlayerHudVisualProfile");
         trailingHealth = HealthNormalized;
         trailingArmor = ArmorNormalized;
 
@@ -169,8 +172,14 @@ public sealed class PlayerVitalsHudPresenter : MonoBehaviour
             return;
         }
 
-        profile ??= Resources.Load<PlayerHudVisualProfile>(
-            "PlayerHudVisualProfile");
+        if (profile == null)
+        {
+            Debug.LogError(
+                $"[{nameof(PlayerVitalsHudPresenter)}] Missing HUD visual " +
+                "profile.",
+                this);
+            return;
+        }
         labelStyle = new GUIStyle(GUI.skin.label)
         {
             font = profile.Font,

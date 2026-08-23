@@ -12,6 +12,7 @@ public class PlayerCombatController : MonoBehaviour
     public int EquippedWeaponIndex => loadout.CurrentIndex;
     public int WeaponCount => loadout.WeaponCount;
     public bool IsSwitching => loadout.IsSwitching;
+    public bool IsInitialized { get; private set; }
     public bool GameplayInputEnabled { get; private set; } = true;
     public event Action<ShotResult> ShotResolved;
     public event Action<WeaponController> EquippedWeaponChanged;
@@ -27,92 +28,63 @@ public class PlayerCombatController : MonoBehaviour
     private PlayerInputReader input;
     private AmmoHudPresenter ammoHud;
     private ShotTracerPool tracerPool;
+    private PlayerRuntimeCombatStats runtimeStats;
+    private CombatSoundEventChannel soundEvents;
 
     private void Start()
     {
-        input = GetComponent<PlayerInputReader>();
-        playerRecoil = GetComponent<PlayerRecoilController>();
-        playerController = GetComponent<PlayerController>();
-        playerAnimator = GetComponent<PlayerAnimatorController>();
-        ammoHud = GetComponent<AmmoHudPresenter>();
-        tracerPool = GetComponent<ShotTracerPool>();
-
-        if (tracerPool == null)
+        if (IsInitialized)
         {
-            tracerPool = gameObject.AddComponent<ShotTracerPool>();
+            return;
         }
 
-        if (loadout == null)
+        Debug.LogError(
+            $"[{nameof(PlayerCombatController)}] '{name}' was not " +
+            "initialized by PlayerCombatCompositionRoot.",
+            this);
+        enabled = false;
+    }
+
+    public void Configure(
+        PlayerInputReader inputReader,
+        PlayerRecoilController recoil,
+        PlayerController controller,
+        PlayerAnimatorController animator,
+        WeaponLoadoutController weaponLoadout,
+        AmmoHudPresenter hud,
+        ShotTracerPool sharedTracerPool,
+        PlayerRuntimeCombatStats combatStats,
+        CombatSoundEventChannel combatSoundEvents)
+    {
+        input = inputReader;
+        playerRecoil = recoil;
+        playerController = controller;
+        playerAnimator = animator;
+        loadout = weaponLoadout;
+        ammoHud = hud;
+        tracerPool = sharedTracerPool;
+        runtimeStats = combatStats;
+        soundEvents = combatSoundEvents;
+    }
+
+    public bool Initialize()
+    {
+        if (IsInitialized)
         {
-            loadout = GetComponent<WeaponLoadoutController>();
+            return true;
         }
 
-        if (ammoHud == null)
+        if (input == null || playerRecoil == null ||
+            playerController == null || playerAnimator == null ||
+            loadout == null || ammoHud == null || tracerPool == null ||
+            runtimeStats == null)
         {
-            ammoHud = gameObject.AddComponent<AmmoHudPresenter>();
-        }
-
-        if (GetComponent<PlayerCombatFeedbackController>() == null)
-        {
-            gameObject.AddComponent<PlayerCombatFeedbackController>();
-        }
-
-        if (GetComponent<PlayerInteractionController>() == null)
-        {
-            gameObject.AddComponent<PlayerInteractionController>();
-        }
-
-        if (GetComponent<PlayerWorldPickupController>() == null)
-        {
-            gameObject.AddComponent<PlayerWorldPickupController>();
-        }
-
-        if (GetComponent<CityNewTerminalMissionBootstrap>() == null)
-        {
-            gameObject.AddComponent<CityNewTerminalMissionBootstrap>();
-        }
-
-        if (GetComponent<PlayerRunProgression>() == null)
-        {
-            gameObject.AddComponent<PlayerRunProgression>();
-        }
-
-        if (GetComponent<PlayerRuntimeCombatStats>() == null)
-        {
-            gameObject.AddComponent<PlayerRuntimeCombatStats>();
-        }
-
-        playerController.SetRuntimeStats(
-            GetComponent<PlayerRuntimeCombatStats>());
-
-        if (GetComponent<PlayerUpgradeController>() == null)
-        {
-            gameObject.AddComponent<PlayerUpgradeController>();
-        }
-
-        if (GetComponent<WorldItemFactory>() == null)
-        {
-            gameObject.AddComponent<WorldItemFactory>();
-        }
-
-        if (GetComponent<PlayerInventoryController>() == null)
-        {
-            gameObject.AddComponent<PlayerInventoryController>();
-        }
-
-        if (GetComponent<PlayerLootRewardController>() == null)
-        {
-            gameObject.AddComponent<PlayerLootRewardController>();
-        }
-
-        if (GetComponent<UnifiedGameHudBootstrap>() == null)
-        {
-            gameObject.AddComponent<UnifiedGameHudBootstrap>();
-        }
-
-        if (GetComponent<CityNewInventoryBootstrap>() == null)
-        {
-            gameObject.AddComponent<CityNewInventoryBootstrap>();
+            Debug.LogError(
+                $"[{nameof(PlayerCombatController)}] '{name}' has " +
+                "incomplete injected dependencies.",
+                this);
+            enabled = false;
+            return false;
         }
 
         for (int index = 0; index < loadout.WeaponCount; index++)
@@ -120,7 +92,9 @@ public class PlayerCombatController : MonoBehaviour
             loadout.GetWeapon(index)?.ConfigureAiming(
                 playerController.AimCamera,
                 transform,
-                tracerPool);
+                tracerPool,
+                runtimeStats,
+                soundEvents);
         }
 
         loadout.SwitchStarted += HandleSwitchStarted;
@@ -132,6 +106,8 @@ public class PlayerCombatController : MonoBehaviour
         BindEquippedWeapon(loadout.CurrentWeapon);
         playerAnimator.SetWeaponAnimatorController(
             EquippedWeapon.CharacterAnimatorController);
+        IsInitialized = true;
+        return true;
     }
 
     private void OnDestroy()
@@ -157,7 +133,7 @@ public class PlayerCombatController : MonoBehaviour
 
     private void LateUpdate()
     {
-        if (!GameplayInputEnabled)
+        if (!IsInitialized || !GameplayInputEnabled)
         {
             return;
         }
@@ -315,7 +291,9 @@ public class PlayerCombatController : MonoBehaviour
         EquippedWeapon.ConfigureAiming(
             playerController.AimCamera,
             transform,
-            tracerPool);
+            tracerPool,
+            runtimeStats,
+            soundEvents);
         ammoHud.Bind(EquippedWeapon);
         EquippedWeaponChanged?.Invoke(EquippedWeapon);
     }

@@ -9,21 +9,38 @@ using UnityEngine.UI;
 public sealed class UnifiedGameHudBootstrap : MonoBehaviour
 {
     public UnifiedGameHud Hud { get; private set; }
+    public bool IsInitialized { get; private set; }
+
+    private GameObject playerRoot;
+
+    public void Configure(GameObject targetPlayer, UnifiedGameHud sceneHud)
+    {
+        playerRoot = targetPlayer;
+        Hud = sceneHud;
+    }
 
     private IEnumerator Start()
     {
         yield return null;
 
-        Hud = Object.FindAnyObjectByType<UnifiedGameHud>();
+        if (playerRoot == null)
+        {
+            Debug.LogError(
+                $"[{nameof(UnifiedGameHudBootstrap)}] Missing player root.",
+                this);
+            enabled = false;
+            yield break;
+        }
 
         if (Hud == null)
         {
             Hud = CreateHud();
         }
 
-        Hud.Bind(gameObject);
+        Hud.Bind(playerRoot);
         EnsureEventSystem(
-            GetComponent<PlayerInputReader>()?.ActionsAsset);
+            playerRoot.GetComponent<PlayerInputReader>()?.ActionsAsset);
+        IsInitialized = true;
     }
 
     private static UnifiedGameHud CreateHud()
