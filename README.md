@@ -85,6 +85,16 @@
 
 真实性能结果与限制见 [`docs/performance/issue-13.md`](docs/performance/issue-13.md)；简历只能引用其中已有原始 JSON 支持的数据。
 
+## Issue 30：100敌人可复现基线
+
+生成最新 Development Build 后，在项目根目录运行：
+
+```bash
+./scripts/performance/run-issue30-baseline.sh
+```
+
+入口会固定100敌人、1920×1080、PC画质、随机种子、感知预算、5秒预热和20秒采样，连续执行3轮并校验实验条件一致性，最后输出中位数报告。正式优化前结果与原始 JSON 见 [`docs/performance/issue-30.md`](docs/performance/issue-30.md)。
+
 ## macOS Development Build
 
 ```bash

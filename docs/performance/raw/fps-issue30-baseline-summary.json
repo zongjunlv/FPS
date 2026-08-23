@@ -1,0 +1,46 @@
+{
+  "schemaVersion": 1,
+  "generatedAtUtc": "2026-08-23T13:53:59.301833+00:00",
+  "roundCount": 3,
+  "configuration": {
+    "unityVersion": "6000.5.3f1",
+    "buildType": "Development",
+    "operatingSystem": "Mac OS X 26.5.2",
+    "processor": "Apple M4",
+    "graphicsDevice": "Apple M4",
+    "configuredResolution": "1920x1080",
+    "resolution": "1920x1080",
+    "screenMode": "Windowed",
+    "qualityLevel": "PC",
+    "enemyCount": 100,
+    "warmupSeconds": 5.0,
+    "configuredSampleSeconds": 20.0,
+    "seed": 30030,
+    "behaviorProfile": "alert-chase-fire-v1",
+    "perceptionChecksPerFrame": 4
+  },
+  "sourceFiles": [
+    "fps-issue30-baseline-round-1.json",
+    "fps-issue30-baseline-round-2.json",
+    "fps-issue30-baseline-round-3.json"
+  ],
+  "medians": {
+    "averageFps": 29.246917801868683,
+    "onePercentLowFps": 3.7341552855277262,
+    "averageFrameMs": 34.7078365771275,
+    "p95FrameMs": 138.2872462272644,
+    "p99FrameMs": 234.8557561635971,
+    "averageMainThreadMs": 34.180629791452986,
+    "p95MainThreadMs": 133.491625,
+    "p99MainThreadMs": 232.147042,
+    "averageGcBytesPerFrame": 41499.2109375,
+    "p95GcBytesPerFrame": 44938.0,
+    "maximumGcBytesInFrame": 108090.0,
+    "maximumPerceptionLatencyFrames": 25.0,
+    "maximumPerceptionLatencyMs": 867.6959144281875,
+    "enemyPoolObjects": 100.0,
+    "enemyPoolReuseCount": 100.0,
+    "enemyPoolExpansionCount": 0.0,
+    "stableSampleInstantiateCount": 0.0
+  }
+}

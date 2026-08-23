@@ -84,6 +84,34 @@ public sealed class PooledEnemyFactory : MonoBehaviour, IEnemyFactory
         AvailableCount++;
     }
 
+    public void EnsureCapacity(int requiredCapacity)
+    {
+        if (defaultTemplate == null)
+        {
+            throw new InvalidOperationException(
+                "Enemy pool must be configured before it is resized.");
+        }
+
+        if (active.Count > 0 || pending.Count > 0)
+        {
+            throw new InvalidOperationException(
+                "Cannot resize an enemy pool while leases are active.");
+        }
+
+        int targetCapacity = Mathf.Max(1, requiredCapacity);
+        maximumCapacity = Mathf.Max(maximumCapacity, targetCapacity);
+        Bucket bucket = GetOrCreateBucket(defaultTemplate);
+
+        while (PooledObjectCount < targetCapacity)
+        {
+            EnemyController clone = CreateInstance(
+                defaultTemplate,
+                bucket,
+                false);
+            ReturnImmediately(clone, bucket);
+        }
+    }
+
     public bool TrySpawn(
         EnemySpawnRequest request,
         Action<EnemySpawnHandle, EnemyExitReason> onEnded,
@@ -248,6 +276,13 @@ public sealed class PooledEnemyFactory : MonoBehaviour, IEnemyFactory
         bucket.All.Add(instance);
         PooledObjectCount++;
         InstantiateCount++;
+
+        // 由休眠模板复制的对象不会立刻执行 Awake。扩容阶段先激活一次，
+        // 确保 EnemyController 的碰撞体、刚体和动画缓存已完整建立。
+        if (!instance.gameObject.activeSelf)
+        {
+            instance.gameObject.SetActive(true);
+        }
 
         if (expansion)
         {

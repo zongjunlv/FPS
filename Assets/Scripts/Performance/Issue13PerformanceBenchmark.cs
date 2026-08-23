@@ -14,6 +14,9 @@ public sealed class Issue13PerformanceBenchmark : MonoBehaviour
     private const float DefaultWarmupSeconds = 5f;
     private const float DefaultSampleSeconds = 20f;
     private const int DefaultSeed = 13013;
+    private const int DefaultPerceptionBudget = 4;
+    private const string DefaultQualityLevel = "PC";
+    private const string BehaviorProfile = "alert-chase-fire-v1";
     private const int MaximumSampleFrames = 24000;
 
     private readonly double[] frameMilliseconds =
@@ -35,6 +38,8 @@ public sealed class Issue13PerformanceBenchmark : MonoBehaviour
     private int benchmarkWidth;
     private int benchmarkHeight;
     private FullScreenMode benchmarkScreenMode;
+    private string benchmarkQualityLevel;
+    private int perceptionBudget;
     private string variant;
     private string outputPath;
     private int shots;
@@ -80,6 +85,12 @@ public sealed class Issue13PerformanceBenchmark : MonoBehaviour
             arguments,
             "-benchmark-seed",
             DefaultSeed);
+        perceptionBudget = Mathf.Max(
+            1,
+            ReadInt(
+                arguments,
+                "-benchmark-perception-budget",
+                DefaultPerceptionBudget));
         benchmarkWidth = Mathf.Max(
             640,
             ReadInt(arguments, "-benchmark-width", 1280));
@@ -90,6 +101,10 @@ public sealed class Issue13PerformanceBenchmark : MonoBehaviour
             HasArgument(arguments, "-benchmark-fullscreen")
                 ? FullScreenMode.FullScreenWindow
                 : FullScreenMode.Windowed;
+        benchmarkQualityLevel = ReadString(
+            arguments,
+            "-benchmark-quality",
+            DefaultQualityLevel);
         variant = ReadString(
             arguments,
             "-benchmark-variant",
@@ -103,6 +118,21 @@ public sealed class Issue13PerformanceBenchmark : MonoBehaviour
         requestedEnemyCount = Mathf.Max(3, requestedEnemyCount);
         warmupSeconds = Mathf.Max(1f, warmupSeconds);
         sampleSeconds = Mathf.Max(2f, sampleSeconds);
+        int qualityIndex = Array.FindIndex(
+            QualitySettings.names,
+            quality => string.Equals(
+                quality,
+                benchmarkQualityLevel,
+                StringComparison.OrdinalIgnoreCase));
+
+        if (qualityIndex < 0)
+        {
+            FailAndQuit(
+                $"Unknown quality level '{benchmarkQualityLevel}'.");
+            return;
+        }
+
+        QualitySettings.SetQualityLevel(qualityIndex, true);
         QualitySettings.vSyncCount = 0;
         Application.targetFrameRate = -1;
         Application.runInBackground = true;
@@ -145,6 +175,8 @@ public sealed class Issue13PerformanceBenchmark : MonoBehaviour
         playerHealth?.Initialize(1000000f);
         weapon.SetSpreadSampleOverride(Vector2.zero);
         weapon.ShotResolved += CountShotResult;
+        EnemyPerceptionScheduler.EnsureForActiveScene()
+            .Configure(perceptionBudget);
         int actualEnemyCount = BuildEnemyStressGroup(
             combat.transform);
 
@@ -257,6 +289,8 @@ public sealed class Issue13PerformanceBenchmark : MonoBehaviour
             return 0;
         }
 
+        enemyPool.EnsureCapacity(requestedEnemyCount);
+
         EnemyController template = existing[0];
 
         foreach (EnemyController enemy in existing)
@@ -270,13 +304,16 @@ public sealed class Issue13PerformanceBenchmark : MonoBehaviour
 
         var occupied = new List<Vector3>(requestedEnemyCount);
 
+        float angleOffset = Mathf.Abs(randomSeed % 360) * Mathf.Deg2Rad;
+
         for (int candidate = 0;
-             candidate < 512 &&
+             candidate < 4096 &&
              benchmarkEnemies.Count < requestedEnemyCount;
              candidate++)
         {
-            float angle = candidate * 137.50776f * Mathf.Deg2Rad;
-            float radius = 7f + (candidate % 9) * 1.65f;
+            float angle = angleOffset +
+                candidate * 137.50776f * Mathf.Deg2Rad;
+            float radius = 6f + Mathf.Sqrt(candidate) * 1.7f;
             Vector3 desired = template.transform.position +
                 new Vector3(
                     Mathf.Cos(angle),
@@ -415,11 +452,19 @@ public sealed class Issue13PerformanceBenchmark : MonoBehaviour
             graphicsDevice = SystemInfo.graphicsDeviceName,
             graphicsMemoryMb = SystemInfo.graphicsMemorySize,
             resolution = $"{Screen.width}x{Screen.height}",
+            configuredResolution =
+                $"{benchmarkWidth}x{benchmarkHeight}",
             screenMode = Screen.fullScreenMode.ToString(),
             qualityLevel = QualitySettings.names[
                 QualitySettings.GetQualityLevel()],
+            buildType = Debug.isDebugBuild
+                ? "Development"
+                : "Release",
+            behaviorProfile = BehaviorProfile,
+            perceptionChecksPerFrame = perceptionBudget,
             enemyCount = actualEnemyCount,
             warmupSeconds = warmupSeconds,
+            configuredSampleSeconds = sampleSeconds,
             sampleSeconds = actualDuration,
             seed = randomSeed,
             sampleFrames = sampleCount,
@@ -453,6 +498,10 @@ public sealed class Issue13PerformanceBenchmark : MonoBehaviour
                 mainThreadMilliseconds,
                 sampleCount,
                 0.95),
+            p99MainThreadMs = Percentile(
+                mainThreadMilliseconds,
+                sampleCount,
+                0.99),
             averageGcBytesPerFrame = Average(
                 gcBytes,
                 sampleCount),
@@ -476,6 +525,8 @@ public sealed class Issue13PerformanceBenchmark : MonoBehaviour
             perceptionChecks = ReadPerceptionChecks(),
             maximumPerceptionLatencyFrames =
                 ReadMaximumPerceptionLatencyFrames(),
+            maximumPerceptionLatencyMs =
+                ReadMaximumPerceptionLatencyFrames() * averageFrameMs,
             enemyPoolObjects = enemyPool?.PooledObjectCount ?? 0,
             enemyPoolReuseCount = enemyPool?.ReuseCount ?? 0,
             enemyPoolExpansionCount = enemyPool?.ExpansionCount ?? 0,
@@ -719,10 +770,15 @@ public sealed class Issue13BenchmarkReport
     public string graphicsDevice;
     public int graphicsMemoryMb;
     public string resolution;
+    public string configuredResolution;
     public string screenMode;
     public string qualityLevel;
+    public string buildType;
+    public string behaviorProfile;
+    public int perceptionChecksPerFrame;
     public int enemyCount;
     public double warmupSeconds;
+    public double configuredSampleSeconds;
     public double sampleSeconds;
     public int seed;
     public int sampleFrames;
@@ -735,6 +791,7 @@ public sealed class Issue13BenchmarkReport
     public double onePercentLowFps;
     public double averageMainThreadMs;
     public double p95MainThreadMs;
+    public double p99MainThreadMs;
     public double averageGcBytesPerFrame;
     public double p95GcBytesPerFrame;
     public long maximumGcBytesInFrame;
@@ -746,6 +803,7 @@ public sealed class Issue13BenchmarkReport
     public bool gcRecorderValid;
     public long perceptionChecks;
     public int maximumPerceptionLatencyFrames;
+    public double maximumPerceptionLatencyMs;
     public int enemyPoolObjects;
     public int enemyPoolReuseCount;
     public int enemyPoolExpansionCount;
