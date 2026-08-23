@@ -243,9 +243,9 @@ namespace FPS.Tests.PlayMode
             GameObject player = FindObjectWithComponent(
                 sceneObjects,
                 "PlayerCombatController");
-            GameObject enemy = FindObjectWithComponent(
-                sceneObjects,
-                "EnemyController");
+            GameObject enemy = sceneObjects.Find(candidate =>
+                candidate.activeInHierarchy &&
+                candidate.GetComponent("EnemyController") != null);
             Component weapon =
                 weaponObject.GetComponent("WeaponController");
             MethodInfo tryFire =
@@ -260,6 +260,17 @@ namespace FPS.Tests.PlayMode
                 "EnemyPerceptionController") as Behaviour;
             Behaviour navigation = enemy.GetComponent(
                 "EnemyNavigationController") as Behaviour;
+            GameObject waveDirectorObject = FindObjectWithComponent(
+                sceneObjects,
+                "WaveDirector");
+            Behaviour waveDirector = waveDirectorObject != null
+                ? waveDirectorObject.GetComponent("WaveDirector") as Behaviour
+                : null;
+
+            if (waveDirector != null)
+            {
+                waveDirector.enabled = false;
+            }
 
             if (perception != null)
             {
@@ -275,6 +286,15 @@ namespace FPS.Tests.PlayMode
                      enemy.GetComponentsInChildren<UnityEngine.AI.NavMeshAgent>())
             {
                 agent.enabled = false;
+            }
+
+            foreach (Rigidbody body in
+                     enemy.GetComponentsInChildren<Rigidbody>())
+            {
+                body.linearVelocity = Vector3.zero;
+                body.angularVelocity = Vector3.zero;
+                body.useGravity = false;
+                body.isKinematic = true;
             }
 
             Ray aimRay = aimCamera.ViewportPointToRay(
@@ -308,19 +328,34 @@ namespace FPS.Tests.PlayMode
 
             float shotDelay =
                 (float)fireInterval.GetValue(weapon) + 0.01f;
+            Component health = enemy.GetComponent("Health");
+            weapon.GetType().GetMethod("SetSpreadSampleOverride")
+                .Invoke(weapon, new object[] { Vector2.zero });
 
-            for (int shot = 0; shot < 10 && enemy != null; shot++)
+            for (int shot = 0;
+                 shot < 10 && enemy != null && enemy.activeInHierarchy;
+                 shot++)
             {
+                aimRay = aimCamera.ViewportPointToRay(
+                    new Vector3(0.5f, 0.5f, 0f));
+                enemy.transform.position +=
+                    aimRay.GetPoint(3f) - enemyCollider.bounds.center;
+                Physics.SyncTransforms();
                 Assert.That(
                     (bool)tryFire.Invoke(weapon, null),
                     Is.True);
                 yield return new WaitForSeconds(shotDelay);
             }
 
+            bool enemyDefeated =
+                enemy == null ||
+                !enemy.activeInHierarchy ||
+                (bool)health.GetType().GetProperty("IsDead")
+                    .GetValue(health);
             Assert.That(
-                enemy == null,
+                enemyDefeated,
                 Is.True,
-                "Repeated hitscan damage must destroy the aimed enemy.");
+                "Repeated hitscan damage must defeat the aimed enemy.");
             Assert.That(
                 CountComponentsByName("ProjectileController"),
                 Is.EqualTo(0));

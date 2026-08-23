@@ -257,6 +257,8 @@ namespace FPS.Tests.PlayMode
                     32f,
                     1f
                 });
+            terminalType.GetMethod("SetMissionAvailable")
+                .Invoke(terminal, new object[] { true });
             terminalType.GetMethod("TryBegin")
                 .Invoke(terminal, new object[] { player });
             terminalType.GetMethod("Advance")

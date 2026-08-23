@@ -1,0 +1,43 @@
+name: Unity Quality Gate
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: unity-quality-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality-gate:
+    name: Compile, EditMode and PlayMode
+    runs-on: [self-hosted, macOS, unity]
+    timeout-minutes: 60
+    env:
+      UNITY_EXECUTABLE: ${{ vars.UNITY_EXECUTABLE }}
+      QUALITY_GATE_OUTPUT_DIR: ${{ github.workspace }}/artifacts/quality-gate
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Run Unity quality gate
+        run: ./scripts/ci/run-unity-quality-gate.sh all
+
+      - name: Publish human-readable summary
+        if: always()
+        run: |
+          if [[ -f artifacts/quality-gate/summary.md ]]; then
+            cat artifacts/quality-gate/summary.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload XML, JSON, Markdown and logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unity-quality-gate-${{ github.run_id }}
+          path: artifacts/quality-gate
+          if-no-files-found: error
+          retention-days: 14

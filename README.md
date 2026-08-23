@@ -26,18 +26,13 @@
 
 手柄支持左摇杆移动、右摇杆观察、按下左摇杆奔跑、东键下蹲，以及 Start 暂停。
 
-## PlayMode 测试
+## 自动化质量门禁
 
 ```bash
-/Users/jungle/UnityEditors/6000.5.3f1/Unity.app/Contents/MacOS/Unity \
-  -batchmode \
-  -nographics \
-  -projectPath "/Users/jungle/GameProject/Unity/FPS/My project" \
-  -runTests \
-  -testPlatform PlayMode \
-  -testResults /tmp/fps-playmode.xml \
-  -logFile /tmp/fps-playmode.log
+./scripts/ci/run-unity-quality-gate.sh all
 ```
+
+同一入口会依次执行 Unity 编译检查、EditMode 与 PlayMode 测试，保留 XML、JSON、Markdown 和原始日志，并区分产品代码、测试、License、资源导入及 Unity 环境失败。完整的本地与 GitHub Actions 自托管 Runner 配置见 [`docs/quality-gate.md`](docs/quality-gate.md)。
 
 测试会验证：
 

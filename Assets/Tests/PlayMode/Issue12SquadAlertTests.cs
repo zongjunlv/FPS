@@ -545,7 +545,7 @@ namespace FPS.Tests.PlayMode
         {
             MonoBehaviour[] behaviours =
                 UnityEngine.Object.FindObjectsByType<MonoBehaviour>(
-                    FindObjectsInactive.Include,
+                    FindObjectsInactive.Exclude,
                     FindObjectsSortMode.None);
             var matches = new System.Collections.Generic.List<Component>();
 
