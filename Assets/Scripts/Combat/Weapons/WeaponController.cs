@@ -58,6 +58,12 @@ public class WeaponController : MonoBehaviour
     public float ReloadAnimationSpeed =>
         Mathf.Max(0.01f, weapon.ReloadDuration) /
         Mathf.Max(0.01f, ReloadDuration);
+    public float FireAnimationSpeed => runtimeCombatStats != null
+        ? runtimeCombatStats.FireRateMultiplier
+        : 1f;
+    public float WeaponAnimatorPlaybackSpeed => weaponAnimator != null
+        ? weaponAnimator.speed
+        : 1f;
     public bool IsReloading => ammoState.IsReloading;
     public Transform MuzzleTransform => FirePoint.transform;
     public RuntimeAnimatorController CharacterAnimatorController =>
@@ -194,6 +200,7 @@ public class WeaponController : MonoBehaviour
 
         if (weaponAnimator != null)
         {
+            weaponAnimator.speed = FireAnimationSpeed;
             weaponAnimator.Play(
                 FireStateHash,
                 0,
@@ -337,6 +344,8 @@ public class WeaponController : MonoBehaviour
         {
             CancelReload();
         }
+
+        ResetWeaponAnimationSpeed();
     }
 
     private void OnDestroy()
@@ -396,6 +405,10 @@ public class WeaponController : MonoBehaviour
         if (weaponAnimator != null && IsReloading)
         {
             weaponAnimator.speed = ReloadAnimationSpeed;
+        }
+        else if (weaponAnimator != null)
+        {
+            weaponAnimator.speed = FireAnimationSpeed;
         }
 
         RuntimePropertiesChanged?.Invoke();

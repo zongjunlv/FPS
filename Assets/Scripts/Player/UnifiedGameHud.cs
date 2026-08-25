@@ -21,6 +21,7 @@ public sealed class UnifiedGameHud : MonoBehaviour
     private PlayerCrosshairPresenter crosshairPresenter;
     private PlayerCombatFeedbackController feedbackPresenter;
     private PlayerRuntimeCombatStats runtimeStats;
+    private PlayerLowHealthFireRateEffectController lowHealthFireRateEffect;
     private IWaveProgressSource waveSource;
     private IRunProgressionSource progressionSource;
 
@@ -84,6 +85,10 @@ public sealed class UnifiedGameHud : MonoBehaviour
     public string AmmoText => ammoText != null && reserveAmmoText != null
         ? $"{ammoText.text} / {reserveAmmoText.text}"
         : string.Empty;
+    public string WeaponStatusText =>
+        weaponStatusText != null ? weaponStatusText.text : string.Empty;
+    public string FireModeText =>
+        fireModeText != null ? fireModeText.text : string.Empty;
     public string WaveText =>
         waveTitleText != null ? waveTitleText.text : string.Empty;
     public string SpawnedText =>
@@ -229,6 +234,8 @@ public sealed class UnifiedGameHud : MonoBehaviour
         feedbackPresenter =
             playerRoot.GetComponent<PlayerCombatFeedbackController>();
         runtimeStats = playerRoot.GetComponent<PlayerRuntimeCombatStats>();
+        lowHealthFireRateEffect =
+            playerRoot.GetComponent<PlayerLowHealthFireRateEffectController>();
         PlayerRunProgression progression =
             playerRoot.GetComponent<PlayerRunProgression>();
 
@@ -248,7 +255,11 @@ public sealed class UnifiedGameHud : MonoBehaviour
         feedbackPresenter.ViewChanged += RefreshDamage;
         if (runtimeStats != null)
         {
-            runtimeStats.ModifiersChanged += RefreshVitals;
+            runtimeStats.ModifiersChanged += HandleRuntimeModifiersChanged;
+        }
+        if (lowHealthFireRateEffect != null)
+        {
+            lowHealthFireRateEffect.StateChanged += RefreshWeapon;
         }
         ammoPresenter.SetLegacyPresentation(false);
         vitalsPresenter.SetLegacyPresentation(false);
@@ -352,13 +363,18 @@ public sealed class UnifiedGameHud : MonoBehaviour
 
         if (runtimeStats != null)
         {
-            runtimeStats.ModifiersChanged -= RefreshVitals;
+            runtimeStats.ModifiersChanged -= HandleRuntimeModifiersChanged;
+        }
+        if (lowHealthFireRateEffect != null)
+        {
+            lowHealthFireRateEffect.StateChanged -= RefreshWeapon;
         }
 
         UnbindProgression();
 
         health = null;
         runtimeStats = null;
+        lowHealthFireRateEffect = null;
         combat = null;
         weapon = null;
         IsBound = false;
@@ -381,6 +397,12 @@ public sealed class UnifiedGameHud : MonoBehaviour
     private void BindWeapon(WeaponController nextWeapon)
     {
         weapon = nextWeapon;
+        RefreshWeapon();
+    }
+
+    private void HandleRuntimeModifiersChanged()
+    {
+        RefreshVitals();
         RefreshWeapon();
     }
 
@@ -476,16 +498,26 @@ public sealed class UnifiedGameHud : MonoBehaviour
         }
 
         weaponText.text = weapon.WeaponName;
-        fireModeText.text = $"FIRE  ·  {weapon.FireModeName}";
+        float fireRateMultiplier = runtimeStats != null
+            ? runtimeStats.FireRateMultiplier
+            : 1f;
+        fireModeText.text =
+            $"FIRE · {weapon.FireModeName} · " +
+            $"{Mathf.RoundToInt(fireRateMultiplier * 100f)}%";
         ammoText.text = weapon.CurrentAmmo.ToString();
         reserveAmmoText.text = weapon.ReserveAmmo.ToString();
         ammoSeparatorText.text = "/";
         weaponSlotText.text = combat != null
             ? $"SLOT {combat.EquippedWeaponIndex + 1:00}"
             : string.Empty;
-        weaponStatusText.text = ammoPresenter != null
+        string weaponState = ammoPresenter != null
             ? ammoPresenter.StatusText
             : weapon.IsReloading ? "RELOADING" : string.Empty;
+        weaponStatusText.text = !string.IsNullOrEmpty(weaponState)
+            ? weaponState
+            : lowHealthFireRateEffect != null
+                ? lowHealthFireRateEffect.StatusText
+                : string.Empty;
         weaponIcon.sprite = iconCatalog.GetWeaponIcon(weapon.WeaponName);
         ammoText.color = weapon.CurrentAmmo == 0
             ? new Color(1f, 0.25f, 0.2f, 1f)
@@ -873,7 +905,7 @@ public sealed class UnifiedGameHud : MonoBehaviour
         weaponSlotText.color = muted;
         fireModeText = CreateText(
             "FireMode", root, 12f, TextAlignmentOptions.MidlineRight,
-            new Vector2(250f, 92f), new Vector2(106f, 22f));
+            new Vector2(190f, 92f), new Vector2(166f, 22f));
         fireModeText.color = accent;
         ammoText = CreateAmmoText(
             "CurrentAmmo", root, 38, FontStyle.Bold,

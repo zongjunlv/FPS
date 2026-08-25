@@ -8,7 +8,8 @@ namespace FPS.GameplayEffects
     {
         MaximumHealth,
         CurrentHealth,
-        CurrentArmor
+        CurrentArmor,
+        WeaponFireRate
     }
 
     public enum GameplayEffectDurationPolicy

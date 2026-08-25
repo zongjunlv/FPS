@@ -60,3 +60,11 @@ Issue 34 建立 `GameplayEffectEventContext` 与玩家级事件流。只有 `Pla
 自动装填效果由一个可移除的 Persistent Effect 实例表示。实例存在时订阅事件流，每次有效击杀为当前弹匣补充3发，不消耗备弹且不超过弹匣上限；实例移除时立即退订。切枪过程中当前武器归属尚未完成，因此该次击杀明确忽略，不延迟结算；切换完成后的后续击杀只补充新装备武器。
 
 `WeaponController.AddMagazineAmmo` 仅在实际增加子弹时发布 `AmmoChanged`，因此旧弹药界面与统一 HUD 同帧刷新；满弹时不会产生伪刷新。
+
+## 低生命条件效果
+
+Issue 35 增加通用 `GameplayEffectConditionState`。低生命射速效果严格在当前生命低于最大生命35%时激活，等于或高于35%时撤销；重复生命事件不会重复应用，生命归零、治疗、重新初始化或显式移除效果都会清除活动实例。
+
+`PlayerRuntimeCombatStats` 将已有射速卡牌倍率作为基础值，再通过同一个 Gameplay Effect 聚合器计算 `WeaponFireRate` 的 Add 修正。默认低生命加成为35%，因此一层15%快速枪机与低生命效果共同生效时总倍率为150%，不存在武器层的额外乘法或重复叠层。
+
+实际 `FireInterval`、武器 Animator 播放速度和 HUD 均读取同一有效倍率。武器面板显示当前总倍率，低生命生效时状态行额外显示“低生命增幅 射速 +35%”。

@@ -1,15 +1,27 @@
+using System.Collections.Generic;
+using FPS.GameplayEffects;
 using UnityEngine;
 
 public sealed class PlayerRuntimeCombatStats : MonoBehaviour
 {
     public event System.Action ModifiersChanged;
 
-    public WeaponRuntimeModifiers WeaponModifiers { get; private set; } =
+    private WeaponRuntimeModifiers baseWeaponModifiers =
         WeaponRuntimeModifiers.Identity;
+    private GameplayEffectRuntime weaponEffects;
+
+    public WeaponRuntimeModifiers WeaponModifiers =>
+        CreateEffectiveWeaponModifiers();
     public SurvivalRuntimeModifiers SurvivalModifiers { get; private set; } =
         SurvivalRuntimeModifiers.Identity;
     public float WeaponDamageMultiplier =>
         WeaponModifiers.DamageMultiplier;
+    public float FireRateMultiplier => WeaponModifiers.FireRateMultiplier;
+    public IReadOnlyList<GameplayEffectInstance> ActiveGameplayEffects =>
+        WeaponEffectRuntime.ActiveInstances;
+
+    private GameplayEffectRuntime WeaponEffectRuntime =>
+        weaponEffects ??= new GameplayEffectRuntime(gameObject);
 
     public float ApplyWeaponDamage(float baseDamage)
     {
@@ -69,16 +81,16 @@ public sealed class PlayerRuntimeCombatStats : MonoBehaviour
     {
         SetWeaponModifiers(new WeaponRuntimeModifiers(
             multiplier,
-            WeaponModifiers.FireRateMultiplier,
-            WeaponModifiers.MagazineCapacityMultiplier,
-            WeaponModifiers.ReloadSpeedMultiplier,
-            WeaponModifiers.RecoilControlMultiplier,
-            WeaponModifiers.AccuracyMultiplier));
+            baseWeaponModifiers.FireRateMultiplier,
+            baseWeaponModifiers.MagazineCapacityMultiplier,
+            baseWeaponModifiers.ReloadSpeedMultiplier,
+            baseWeaponModifiers.RecoilControlMultiplier,
+            baseWeaponModifiers.AccuracyMultiplier));
     }
 
     public void SetWeaponModifiers(WeaponRuntimeModifiers modifiers)
     {
-        WeaponModifiers = new WeaponRuntimeModifiers(
+        baseWeaponModifiers = new WeaponRuntimeModifiers(
             modifiers.DamageMultiplier,
             modifiers.FireRateMultiplier,
             modifiers.MagazineCapacityMultiplier,
@@ -88,9 +100,69 @@ public sealed class PlayerRuntimeCombatStats : MonoBehaviour
         ModifiersChanged?.Invoke();
     }
 
+    public GameplayEffectInstance ApplyGameplayEffect(
+        GameplayEffectDefinition definition,
+        string sourceId,
+        UnityEngine.Object source)
+    {
+        if (definition == null || definition.DurationPolicy !=
+            GameplayEffectDurationPolicy.Persistent)
+        {
+            return null;
+        }
+
+        GameplayEffectInstance instance = WeaponEffectRuntime.Apply(
+            definition,
+            new GameplayEffectContext(
+                sourceId,
+                source,
+                gameObject));
+        ModifiersChanged?.Invoke();
+        return instance;
+    }
+
+    public bool RemoveGameplayEffect(long instanceId)
+    {
+        if (!WeaponEffectRuntime.Remove(instanceId))
+        {
+            return false;
+        }
+
+        ModifiersChanged?.Invoke();
+        return true;
+    }
+
+    public void ClearGameplayEffects()
+    {
+        if (weaponEffects == null || weaponEffects.ActiveInstances.Count == 0)
+        {
+            return;
+        }
+
+        weaponEffects.Clear();
+        ModifiersChanged?.Invoke();
+    }
+
     public void ResetRuntimeModifiers()
     {
+        ClearGameplayEffects();
         SetWeaponModifiers(WeaponRuntimeModifiers.Identity);
         SetSurvivalModifiers(SurvivalRuntimeModifiers.Identity);
+    }
+
+    private WeaponRuntimeModifiers CreateEffectiveWeaponModifiers()
+    {
+        float fireRate = weaponEffects != null
+            ? weaponEffects.Evaluate(
+                GameplayAttributeId.WeaponFireRate,
+                baseWeaponModifiers.FireRateMultiplier)
+            : baseWeaponModifiers.FireRateMultiplier;
+        return new WeaponRuntimeModifiers(
+            baseWeaponModifiers.DamageMultiplier,
+            fireRate,
+            baseWeaponModifiers.MagazineCapacityMultiplier,
+            baseWeaponModifiers.ReloadSpeedMultiplier,
+            baseWeaponModifiers.RecoilControlMultiplier,
+            baseWeaponModifiers.AccuracyMultiplier);
     }
 }
