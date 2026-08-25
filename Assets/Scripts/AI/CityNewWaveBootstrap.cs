@@ -97,17 +97,20 @@ public sealed class CityNewWaveBootstrap : MonoBehaviour
 
         WaveDefinition waveOne = CreateWave(
             "CityNew Wave 1",
-            5,
+            1,
+            12,
             3,
             0.8f);
         WaveDefinition waveTwo = CreateWave(
             "CityNew Wave 2",
-            7,
+            2,
+            20,
             3,
             0.65f);
         WaveDefinition waveThree = CreateWave(
             "CityNew Wave 3",
-            9,
+            3,
+            28,
             4,
             0.5f);
         runtimeSequence =
@@ -215,7 +218,8 @@ public sealed class CityNewWaveBootstrap : MonoBehaviour
 
     private WaveDefinition CreateWave(
         string definitionName,
-        int totalCount,
+        int waveNumber,
+        int threatBudget,
         int maximumAlive,
         float spawnInterval)
     {
@@ -226,47 +230,78 @@ public sealed class CityNewWaveBootstrap : MonoBehaviour
         WaveDefinition definition =
             ScriptableObject.CreateInstance<WaveDefinition>();
         definition.name = definitionName;
-        definition.Configure(
-            totalCount,
+        definition.ConfigureThreatBudget(
+            threatBudget,
+            4100 + waveNumber,
             maximumAlive,
             spawnInterval,
             new[]
             {
                 new WaveEnemyEntry(
                     sceneTemplate,
-                    1,
+                    2,
                     LootRewardTier.Normal,
                     "spider_raider",
                     null,
-                    runtimeRaiderAbilitySet),
+                    runtimeRaiderAbilitySet,
+                    3,
+                    "raider"),
                 new WaveEnemyEntry(
                     sceneTemplate,
-                    1,
+                    2,
                     LootRewardTier.Normal,
                     "spider_suppressor",
                     null,
-                    runtimeSuppressorAbilitySet),
+                    runtimeSuppressorAbilitySet,
+                    3,
+                    "suppressor"),
                 new WaveEnemyEntry(
                     sceneTemplate,
-                    1,
+                    2,
                     LootRewardTier.Normal,
                     "spider_support",
                     null,
-                    runtimeSupportAbilitySet),
+                    runtimeSupportAbilitySet,
+                    4,
+                    "support"),
                 new WaveEnemyEntry(
                     sceneTemplate,
-                    Mathf.Max(1, totalCount - 4),
+                    8,
                     LootRewardTier.Normal,
-                    "spider_bot"),
+                    "spider_bot",
+                    null,
+                    null,
+                    2,
+                    "assault"),
                 new WaveEnemyEntry(
                     sceneTemplate,
                     1,
                     LootRewardTier.Elite,
                     "spider_bot",
-                    runtimeEliteAffix)
-            });
+                    runtimeEliteAffix,
+                    null,
+                    5,
+                    "elite")
+            },
+            CreateRoleConstraints(waveNumber),
+            waveNumber == 1 ? 0f : 0.25f);
         runtimeDefinitions.Add(definition);
         return definition;
+    }
+
+    private static ThreatRoleConstraint[] CreateRoleConstraints(
+        int waveNumber)
+    {
+        return new[]
+        {
+            new ThreatRoleConstraint("raider", 1, 1),
+            new ThreatRoleConstraint("suppressor", 1, 1),
+            new ThreatRoleConstraint("support", 1, 1),
+            new ThreatRoleConstraint(
+                "elite",
+                waveNumber >= 3 ? 1 : 0,
+                1)
+        };
     }
 
     private void EnsureRaiderAbilities()

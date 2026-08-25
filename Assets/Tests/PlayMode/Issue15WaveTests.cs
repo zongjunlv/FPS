@@ -191,6 +191,11 @@ namespace FPS.Tests.PlayMode
                 directorType.GetProperty("PeakAliveCount")
                     .GetValue(director),
                 Is.EqualTo(3));
+            int plannedTotal = GetProgressCount(
+                directorType,
+                director,
+                "TotalCount");
+            Assert.That(plannedTotal, Is.GreaterThanOrEqualTo(3));
 
             ValidateActiveSpawnPoints(directorType, director);
             Assert.That(
@@ -221,11 +226,11 @@ namespace FPS.Tests.PlayMode
                 Is.EqualTo("WAVE 1/3"));
             Assert.That(
                 hudType.GetProperty("SpawnedText").GetValue(hud),
-                Is.EqualTo("SPAWNED 3/4"));
+                Is.EqualTo($"SPAWNED 3/{plannedTotal}"));
             Assert.That(
                 hudType.GetProperty("RemainingEnemiesText")
                     .GetValue(hud),
-                Is.EqualTo("REMAINING 4"));
+                Is.EqualTo($"REMAINING {plannedTotal}"));
 
             deadline = Time.realtimeSinceStartup + 30f;
             Type damageInfoType = RuntimeTypeResolver.GetType(
@@ -274,7 +279,7 @@ namespace FPS.Tests.PlayMode
                     directorType,
                     director,
                     "SpawnedCount"),
-                Is.EqualTo(4));
+                Is.EqualTo(plannedTotal));
             Assert.That(
                 GetProgressCount(
                     directorType,
@@ -294,7 +299,8 @@ namespace FPS.Tests.PlayMode
                 "普通波结束不得发布整局完成事件。");
             Assert.That(
                 hudType.GetProperty("SpawnedText").GetValue(hud),
-                Is.EqualTo("SPAWNED 4/4"));
+                Is.EqualTo(
+                    $"SPAWNED {plannedTotal}/{plannedTotal}"));
             Assert.That(
                 hudType.GetProperty("RemainingEnemiesText")
                     .GetValue(hud),

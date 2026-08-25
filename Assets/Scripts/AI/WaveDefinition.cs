@@ -11,6 +11,8 @@ public sealed class WaveEnemyEntry
     [SerializeField] private string enemyTypeId = "*";
     [SerializeField] private EnemyAffixDefinition affix;
     [SerializeField] private EnemyAbilitySetDefinition abilitySet;
+    [SerializeField, Min(1)] private int threatCost = 1;
+    [SerializeField] private string roleTag = "assault";
 
     public WaveEnemyEntry(EnemyController enemyTemplate, int entryWeight = 1)
         : this(
@@ -29,7 +31,9 @@ public sealed class WaveEnemyEntry
         LootRewardTier tier,
         string typeId = "*",
         EnemyAffixDefinition enemyAffix = null,
-        EnemyAbilitySetDefinition enemyAbilitySet = null)
+        EnemyAbilitySetDefinition enemyAbilitySet = null,
+        int configuredThreatCost = 1,
+        string configuredRoleTag = "assault")
     {
         template = enemyTemplate;
         weight = Mathf.Max(1, entryWeight);
@@ -39,6 +43,8 @@ public sealed class WaveEnemyEntry
             : typeId.Trim();
         affix = enemyAffix;
         abilitySet = enemyAbilitySet;
+        threatCost = Mathf.Max(1, configuredThreatCost);
+        roleTag = ThreatRoleConstraint.NormalizeRole(configuredRoleTag);
     }
 
     public EnemyController Template => template;
@@ -49,6 +55,9 @@ public sealed class WaveEnemyEntry
         : enemyTypeId.Trim();
     public EnemyAffixDefinition Affix => affix;
     public EnemyAbilitySetDefinition AbilitySet => abilitySet;
+    public int ThreatCost => Mathf.Max(1, threatCost);
+    public string RoleTag => ThreatRoleConstraint.NormalizeRole(roleTag);
+    public bool IsElite => rewardTier == LootRewardTier.Elite;
 }
 
 [CreateAssetMenu(
@@ -65,6 +74,14 @@ public sealed class WaveDefinition : ScriptableObject
     [SerializeField, Min(1f)] private float minimumSpawnRadius = 12f;
     [SerializeField, Min(1f)] private float maximumSpawnRadius = 24f;
     [SerializeField] private List<WaveEnemyEntry> enemyEntries = new();
+    [SerializeField] private WaveCompositionMode compositionMode;
+    [SerializeField, Min(1)] private int threatBudget = 1;
+    [SerializeField] private int compositionSeed;
+    [SerializeField, Range(0f, 1f)] private float maximumEliteThreatRatio;
+    [SerializeField] private List<ThreatRoleConstraint> roleConstraints = new();
+    private List<WaveEnemyEntry> resolvedBudgetEntries = new();
+    private int resolvedThreatCost;
+    private bool usedCompositionFallback;
 
     public int TotalEnemyCount => totalEnemyCount;
     public int MaximumAliveCount => maximumAliveCount;
@@ -75,6 +92,15 @@ public sealed class WaveDefinition : ScriptableObject
     public float MinimumSpawnRadius => minimumSpawnRadius;
     public float MaximumSpawnRadius => maximumSpawnRadius;
     public IReadOnlyList<WaveEnemyEntry> EnemyEntries => enemyEntries;
+    public WaveCompositionMode CompositionMode => compositionMode;
+    public int ThreatBudget => threatBudget;
+    public int CompositionSeed => compositionSeed;
+    public int ResolvedThreatCost => resolvedThreatCost;
+    public bool UsedCompositionFallback => usedCompositionFallback;
+    public IReadOnlyList<WaveEnemyEntry> ResolvedEntries =>
+        compositionMode == WaveCompositionMode.ThreatBudget
+            ? resolvedBudgetEntries
+            : enemyEntries;
 
     public void Configure(
         int totalCount,
@@ -109,7 +135,61 @@ public sealed class WaveDefinition : ScriptableObject
         }
 
         totalEnemyCount = totalCount;
+        compositionMode = WaveCompositionMode.FixedCount;
+        resolvedBudgetEntries.Clear();
+        resolvedThreatCost = 0;
+        usedCompositionFallback = false;
         maximumAliveCount = Mathf.Min(maximumAlive, totalCount);
+        spawnInterval = Mathf.Max(0f, interval);
+        retryInterval = Mathf.Max(0.05f, failedRetryInterval);
+        playerSafetyDistance = Mathf.Max(1f, safetyDistance);
+        enemySpacing = Mathf.Max(0.5f, spacing);
+        minimumSpawnRadius = Mathf.Max(
+            playerSafetyDistance,
+            minimumRadius);
+        maximumSpawnRadius = Mathf.Max(
+            minimumSpawnRadius,
+            maximumRadius);
+    }
+
+    public void ConfigureThreatBudget(
+        int budget,
+        int seed,
+        int maximumAlive,
+        float interval,
+        IEnumerable<WaveEnemyEntry> candidates,
+        IEnumerable<ThreatRoleConstraint> constraints,
+        float eliteThreatRatio,
+        float safetyDistance = 10f,
+        float spacing = 3f,
+        float minimumRadius = 12f,
+        float maximumRadius = 24f,
+        float failedRetryInterval = 0.2f)
+    {
+        enemyEntries = candidates != null
+            ? new List<WaveEnemyEntry>(candidates)
+            : new List<WaveEnemyEntry>();
+        roleConstraints = constraints != null
+            ? new List<ThreatRoleConstraint>(constraints)
+            : new List<ThreatRoleConstraint>();
+        ThreatBudgetWavePlan plan = ThreatBudgetWaveComposer.Compose(
+            enemyEntries,
+            budget,
+            seed,
+            roleConstraints,
+            eliteThreatRatio);
+        compositionMode = WaveCompositionMode.ThreatBudget;
+        threatBudget = Mathf.Max(1, budget);
+        compositionSeed = seed;
+        maximumEliteThreatRatio = Mathf.Clamp01(eliteThreatRatio);
+        resolvedBudgetEntries = new List<WaveEnemyEntry>(plan.Entries);
+        resolvedThreatCost = plan.TotalThreat;
+        usedCompositionFallback = plan.UsedFallback;
+        totalEnemyCount = resolvedBudgetEntries.Count;
+        maximumAliveCount = Mathf.Clamp(
+            maximumAlive,
+            1,
+            totalEnemyCount);
         spawnInterval = Mathf.Max(0f, interval);
         retryInterval = Mathf.Max(0.05f, failedRetryInterval);
         playerSafetyDistance = Mathf.Max(1f, safetyDistance);
@@ -124,6 +204,15 @@ public sealed class WaveDefinition : ScriptableObject
 
     public WaveEnemyEntry GetEntry(int spawnIndex)
     {
+        if (compositionMode == WaveCompositionMode.ThreatBudget)
+        {
+            return resolvedBudgetEntries != null &&
+                   resolvedBudgetEntries.Count > 0
+                ? resolvedBudgetEntries[
+                    Mathf.Abs(spawnIndex) % resolvedBudgetEntries.Count]
+                : null;
+        }
+
         if (enemyEntries == null || enemyEntries.Count == 0)
         {
             return null;
