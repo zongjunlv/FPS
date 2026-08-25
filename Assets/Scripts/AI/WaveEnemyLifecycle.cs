@@ -14,6 +14,9 @@ public sealed class WaveEnemyLifecycle : MonoBehaviour
     public int WaveNumber => handle.WaveNumber;
     public bool IsSettled => settled;
     public int Generation => handle.Generation;
+    public string EnemyTypeId => handle.EnemyTypeId;
+    public LootRewardTier RewardTier => handle.RewardTier;
+    public bool IsArmed => armed;
 
     public void Arm(
         int spawnId,

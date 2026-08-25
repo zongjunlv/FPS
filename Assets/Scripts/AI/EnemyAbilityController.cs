@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 
 [DisallowMultipleComponent]
@@ -18,6 +19,7 @@ public sealed class EnemyAbilityController : MonoBehaviour
     private EnemyAbilitySetDefinition activeSet;
     private RaiderApproachAbilityDefinition raider;
     private SuppressorRangedAbilityDefinition suppressor;
+    private EnemySupportAuraAbilityDefinition support;
     private Transform target;
     private Vector3 flankDestination;
     private Vector3 lastProgressPosition;
@@ -25,11 +27,18 @@ public sealed class EnemyAbilityController : MonoBehaviour
     private bool hasCommittedCharge;
     private bool preferRightFlank;
     private float noProgressElapsed;
+    private readonly List<EnemyController> supportCandidates = new();
+    private readonly List<EnemyController> desiredSupportTargets = new();
+    private readonly List<EnemyController> activeSupportTargets = new();
+    private IEnemyNeighborQuery neighborQuery;
+    private Health health;
+    private float supportCooldownRemaining;
 
     public bool IsActive => activeSet != null &&
-        (raider != null || suppressor != null);
+        (raider != null || suppressor != null || support != null);
     public bool IsRaider => activeSet != null && raider != null;
     public bool IsSuppressor => activeSet != null && suppressor != null;
+    public bool IsSupport => activeSet != null && support != null;
     public EnemyAbilitySetDefinition ActiveSet => activeSet;
     public Transform ActiveTarget => target;
     public RaiderTacticsPhase Phase => tactics.Phase;
@@ -39,6 +48,11 @@ public sealed class EnemyAbilityController : MonoBehaviour
     public bool HasFlankDestination => hasFlankDestination;
     public int SuccessfulFlankSelections { get; private set; }
     public int PathFailureCount { get; private set; }
+    public int ActiveSupportTargetCount => activeSupportTargets.Count;
+    public int SupportPulseCount { get; private set; }
+    public string SupportSourceId => enemy != null
+        ? $"{gameObject.GetEntityId()}:{enemy.SpawnResetCount}"
+        : $"{gameObject.GetEntityId()}:0";
     public float AttackRange => IsRaider
         ? raider.AttackRange
         : IsSuppressor
@@ -71,8 +85,51 @@ public sealed class EnemyAbilityController : MonoBehaviour
         navigation = GetComponent<EnemyNavigationController>();
         overhead = GetComponent<EnemyBurnEffectController>();
         enemy = GetComponent<EnemyController>();
+        health = GetComponent<Health>();
+        neighborQuery = EnemySquadCoordinator.Instance ??
+            EnemySquadCoordinator.EnsureForActiveScene();
         tactics.Reset(false);
         suppressorTactics.Reset(false);
+
+        if (health != null)
+        {
+            health.Died += HandleSupporterDeath;
+        }
+    }
+
+    private void Update()
+    {
+        if (!IsSupport || Time.timeScale <= 0f)
+        {
+            return;
+        }
+
+        if (health != null && health.IsDead)
+        {
+            ClearOutgoingSupport();
+            return;
+        }
+
+        PruneOutgoingSupport();
+        supportCooldownRemaining -= Time.deltaTime;
+
+        if (supportCooldownRemaining <= 0f)
+        {
+            PulseSupportNow();
+        }
+    }
+
+    private void OnDisable()
+    {
+        ClearOutgoingSupport();
+    }
+
+    private void OnDestroy()
+    {
+        if (health != null)
+        {
+            health.Died -= HandleSupporterDeath;
+        }
     }
 
     public bool ApplyAbilitySet(
@@ -90,8 +147,10 @@ public sealed class EnemyAbilityController : MonoBehaviour
             definition.FindAbility<RaiderApproachAbilityDefinition>();
         SuppressorRangedAbilityDefinition ranged =
             definition.FindAbility<SuppressorRangedAbilityDefinition>();
+        EnemySupportAuraAbilityDefinition aura =
+            definition.FindAbility<EnemySupportAuraAbilityDefinition>();
 
-        if (approach == null && ranged == null)
+        if (approach == null && ranged == null && aura == null)
         {
             return false;
         }
@@ -108,6 +167,7 @@ public sealed class EnemyAbilityController : MonoBehaviour
         activeSet = definition;
         raider = approach;
         suppressor = ranged;
+        support = aura;
         target = newTarget;
         preferRightFlank = enemy != null &&
             enemy.SpawnResetCount % 2 == 0;
@@ -117,10 +177,12 @@ public sealed class EnemyAbilityController : MonoBehaviour
         overhead?.SetRoleStatus(
             definition.StatusLabel,
             definition.StatusColor);
-        navigation?.SetSpeedMultiplier(
-            raider != null
-                ? raider.FlankSpeedMultiplier
-                : suppressor.MovementSpeedMultiplier);
+        navigation?.SetSpeedMultiplier(raider != null
+            ? raider.FlankSpeedMultiplier
+            : suppressor != null
+                ? suppressor.MovementSpeedMultiplier
+                : 1f);
+        supportCooldownRemaining = 0f;
         return true;
     }
 
@@ -147,6 +209,11 @@ public sealed class EnemyAbilityController : MonoBehaviour
                 hasVisualContact,
                 distance,
                 deltaTime);
+        }
+
+        if (!IsRaider)
+        {
+            return EnemyMovementDirective.None;
         }
 
         if (hasVisualContact && distance <= raider.AttackRange)
@@ -289,9 +356,11 @@ public sealed class EnemyAbilityController : MonoBehaviour
 
     public void ClearForPool()
     {
+        ClearOutgoingSupport();
         activeSet = null;
         raider = null;
         suppressor = null;
+        support = null;
         target = null;
         hasFlankDestination = false;
         hasCommittedCharge = false;
@@ -300,11 +369,189 @@ public sealed class EnemyAbilityController : MonoBehaviour
         noProgressElapsed = 0f;
         SuccessfulFlankSelections = 0;
         PathFailureCount = 0;
+        SupportPulseCount = 0;
+        supportCooldownRemaining = 0f;
         tactics.Reset(false);
         suppressorTactics.Reset(false);
         navigation?.ResetMovementProfile();
         EnsureOverhead();
         overhead?.ClearRoleStatus();
+    }
+
+    public int PulseSupportNow()
+    {
+        if (!IsSupport || support.BuffEffect == null ||
+            health == null || health.IsDead)
+        {
+            return 0;
+        }
+
+        neighborQuery ??= EnemySquadCoordinator.Instance ??
+            EnemySquadCoordinator.EnsureForActiveScene();
+        neighborQuery.CollectAliveNeighbors(
+            enemy,
+            support.Radius,
+            support.RequiredTargetTag,
+            supportCandidates);
+        SortSupportCandidates();
+        desiredSupportTargets.Clear();
+        int selectedCount = Mathf.Min(
+            support.MaximumTargets,
+            supportCandidates.Count);
+
+        for (int index = 0; index < selectedCount; index++)
+        {
+            desiredSupportTargets.Add(supportCandidates[index]);
+        }
+
+        for (int index = activeSupportTargets.Count - 1;
+             index >= 0;
+             index--)
+        {
+            EnemyController previous = activeSupportTargets[index];
+
+            if (previous != null &&
+                desiredSupportTargets.Contains(previous))
+            {
+                continue;
+            }
+
+            previous?.SupportEffects?.RemoveSource(SupportSourceId);
+            activeSupportTargets.RemoveAt(index);
+        }
+
+        for (int index = 0; index < desiredSupportTargets.Count; index++)
+        {
+            EnemyController selected = desiredSupportTargets[index];
+
+            if (selected?.SupportEffects == null ||
+                !selected.SupportEffects.ApplyOrRefresh(
+                    SupportSourceId,
+                    gameObject,
+                    support.BuffEffect,
+                    support.EffectDuration))
+            {
+                continue;
+            }
+
+            if (!activeSupportTargets.Contains(selected))
+            {
+                activeSupportTargets.Add(selected);
+            }
+        }
+
+        SupportPulseCount++;
+        supportCooldownRemaining = support.Cooldown;
+        return activeSupportTargets.Count;
+    }
+
+    private void PruneOutgoingSupport()
+    {
+        if (!IsSupport)
+        {
+            return;
+        }
+
+        for (int index = activeSupportTargets.Count - 1;
+             index >= 0;
+             index--)
+        {
+            EnemyController supported = activeSupportTargets[index];
+            bool remainsValid = EnemyNeighborQueryUtility.IsInRange(
+                    enemy,
+                    supported,
+                    support.Radius) &&
+                supported.HasGameplayTag(support.RequiredTargetTag) &&
+                supported.SupportEffects != null &&
+                supported.SupportEffects.HasSource(SupportSourceId);
+
+            if (remainsValid)
+            {
+                continue;
+            }
+
+            supported?.SupportEffects?.RemoveSource(SupportSourceId);
+            activeSupportTargets.RemoveAt(index);
+        }
+    }
+
+    private void ClearOutgoingSupport()
+    {
+        string sourceId = SupportSourceId;
+
+        for (int index = activeSupportTargets.Count - 1;
+             index >= 0;
+             index--)
+        {
+            activeSupportTargets[index]
+                ?.SupportEffects
+                ?.RemoveSource(sourceId);
+        }
+
+        activeSupportTargets.Clear();
+        desiredSupportTargets.Clear();
+        supportCandidates.Clear();
+    }
+
+    private void SortSupportCandidates()
+    {
+        for (int index = 1; index < supportCandidates.Count; index++)
+        {
+            EnemyController candidate = supportCandidates[index];
+            int insertion = index - 1;
+
+            while (insertion >= 0 &&
+                   CompareSupportTargets(
+                       candidate,
+                       supportCandidates[insertion]) < 0)
+            {
+                supportCandidates[insertion + 1] =
+                    supportCandidates[insertion];
+                insertion--;
+            }
+
+            supportCandidates[insertion + 1] = candidate;
+        }
+    }
+
+    private int CompareSupportTargets(
+        EnemyController left,
+        EnemyController right)
+    {
+        int comparison = support.TargetPriority switch
+        {
+            EnemySupportTargetPriority.LowestHealthRatio =>
+                HealthRatio(left).CompareTo(HealthRatio(right)),
+            EnemySupportTargetPriority.Nearest =>
+                SquaredDistance(left).CompareTo(SquaredDistance(right)),
+            EnemySupportTargetPriority.HighestAttackDamage =>
+                right.AttackDamage.CompareTo(left.AttackDamage),
+            _ => 0
+        };
+        return comparison != 0
+            ? comparison
+            : left.gameObject.GetEntityId().CompareTo(
+                right.gameObject.GetEntityId());
+    }
+
+    private float SquaredDistance(EnemyController candidate)
+    {
+        Vector3 offset = candidate.transform.position - transform.position;
+        offset.y = 0f;
+        return offset.sqrMagnitude;
+    }
+
+    private static float HealthRatio(EnemyController candidate)
+    {
+        Health candidateHealth = candidate.GetComponent<Health>();
+        return candidateHealth != null && candidateHealth.MaxHealth > 0f
+            ? candidateHealth.CurrentHealth / candidateHealth.MaxHealth
+            : 1f;
+    }
+
+    private void HandleSupporterDeath()
+    {
+        ClearOutgoingSupport();
     }
 
     private bool TrySelectFlank(

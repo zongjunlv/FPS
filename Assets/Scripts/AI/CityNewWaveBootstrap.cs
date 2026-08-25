@@ -31,6 +31,9 @@ public sealed class CityNewWaveBootstrap : MonoBehaviour
     private EnemyAbilitySetDefinition runtimeRaiderAbilitySet;
     private SuppressorRangedAbilityDefinition runtimeSuppressorRanged;
     private EnemyAbilitySetDefinition runtimeSuppressorAbilitySet;
+    private EnemySupportAuraAbilityDefinition runtimeSupportAura;
+    private EnemyAbilitySetDefinition runtimeSupportAbilitySet;
+    private GameplayEffectDefinition runtimeSupportBuffEffect;
 
     public static bool IsWaveModeActive => instance != null;
     public WaveDirector Director => director;
@@ -94,17 +97,17 @@ public sealed class CityNewWaveBootstrap : MonoBehaviour
 
         WaveDefinition waveOne = CreateWave(
             "CityNew Wave 1",
-            4,
+            5,
             3,
             0.8f);
         WaveDefinition waveTwo = CreateWave(
             "CityNew Wave 2",
-            6,
+            7,
             3,
             0.65f);
         WaveDefinition waveThree = CreateWave(
             "CityNew Wave 3",
-            8,
+            9,
             4,
             0.5f);
         runtimeSequence =
@@ -189,6 +192,21 @@ public sealed class CityNewWaveBootstrap : MonoBehaviour
             Destroy(runtimeSuppressorRanged);
         }
 
+        if (runtimeSupportAbilitySet != null)
+        {
+            Destroy(runtimeSupportAbilitySet);
+        }
+
+        if (runtimeSupportAura != null)
+        {
+            Destroy(runtimeSupportAura);
+        }
+
+        if (runtimeSupportBuffEffect != null)
+        {
+            Destroy(runtimeSupportBuffEffect);
+        }
+
         if (instance == this)
         {
             instance = null;
@@ -204,6 +222,7 @@ public sealed class CityNewWaveBootstrap : MonoBehaviour
         EnsureEliteAffix();
         EnsureRaiderAbilities();
         EnsureSuppressorAbilities();
+        EnsureSupportAbilities();
         WaveDefinition definition =
             ScriptableObject.CreateInstance<WaveDefinition>();
         definition.name = definitionName;
@@ -229,7 +248,14 @@ public sealed class CityNewWaveBootstrap : MonoBehaviour
                     runtimeSuppressorAbilitySet),
                 new WaveEnemyEntry(
                     sceneTemplate,
-                    Mathf.Max(1, totalCount - 3),
+                    1,
+                    LootRewardTier.Normal,
+                    "spider_support",
+                    null,
+                    runtimeSupportAbilitySet),
+                new WaveEnemyEntry(
+                    sceneTemplate,
+                    Mathf.Max(1, totalCount - 4),
                     LootRewardTier.Normal,
                     "spider_bot"),
                 new WaveEnemyEntry(
@@ -364,6 +390,56 @@ public sealed class CityNewWaveBootstrap : MonoBehaviour
             "ELITE ARMOR",
             new Color(1f, 0.72f, 0.12f, 1f),
             runtimeEliteEffect);
+    }
+
+    private void EnsureSupportAbilities()
+    {
+        if (runtimeSupportAura != null &&
+            runtimeSupportAbilitySet != null &&
+            runtimeSupportBuffEffect != null)
+        {
+            return;
+        }
+
+        runtimeSupportBuffEffect =
+            ScriptableObject.CreateInstance<GameplayEffectDefinition>();
+        runtimeSupportBuffEffect.name = "Support Attack Buff Effect";
+        runtimeSupportBuffEffect.hideFlags = HideFlags.HideAndDontSave;
+        runtimeSupportBuffEffect.Configure(
+            "enemy.buff.support_attack",
+            new GameplayEffectModifier(
+                GameplayAttributeId.EnemyAttackDamage,
+                GameplayModifierOperation.Multiply,
+                0.25f));
+        runtimeSupportBuffEffect.ConfigureTags(
+            "effect.enemy.support_attack",
+            "buff.support",
+            "target.enemy");
+
+        runtimeSupportAura =
+            ScriptableObject.CreateInstance<
+                EnemySupportAuraAbilityDefinition>();
+        runtimeSupportAura.name = "Spider Support Aura";
+        runtimeSupportAura.hideFlags = HideFlags.HideAndDontSave;
+        runtimeSupportAura.Configure(
+            "enemy.ability.support_aura",
+            10f,
+            2,
+            3f,
+            2f,
+            EnemySupportTargetPriority.LowestHealthRatio,
+            "enemy",
+            runtimeSupportBuffEffect);
+
+        runtimeSupportAbilitySet =
+            ScriptableObject.CreateInstance<EnemyAbilitySetDefinition>();
+        runtimeSupportAbilitySet.name = "Spider Support Ability Set";
+        runtimeSupportAbilitySet.hideFlags = HideFlags.HideAndDontSave;
+        runtimeSupportAbilitySet.Configure(
+            "enemy.role.spider_support",
+            "SUPPORT",
+            new Color(0.35f, 1f, 0.42f, 1f),
+            new EnemyAbilityDefinition[] { runtimeSupportAura });
     }
 
     private void ConfigureLootRewards(

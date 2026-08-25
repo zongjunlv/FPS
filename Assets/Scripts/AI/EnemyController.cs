@@ -18,6 +18,7 @@ public class EnemyController : MonoBehaviour
     private float configuredArmor;
     private EnemyAffixController affixController;
     private EnemyAbilityController abilityController;
+    private EnemySupportEffectReceiver supportEffects;
 
     public int SpawnResetCount { get; private set; }
     public int PoolPreparationCount { get; private set; }
@@ -29,11 +30,23 @@ public class EnemyController : MonoBehaviour
         currentEnemy != null && currentEnemy.RewardExperience > 0
             ? currentEnemy.RewardExperience
             : 40;
-    public float AttackDamage => affixController != null
-        ? Mathf.Max(1f, affixController.Evaluate(
-            FPS.GameplayEffects.GameplayAttributeId.EnemyAttackDamage,
-            BaseAttackDamage))
-        : BaseAttackDamage;
+    public float AttackDamage
+    {
+        get
+        {
+            float value = affixController != null
+                ? affixController.Evaluate(
+                    FPS.GameplayEffects.GameplayAttributeId.EnemyAttackDamage,
+                    BaseAttackDamage)
+                : BaseAttackDamage;
+            value = supportEffects != null
+                ? supportEffects.Evaluate(
+                    FPS.GameplayEffects.GameplayAttributeId.EnemyAttackDamage,
+                    value)
+                : value;
+            return Mathf.Max(1f, value);
+        }
+    }
     public int RewardExperience => Mathf.Max(0, Mathf.RoundToInt(
         affixController != null
             ? affixController.Evaluate(
@@ -45,6 +58,7 @@ public class EnemyController : MonoBehaviour
         : 1f;
     public EnemyAffixController AffixController => affixController;
     public EnemyAbilityController AbilityController => abilityController;
+    public EnemySupportEffectReceiver SupportEffects => supportEffects;
 
     public void SetFactoryManaged(bool managed)
     {
@@ -67,6 +81,7 @@ public class EnemyController : MonoBehaviour
         health.Initialize(configuredHealth, configuredArmor);
         health.Died += HandleDeath;
         EnsureBurnEffects();
+        EnsureSupportEffects();
         EnsureAbilities();
         EnsureAffixes();
         EnsureHitboxes();
@@ -101,6 +116,13 @@ public class EnemyController : MonoBehaviour
     {
         affixController = GetComponent<EnemyAffixController>();
         affixController ??= gameObject.AddComponent<EnemyAffixController>();
+    }
+
+    private void EnsureSupportEffects()
+    {
+        supportEffects = GetComponent<EnemySupportEffectReceiver>();
+        supportEffects ??=
+            gameObject.AddComponent<EnemySupportEffectReceiver>();
     }
 
     private void EnsureAbilities()
@@ -154,6 +176,7 @@ public class EnemyController : MonoBehaviour
     {
         deathPresentationTriggered = false;
         abilityController?.ClearForPool();
+        supportEffects?.ClearAll();
         affixController?.ClearAffix(false);
         EnemyBurnEffectController burnEffects =
             GetComponent<EnemyBurnEffectController>();
@@ -195,6 +218,7 @@ public class EnemyController : MonoBehaviour
     public void PrepareForPool()
     {
         abilityController?.ClearForPool();
+        supportEffects?.ClearAll();
         affixController?.ClearAffix();
         EnemyBurnEffectController burnEffects =
             GetComponent<EnemyBurnEffectController>();
@@ -234,6 +258,37 @@ public class EnemyController : MonoBehaviour
             target);
         GetComponent<EnemyCombatController>()?.RefreshAbilityProfile();
         return applied;
+    }
+
+    public bool HasGameplayTag(string gameplayTag)
+    {
+        string tag = string.IsNullOrWhiteSpace(gameplayTag)
+            ? "enemy"
+            : gameplayTag.Trim();
+
+        if (tag == "*" || tag == "enemy" || tag == "enemy.alive")
+        {
+            return true;
+        }
+
+        WaveEnemyLifecycle lifecycle =
+            GetComponent<WaveEnemyLifecycle>();
+        string typeId = lifecycle != null && lifecycle.IsArmed
+            ? lifecycle.EnemyTypeId
+            : "*";
+
+        if (string.Equals(tag, typeId, System.StringComparison.Ordinal) ||
+            string.Equals(
+                tag,
+                $"enemy.type.{typeId}",
+                System.StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        string roleId = abilityController?.ActiveSet?.StableId;
+        return !string.IsNullOrWhiteSpace(roleId) &&
+            string.Equals(tag, roleId, System.StringComparison.Ordinal);
     }
 
     private void CacheRuntimeBaseline()

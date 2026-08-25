@@ -19,7 +19,8 @@ public readonly struct EnemyAlertDebugRelation
     public bool Accepted { get; }
 }
 
-public sealed class EnemySquadCoordinator : MonoBehaviour
+public sealed class EnemySquadCoordinator : MonoBehaviour,
+    IEnemyNeighborQuery
 {
     private readonly List<EnemyPerceptionController> members = new();
     private readonly Dictionary<EnemyPerceptionController, float>
@@ -130,6 +131,47 @@ public sealed class EnemySquadCoordinator : MonoBehaviour
 
         members.Remove(member);
         lastBroadcastTime.Remove(member);
+    }
+
+    public int CollectAliveNeighbors(
+        EnemyController source,
+        float radius,
+        string requiredTag,
+        List<EnemyController> results)
+    {
+        if (results == null)
+        {
+            throw new System.ArgumentNullException(nameof(results));
+        }
+
+        results.Clear();
+
+        for (int index = members.Count - 1; index >= 0; index--)
+        {
+            EnemyPerceptionController perception = members[index];
+
+            if (perception == null)
+            {
+                members.RemoveAt(index);
+                continue;
+            }
+
+            EnemyController candidate =
+                perception.GetComponent<EnemyController>();
+
+            if (!EnemyNeighborQueryUtility.IsInRange(
+                    source,
+                    candidate,
+                    radius) ||
+                !candidate.HasGameplayTag(requiredTag))
+            {
+                continue;
+            }
+
+            results.Add(candidate);
+        }
+
+        return results.Count;
     }
 
     public bool TryBroadcast(

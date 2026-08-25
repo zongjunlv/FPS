@@ -32,6 +32,9 @@ public sealed class EnemyBurnEffectController : MonoBehaviour
     private Color affixStatusColor = Color.white;
     private string roleStatusLabel;
     private Color roleStatusColor = Color.white;
+    private string supportStatusLabel;
+    private Color supportStatusColor = Color.white;
+    private int supportSourceCount;
     private const float HealthFillWidth = 116f;
     private const float OverheadWorldScale = 0.0065f;
 
@@ -52,6 +55,8 @@ public sealed class EnemyBurnEffectController : MonoBehaviour
         affixStatusLabel);
     public bool HasRoleStatus => !string.IsNullOrWhiteSpace(
         roleStatusLabel);
+    public bool HasSupportStatus => supportSourceCount > 0 &&
+        !string.IsNullOrWhiteSpace(supportStatusLabel);
     public float PresentationWorldScale =>
         presentationRoot != null
             ? presentationRoot.transform.localScale.x
@@ -205,6 +210,26 @@ public sealed class EnemyBurnEffectController : MonoBehaviour
     public void ClearRoleStatus()
     {
         roleStatusLabel = string.Empty;
+        SyncPresentation();
+    }
+
+    public void SetSupportStatus(
+        int sourceCount,
+        string label,
+        Color color)
+    {
+        supportSourceCount = Mathf.Max(0, sourceCount);
+        supportStatusLabel = string.IsNullOrWhiteSpace(label)
+            ? "BOOST"
+            : label.Trim();
+        supportStatusColor = color;
+        SyncPresentation();
+    }
+
+    public void ClearSupportStatus()
+    {
+        supportSourceCount = 0;
+        supportStatusLabel = string.Empty;
         SyncPresentation();
     }
 
@@ -406,11 +431,13 @@ public sealed class EnemyBurnEffectController : MonoBehaviour
 
         bool hasAffix = HasAffixStatus;
         bool hasRole = HasRoleStatus;
+        bool hasSupport = HasSupportStatus;
 
         if (statusRoot != null)
         {
             statusRoot.SetActive(
-                showOverhead && (stacks > 0 || hasAffix || hasRole));
+                showOverhead &&
+                (stacks > 0 || hasAffix || hasRole || hasSupport));
         }
 
         if (statusLabel != null)
@@ -422,11 +449,22 @@ public sealed class EnemyBurnEffectController : MonoBehaviour
                     : hasAffix
                         ? affixStatusLabel
                         : string.Empty;
-            statusLabel.text = stacks > 0 &&
-                               !string.IsNullOrEmpty(roleAndAffix)
-                ? $"{roleAndAffix} · BURN ×{stacks}"
+            string supported = hasSupport
+                ? supportSourceCount > 1
+                    ? $"{supportStatusLabel} ×{supportSourceCount}"
+                    : supportStatusLabel
+                : string.Empty;
+            string combined = !string.IsNullOrEmpty(roleAndAffix) &&
+                              !string.IsNullOrEmpty(supported)
+                ? $"{roleAndAffix} · {supported}"
                 : !string.IsNullOrEmpty(roleAndAffix)
                     ? roleAndAffix
+                    : supported;
+            statusLabel.text = stacks > 0 &&
+                               !string.IsNullOrEmpty(combined)
+                ? $"{combined} · BURN ×{stacks}"
+                : !string.IsNullOrEmpty(combined)
+                    ? combined
                     : stacks > 0
                         ? $"BURN ×{stacks}"
                         : string.Empty;
@@ -434,6 +472,8 @@ public sealed class EnemyBurnEffectController : MonoBehaviour
                 ? affixStatusColor
                 : hasRole
                     ? roleStatusColor
+                    : hasSupport
+                        ? supportStatusColor
                     : new Color(1f, 0.48f, 0.08f, 1f);
         }
 
