@@ -16,18 +16,33 @@ public class EnemyController : MonoBehaviour
     private Animator animator;
     private float configuredHealth;
     private float configuredArmor;
+    private EnemyAffixController affixController;
 
     public int SpawnResetCount { get; private set; }
     public int PoolPreparationCount { get; private set; }
 
-    public float AttackDamage =>
-        currentEnemy != null
-            ? Mathf.Max(1f, currentEnemy.Attack)
-            : 20f;
-    public int RewardExperience =>
+    public float BaseAttackDamage => currentEnemy != null
+        ? Mathf.Max(1f, currentEnemy.Attack)
+        : 20f;
+    public int BaseRewardExperience =>
         currentEnemy != null && currentEnemy.RewardExperience > 0
             ? currentEnemy.RewardExperience
             : 40;
+    public float AttackDamage => affixController != null
+        ? Mathf.Max(1f, affixController.Evaluate(
+            FPS.GameplayEffects.GameplayAttributeId.EnemyAttackDamage,
+            BaseAttackDamage))
+        : BaseAttackDamage;
+    public int RewardExperience => Mathf.Max(0, Mathf.RoundToInt(
+        affixController != null
+            ? affixController.Evaluate(
+                FPS.GameplayEffects.GameplayAttributeId.EnemyExperienceReward,
+                BaseRewardExperience)
+            : BaseRewardExperience));
+    public float LootQuantityMultiplier => affixController != null
+        ? Mathf.Max(1f, affixController.LootQuantityMultiplier)
+        : 1f;
+    public EnemyAffixController AffixController => affixController;
 
     public void SetFactoryManaged(bool managed)
     {
@@ -50,6 +65,7 @@ public class EnemyController : MonoBehaviour
         health.Initialize(configuredHealth, configuredArmor);
         health.Died += HandleDeath;
         EnsureBurnEffects();
+        EnsureAffixes();
         EnsureHitboxes();
         CacheRuntimeBaseline();
     }
@@ -76,6 +92,12 @@ public class EnemyController : MonoBehaviour
         {
             gameObject.AddComponent<EnemyBurnEffectController>();
         }
+    }
+
+    private void EnsureAffixes()
+    {
+        affixController = GetComponent<EnemyAffixController>();
+        affixController ??= gameObject.AddComponent<EnemyAffixController>();
     }
 
     private void OnDestroy()
@@ -122,6 +144,7 @@ public class EnemyController : MonoBehaviour
     public void ResetForSpawn(Transform target)
     {
         deathPresentationTriggered = false;
+        affixController?.ClearAffix(false);
         EnemyBurnEffectController burnEffects =
             GetComponent<EnemyBurnEffectController>();
         burnEffects?.ClearBurn();
@@ -161,6 +184,7 @@ public class EnemyController : MonoBehaviour
 
     public void PrepareForPool()
     {
+        affixController?.ClearAffix();
         EnemyBurnEffectController burnEffects =
             GetComponent<EnemyBurnEffectController>();
         burnEffects?.ClearBurn();
@@ -181,6 +205,12 @@ public class EnemyController : MonoBehaviour
         }
 
         PoolPreparationCount++;
+    }
+
+    public bool ApplyAffix(EnemyAffixDefinition definition)
+    {
+        EnsureAffixes();
+        return affixController.ApplyAffix(definition, configuredArmor);
     }
 
     private void CacheRuntimeBaseline()

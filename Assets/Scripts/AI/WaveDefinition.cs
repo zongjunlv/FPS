@@ -9,13 +9,15 @@ public sealed class WaveEnemyEntry
     [SerializeField, Min(1)] private int weight = 1;
     [SerializeField] private LootRewardTier rewardTier = LootRewardTier.Normal;
     [SerializeField] private string enemyTypeId = "*";
+    [SerializeField] private EnemyAffixDefinition affix;
 
     public WaveEnemyEntry(EnemyController enemyTemplate, int entryWeight = 1)
         : this(
             enemyTemplate,
             entryWeight,
             LootRewardTier.Normal,
-            "*")
+            "*",
+            null)
     {
     }
 
@@ -23,7 +25,8 @@ public sealed class WaveEnemyEntry
         EnemyController enemyTemplate,
         int entryWeight,
         LootRewardTier tier,
-        string typeId = "*")
+        string typeId = "*",
+        EnemyAffixDefinition enemyAffix = null)
     {
         template = enemyTemplate;
         weight = Mathf.Max(1, entryWeight);
@@ -31,6 +34,7 @@ public sealed class WaveEnemyEntry
         enemyTypeId = string.IsNullOrWhiteSpace(typeId)
             ? "*"
             : typeId.Trim();
+        affix = enemyAffix;
     }
 
     public EnemyController Template => template;
@@ -39,6 +43,7 @@ public sealed class WaveEnemyEntry
     public string EnemyTypeId => string.IsNullOrWhiteSpace(enemyTypeId)
         ? "*"
         : enemyTypeId.Trim();
+    public EnemyAffixDefinition Affix => affix;
 }
 
 [CreateAssetMenu(

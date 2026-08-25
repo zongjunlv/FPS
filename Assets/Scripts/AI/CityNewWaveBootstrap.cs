@@ -1,5 +1,6 @@
 using System.Collections;
 using System.Collections.Generic;
+using FPS.GameplayEffects;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 
@@ -24,6 +25,8 @@ public sealed class CityNewWaveBootstrap : MonoBehaviour
     private readonly List<WaveDefinition> runtimeDefinitions = new();
     private WaveSequenceDefinition runtimeSequence;
     private LootDropTableDefinition runtimeDropTable;
+    private EnemyAffixDefinition runtimeEliteAffix;
+    private GameplayEffectDefinition runtimeEliteEffect;
 
     public static bool IsWaveModeActive => instance != null;
     public WaveDirector Director => director;
@@ -152,6 +155,16 @@ public sealed class CityNewWaveBootstrap : MonoBehaviour
             Destroy(runtimeDropTable);
         }
 
+        if (runtimeEliteAffix != null)
+        {
+            Destroy(runtimeEliteAffix);
+        }
+
+        if (runtimeEliteEffect != null)
+        {
+            Destroy(runtimeEliteEffect);
+        }
+
         if (instance == this)
         {
             instance = null;
@@ -164,6 +177,7 @@ public sealed class CityNewWaveBootstrap : MonoBehaviour
         int maximumAlive,
         float spawnInterval)
     {
+        EnsureEliteAffix();
         WaveDefinition definition =
             ScriptableObject.CreateInstance<WaveDefinition>();
         definition.name = definitionName;
@@ -182,10 +196,52 @@ public sealed class CityNewWaveBootstrap : MonoBehaviour
                     sceneTemplate,
                     1,
                     LootRewardTier.Elite,
-                    "spider_bot")
+                    "spider_bot",
+                    runtimeEliteAffix)
             });
         runtimeDefinitions.Add(definition);
         return definition;
+    }
+
+    private void EnsureEliteAffix()
+    {
+        if (runtimeEliteAffix != null && runtimeEliteEffect != null)
+        {
+            return;
+        }
+
+        runtimeEliteEffect =
+            ScriptableObject.CreateInstance<GameplayEffectDefinition>();
+        runtimeEliteEffect.name = "Armored Elite Gameplay Effect";
+        runtimeEliteEffect.hideFlags = HideFlags.HideAndDontSave;
+        runtimeEliteEffect.Configure(
+            "enemy.affix.armored_elite",
+            new GameplayEffectModifier(
+                GameplayAttributeId.EnemyMaximumArmor,
+                GameplayModifierOperation.Add,
+                60f),
+            new GameplayEffectModifier(
+                GameplayAttributeId.EnemyAttackDamage,
+                GameplayModifierOperation.Multiply,
+                0.5f),
+            new GameplayEffectModifier(
+                GameplayAttributeId.EnemyExperienceReward,
+                GameplayModifierOperation.Multiply,
+                1f),
+            new GameplayEffectModifier(
+                GameplayAttributeId.EnemyLootQuantity,
+                GameplayModifierOperation.Multiply,
+                0.5f));
+
+        runtimeEliteAffix =
+            ScriptableObject.CreateInstance<EnemyAffixDefinition>();
+        runtimeEliteAffix.name = "Armored Elite Affix";
+        runtimeEliteAffix.hideFlags = HideFlags.HideAndDontSave;
+        runtimeEliteAffix.Configure(
+            "armored_elite",
+            "ELITE ARMOR",
+            new Color(1f, 0.72f, 0.12f, 1f),
+            runtimeEliteEffect);
     }
 
     private void ConfigureLootRewards(

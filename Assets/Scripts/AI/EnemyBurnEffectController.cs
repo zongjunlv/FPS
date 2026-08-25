@@ -28,6 +28,8 @@ public sealed class EnemyBurnEffectController : MonoBehaviour
     private Image healthFillImage;
     private Material particleMaterial;
     private bool overheadPresentationEnabled = true;
+    private string affixStatusLabel;
+    private Color affixStatusColor = Color.white;
     private const float HealthFillWidth = 116f;
     private const float OverheadWorldScale = 0.0065f;
 
@@ -44,6 +46,8 @@ public sealed class EnemyBurnEffectController : MonoBehaviour
     public string StackText => StatusText;
     public string StatusText =>
         statusLabel != null ? statusLabel.text : string.Empty;
+    public bool HasAffixStatus => !string.IsNullOrWhiteSpace(
+        affixStatusLabel);
     public float PresentationWorldScale =>
         presentationRoot != null
             ? presentationRoot.transform.localScale.x
@@ -165,6 +169,21 @@ public sealed class EnemyBurnEffectController : MonoBehaviour
     public void SetOverheadPresentationEnabled(bool enabled)
     {
         overheadPresentationEnabled = enabled;
+        SyncPresentation();
+    }
+
+    public void SetAffixStatus(string label, Color color)
+    {
+        affixStatusLabel = string.IsNullOrWhiteSpace(label)
+            ? "ELITE"
+            : label.Trim();
+        affixStatusColor = color;
+        SyncPresentation();
+    }
+
+    public void ClearAffixStatus()
+    {
+        affixStatusLabel = string.Empty;
         SyncPresentation();
     }
 
@@ -364,14 +383,25 @@ public sealed class EnemyBurnEffectController : MonoBehaviour
                     : new Color(1f, 0.2f, 0.16f, 1f);
         }
 
+        bool hasAffix = HasAffixStatus;
+
         if (statusRoot != null)
         {
-            statusRoot.SetActive(showOverhead && stacks > 0);
+            statusRoot.SetActive(showOverhead && (stacks > 0 || hasAffix));
         }
 
         if (statusLabel != null)
         {
-            statusLabel.text = stacks > 0 ? $"BURN ×{stacks}" : string.Empty;
+            statusLabel.text = hasAffix && stacks > 0
+                ? $"{affixStatusLabel} · BURN ×{stacks}"
+                : hasAffix
+                    ? affixStatusLabel
+                    : stacks > 0
+                        ? $"BURN ×{stacks}"
+                        : string.Empty;
+            statusLabel.color = hasAffix
+                ? affixStatusColor
+                : new Color(1f, 0.48f, 0.08f, 1f);
         }
 
         if (burnVisualRoot != null)

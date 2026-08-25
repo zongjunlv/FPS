@@ -7,7 +7,8 @@ public readonly struct LootRewardContext
         string enemyTypeId,
         int waveNumber,
         LootRewardTier rewardTier,
-        int uniqueId)
+        int uniqueId,
+        float quantityMultiplier = 1f)
     {
         EnemyTypeId = string.IsNullOrWhiteSpace(enemyTypeId)
             ? "*"
@@ -15,12 +16,17 @@ public readonly struct LootRewardContext
         WaveNumber = Math.Max(1, waveNumber);
         RewardTier = rewardTier;
         UniqueId = uniqueId;
+        QuantityMultiplier = float.IsNaN(quantityMultiplier) ||
+                             float.IsInfinity(quantityMultiplier)
+            ? 1f
+            : Math.Max(1f, quantityMultiplier);
     }
 
     public string EnemyTypeId { get; }
     public int WaveNumber { get; }
     public LootRewardTier RewardTier { get; }
     public int UniqueId { get; }
+    public float QuantityMultiplier { get; }
 }
 
 public readonly struct LootDropStack
@@ -94,7 +100,11 @@ public sealed class DeterministicLootResolver
         for (int index = 0; index < order.Count; index++)
         {
             string stableId = order[index];
-            result.Add(new LootDropStack(stableId, quantities[stableId]));
+            int scaledQuantity = Math.Max(
+                1,
+                (int)Math.Ceiling(
+                    quantities[stableId] * context.QuantityMultiplier));
+            result.Add(new LootDropStack(stableId, scaledQuantity));
         }
 
         return result;

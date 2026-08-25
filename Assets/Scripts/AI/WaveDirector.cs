@@ -495,7 +495,8 @@ public sealed class WaveDirector : MonoBehaviour, IWaveProgressSource
             handle.Controller.RewardExperience,
             handle.Controller.transform.position,
             handle.EnemyTypeId,
-            handle.RewardTier);
+            handle.RewardTier,
+            handle.Controller.LootQuantityMultiplier);
         EnemyDeathEventCount++;
         EnemyDied?.Invoke(LastEnemyDeath);
     }

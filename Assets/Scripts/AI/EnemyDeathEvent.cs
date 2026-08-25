@@ -16,7 +16,8 @@ public readonly struct EnemyDeathEvent
             rewardExperience,
             enemy != null ? enemy.transform.position : Vector3.zero,
             "*",
-            LootRewardTier.Normal)
+            LootRewardTier.Normal,
+            1f)
     {
     }
 
@@ -28,7 +29,8 @@ public readonly struct EnemyDeathEvent
         int rewardExperience,
         Vector3 worldPosition,
         string enemyTypeId,
-        LootRewardTier rewardTier)
+        LootRewardTier rewardTier,
+        float lootQuantityMultiplier = 1f)
     {
         Enemy = enemy;
         SpawnId = spawnId;
@@ -40,6 +42,10 @@ public readonly struct EnemyDeathEvent
             ? "*"
             : enemyTypeId.Trim();
         RewardTier = rewardTier;
+        LootQuantityMultiplier = float.IsNaN(lootQuantityMultiplier) ||
+                                 float.IsInfinity(lootQuantityMultiplier)
+            ? 1f
+            : Mathf.Max(1f, lootQuantityMultiplier);
     }
 
     public EnemyController Enemy { get; }
@@ -52,4 +58,5 @@ public readonly struct EnemyDeathEvent
     public Vector3 WorldPosition { get; }
     public string EnemyTypeId { get; }
     public LootRewardTier RewardTier { get; }
+    public float LootQuantityMultiplier { get; }
 }

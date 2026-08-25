@@ -54,6 +54,7 @@ public sealed class SceneEnemyFactory : MonoBehaviour, IEnemyFactory
         instance.transform.rotation = request.Rotation;
         instance.SetFactoryManaged(true);
         instance.ResetForSpawn(request.Target);
+        instance.ApplyAffix(request.Entry?.Affix);
 
         if (!instance.gameObject.activeSelf)
         {
@@ -76,9 +77,15 @@ public sealed class SceneEnemyFactory : MonoBehaviour, IEnemyFactory
 
         if (navigation == null || !navigation.UsesNavMesh)
         {
+            instance.PrepareForPool();
+
             if (!adoptSceneTemplate)
             {
                 Destroy(instance.gameObject);
+            }
+            else
+            {
+                instance.gameObject.SetActive(false);
             }
 
             handle = default;

@@ -9,7 +9,11 @@ namespace FPS.GameplayEffects
         MaximumHealth,
         CurrentHealth,
         CurrentArmor,
-        WeaponFireRate
+        WeaponFireRate,
+        EnemyMaximumArmor,
+        EnemyAttackDamage,
+        EnemyExperienceReward,
+        EnemyLootQuantity
     }
 
     public enum GameplayEffectDurationPolicy

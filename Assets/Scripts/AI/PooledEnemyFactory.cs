@@ -141,6 +141,7 @@ public sealed class PooledEnemyFactory : MonoBehaviour, IEnemyFactory
         instance.name = $"SPIDER_BOT WAVE {request.SpawnId:000}";
         instance.SetFactoryManaged(true);
         instance.ResetForSpawn(request.Target);
+        instance.ApplyAffix(request.Entry?.Affix);
         instance.gameObject.SetActive(true);
 
         NavMeshAgent agent = instance.GetComponent<NavMeshAgent>();
