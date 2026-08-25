@@ -100,7 +100,9 @@ public sealed class PlayerKillAmmoEffectController : MonoBehaviour
 
     private void EnsureRuntime()
     {
-        runtime ??= new GameplayEffectRuntime(gameObject);
+        runtime ??= new GameplayEffectRuntime(
+            gameObject,
+            "Player Kill Event Effects");
 
         if (definition != null)
         {

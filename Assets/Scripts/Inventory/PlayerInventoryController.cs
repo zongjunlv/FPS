@@ -42,7 +42,7 @@ public sealed class PlayerInventoryController : MonoBehaviour
         input = GetComponent<PlayerInputReader>();
         health = GetComponent<Health>();
         consumableEffects = health != null
-            ? new GameplayEffectRuntime(health)
+            ? new GameplayEffectRuntime(health, "Player Consumable Effects")
             : null;
         loadout = GetComponent<WeaponLoadoutController>();
         gameplayLocks = GetComponent<GameplayLockCoordinator>();

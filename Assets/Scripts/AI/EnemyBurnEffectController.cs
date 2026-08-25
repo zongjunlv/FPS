@@ -57,7 +57,9 @@ public sealed class EnemyBurnEffectController : MonoBehaviour
     private void Awake()
     {
         health = GetComponent<Health>();
-        runtime = new GameplayEffectRuntime(gameObject);
+        runtime = new GameplayEffectRuntime(
+            gameObject,
+            "Enemy Status Effects");
         EnsureDefinition();
         EnsurePresentation();
         SyncPresentation();

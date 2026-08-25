@@ -49,7 +49,9 @@ public sealed class PlayerUpgradeController : MonoBehaviour
         progression = GetComponent<PlayerRunProgression>();
         combatStats = GetComponent<PlayerRuntimeCombatStats>();
         health = GetComponent<Health>();
-        gameplayEffects = new GameplayEffectRuntime(gameObject);
+        gameplayEffects = new GameplayEffectRuntime(
+            gameObject,
+            "Player Upgrade Effects");
         gameplayLocks = GetComponent<GameplayLockCoordinator>();
         generator = new UpgradeCandidateGenerator(runSeed);
         EnsureDefinitions();

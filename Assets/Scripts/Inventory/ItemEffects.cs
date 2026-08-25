@@ -34,7 +34,7 @@ public readonly struct ItemUseContext
         Health = health;
         Loadout = loadout;
         GameplayEffects = gameplayEffects ?? (health != null
-            ? new GameplayEffectRuntime(health)
+            ? new GameplayEffectRuntime(health, "Item Effect Execution")
             : null);
     }
 

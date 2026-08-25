@@ -22,7 +22,9 @@ public sealed class EnemyAffixController : MonoBehaviour
     {
         health = GetComponent<Health>();
         overhead = GetComponent<EnemyBurnEffectController>();
-        runtime = new GameplayEffectRuntime(gameObject);
+        runtime = new GameplayEffectRuntime(
+            gameObject,
+            "Enemy Affix Effects");
         baseArmor = health != null ? health.MaxArmor : 0f;
     }
 
@@ -38,6 +40,19 @@ public sealed class EnemyAffixController : MonoBehaviour
         }
 
         activeAffix = definition;
+        runtime.SetDebugBaseValue(
+            GameplayAttributeId.EnemyMaximumArmor,
+            baseArmor);
+        EnemyController enemy = GetComponent<EnemyController>();
+        runtime.SetDebugBaseValue(
+            GameplayAttributeId.EnemyAttackDamage,
+            enemy != null ? enemy.BaseAttackDamage : 20f);
+        runtime.SetDebugBaseValue(
+            GameplayAttributeId.EnemyExperienceReward,
+            enemy != null ? enemy.BaseRewardExperience : 40f);
+        runtime.SetDebugBaseValue(
+            GameplayAttributeId.EnemyLootQuantity,
+            1f);
         runtime.Apply(
             definition.GameplayEffect,
             new GameplayEffectContext(

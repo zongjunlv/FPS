@@ -142,6 +142,38 @@ namespace FPS.GameplayEffects
         public GameplayEffectDefinition Definition { get; }
         public GameplayEffectContext Context { get; }
         public int StackCount => timedStacks.Count;
+        public int EffectiveStackCount => Definition != null &&
+                                          Definition.DurationPolicy ==
+                                          GameplayEffectDurationPolicy.Timed
+            ? StackCount
+            : 1;
+        public float RemainingDuration
+        {
+            get
+            {
+                if (Definition == null)
+                {
+                    return 0f;
+                }
+
+                if (Definition.DurationPolicy ==
+                    GameplayEffectDurationPolicy.Persistent)
+                {
+                    return float.PositiveInfinity;
+                }
+
+                float remaining = 0f;
+
+                for (int index = 0; index < timedStacks.Count; index++)
+                {
+                    remaining = Mathf.Max(
+                        remaining,
+                        timedStacks[index].RemainingDuration);
+                }
+
+                return remaining;
+            }
+        }
         internal float TickRemaining { get; set; }
 
         internal void AddTimedStack(
@@ -244,15 +276,27 @@ namespace FPS.GameplayEffects
         private static long nextStackOrder;
         private readonly List<GameplayEffectInstance> active = new();
         private readonly UnityEngine.Object target;
+        private readonly Dictionary<GameplayAttributeId, float>
+            debugBaseValues = new();
 
-        public GameplayEffectRuntime(UnityEngine.Object effectTarget)
+        public GameplayEffectRuntime(
+            UnityEngine.Object effectTarget,
+            string debugChannel = null)
         {
             target = effectTarget != null
                 ? effectTarget
                 : throw new ArgumentNullException(nameof(effectTarget));
+            DebugChannel = string.IsNullOrWhiteSpace(debugChannel)
+                ? "Gameplay Effects"
+                : debugChannel.Trim();
+            GameplayEffectDebugRegistry.Register(this);
         }
 
         public IReadOnlyList<GameplayEffectInstance> ActiveInstances => active;
+        public UnityEngine.Object Target => target;
+        public string DebugChannel { get; }
+        public IReadOnlyDictionary<GameplayAttributeId, float>
+            DebugBaseValues => debugBaseValues;
 
         public GameplayEffectInstance Apply(
             GameplayEffectDefinition definition,
@@ -465,10 +509,68 @@ namespace FPS.GameplayEffects
             GameplayAttributeId attribute,
             float baseValue)
         {
+            SetDebugBaseValue(attribute, baseValue);
             return GameplayAttributeAggregator.Evaluate(
                 attribute,
                 baseValue,
                 active);
+        }
+
+        public void SetDebugBaseValue(
+            GameplayAttributeId attribute,
+            float baseValue)
+        {
+            if (!float.IsNaN(baseValue) && !float.IsInfinity(baseValue))
+            {
+                debugBaseValues[attribute] = baseValue;
+            }
+        }
+
+        public IReadOnlyList<GameplayAttributeEvaluationTrace>
+            CaptureAttributeTraces()
+        {
+            var attributes = new HashSet<GameplayAttributeId>(
+                debugBaseValues.Keys);
+
+            for (int instanceIndex = 0;
+                 instanceIndex < active.Count;
+                 instanceIndex++)
+            {
+                IReadOnlyList<GameplayEffectModifier> modifiers =
+                    active[instanceIndex].Definition?.Modifiers;
+
+                if (modifiers == null)
+                {
+                    continue;
+                }
+
+                for (int modifierIndex = 0;
+                     modifierIndex < modifiers.Count;
+                     modifierIndex++)
+                {
+                    attributes.Add(modifiers[modifierIndex].Attribute);
+                }
+            }
+
+            var ordered = new List<GameplayAttributeId>(attributes);
+            ordered.Sort();
+            var traces = new List<GameplayAttributeEvaluationTrace>(
+                ordered.Count);
+
+            for (int index = 0; index < ordered.Count; index++)
+            {
+                GameplayAttributeId attribute = ordered[index];
+                bool hasBase = debugBaseValues.TryGetValue(
+                    attribute,
+                    out float baseValue);
+                traces.Add(GameplayAttributeAggregator.Trace(
+                    attribute,
+                    baseValue,
+                    active,
+                    hasBase));
+            }
+
+            return traces;
         }
 
         private GameplayEffectInstance FindTimedInstance(string stableId)
@@ -679,6 +781,20 @@ namespace FPS.GameplayEffects
 
     public static class GameplayAttributeAggregator
     {
+        private readonly struct ModifierSource
+        {
+            public ModifierSource(
+                GameplayEffectInstance instance,
+                GameplayEffectModifier modifier)
+            {
+                Instance = instance;
+                Modifier = modifier;
+            }
+
+            public GameplayEffectInstance Instance { get; }
+            public GameplayEffectModifier Modifier { get; }
+        }
+
         public static float Evaluate(
             GameplayAttributeId attribute,
             float baseValue,
@@ -748,6 +864,157 @@ namespace FPS.GameplayEffects
 
             return (baseValue + additive) *
                    Mathf.Max(0f, 1f + multiplicativeBonus);
+        }
+
+        public static GameplayAttributeEvaluationTrace Trace(
+            GameplayAttributeId attribute,
+            float baseValue,
+            IReadOnlyList<GameplayEffectInstance> instances,
+            bool hasKnownBaseValue = true)
+        {
+            var matching = new List<ModifierSource>();
+            GameplayEffectInstance selectedOverride = null;
+            GameplayEffectModifier selectedOverrideModifier = default;
+            int selectedOverrideIndex = -1;
+
+            if (instances != null)
+            {
+                for (int instanceIndex = 0;
+                     instanceIndex < instances.Count;
+                     instanceIndex++)
+                {
+                    GameplayEffectInstance instance = instances[instanceIndex];
+
+                    if (instance?.Definition == null)
+                    {
+                        continue;
+                    }
+
+                    IReadOnlyList<GameplayEffectModifier> modifiers =
+                        instance.Definition.Modifiers;
+
+                    for (int modifierIndex = 0;
+                         modifierIndex < modifiers.Count;
+                         modifierIndex++)
+                    {
+                        GameplayEffectModifier modifier = modifiers[modifierIndex];
+
+                        if (modifier.Attribute != attribute ||
+                            !IsFinite(modifier.Magnitude))
+                        {
+                            continue;
+                        }
+
+                        matching.Add(new ModifierSource(instance, modifier));
+
+                        if (modifier.Operation ==
+                                GameplayModifierOperation.Override &&
+                            IsPreferredOverride(
+                                instance,
+                                modifier,
+                                selectedOverride,
+                                selectedOverrideModifier))
+                        {
+                            selectedOverride = instance;
+                            selectedOverrideModifier = modifier;
+                            selectedOverrideIndex = matching.Count - 1;
+                        }
+                    }
+                }
+            }
+
+            var steps = new List<GameplayModifierEvaluationStep>(
+                matching.Count);
+
+            if (selectedOverride != null)
+            {
+                for (int index = 0; index < matching.Count; index++)
+                {
+                    ModifierSource source = matching[index];
+                    bool applied = index == selectedOverrideIndex;
+                    steps.Add(CreateStep(
+                        index + 1,
+                        source,
+                        baseValue,
+                        applied
+                            ? selectedOverrideModifier.Magnitude
+                            : baseValue,
+                        applied));
+                }
+
+                return new GameplayAttributeEvaluationTrace(
+                    attribute,
+                    baseValue,
+                    hasKnownBaseValue,
+                    selectedOverrideModifier.Magnitude,
+                    steps);
+            }
+
+            float current = baseValue;
+            int sequence = 1;
+
+            for (int index = 0; index < matching.Count; index++)
+            {
+                ModifierSource source = matching[index];
+
+                if (source.Modifier.Operation != GameplayModifierOperation.Add)
+                {
+                    continue;
+                }
+
+                float next = current + source.Modifier.Magnitude;
+                steps.Add(CreateStep(
+                    sequence++, source, current, next, true));
+                current = next;
+            }
+
+            float multiplierBase = current;
+            float multiplicativeBonus = 0f;
+
+            for (int index = 0; index < matching.Count; index++)
+            {
+                ModifierSource source = matching[index];
+
+                if (source.Modifier.Operation !=
+                    GameplayModifierOperation.Multiply)
+                {
+                    continue;
+                }
+
+                float before = current;
+                multiplicativeBonus += source.Modifier.Magnitude;
+                current = multiplierBase *
+                          Mathf.Max(0f, 1f + multiplicativeBonus);
+                steps.Add(CreateStep(
+                    sequence++, source, before, current, true));
+            }
+
+            return new GameplayAttributeEvaluationTrace(
+                attribute,
+                baseValue,
+                hasKnownBaseValue,
+                current,
+                steps);
+        }
+
+        private static GameplayModifierEvaluationStep CreateStep(
+            int sequence,
+            ModifierSource source,
+            float input,
+            float output,
+            bool applied)
+        {
+            return new GameplayModifierEvaluationStep(
+                sequence,
+                source.Instance.InstanceId,
+                source.Instance.Definition.StableId,
+                source.Instance.Context.SourceId,
+                source.Modifier.Operation,
+                source.Modifier.Magnitude,
+                source.Modifier.Priority,
+                input,
+                output,
+                applied);
         }
 
         private static bool IsPreferredOverride(

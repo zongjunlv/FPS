@@ -76,6 +76,7 @@ namespace FPS.GameplayEffects
         [SerializeField] private GameplayEffectStackRefreshPolicy
             stackRefreshPolicy;
         [SerializeField] private float periodicMagnitude;
+        [SerializeField] private string[] gameplayTags = Array.Empty<string>();
         [SerializeField] private GameplayEffectModifier[] modifiers =
             Array.Empty<GameplayEffectModifier>();
 
@@ -87,7 +88,37 @@ namespace FPS.GameplayEffects
         public GameplayEffectStackRefreshPolicy StackRefreshPolicy =>
             stackRefreshPolicy;
         public float PeriodicMagnitude => periodicMagnitude;
+        public IReadOnlyList<string> GameplayTags =>
+            gameplayTags != null && gameplayTags.Length > 0
+                ? gameplayTags
+                : string.IsNullOrWhiteSpace(stableId)
+                    ? Array.Empty<string>()
+                    : new[] { $"effect.{stableId}" };
         public IReadOnlyList<GameplayEffectModifier> Modifiers => modifiers;
+
+        public void ConfigureTags(params string[] configuredTags)
+        {
+            if (configuredTags == null || configuredTags.Length == 0)
+            {
+                gameplayTags = Array.Empty<string>();
+                return;
+            }
+
+            var unique = new HashSet<string>(StringComparer.Ordinal);
+            var normalized = new List<string>(configuredTags.Length);
+
+            for (int index = 0; index < configuredTags.Length; index++)
+            {
+                string tag = configuredTags[index]?.Trim();
+
+                if (!string.IsNullOrWhiteSpace(tag) && unique.Add(tag))
+                {
+                    normalized.Add(tag);
+                }
+            }
+
+            gameplayTags = normalized.ToArray();
+        }
 
         public void Configure(
             string id,
@@ -148,6 +179,11 @@ namespace FPS.GameplayEffects
             maximumStacks = 1;
             stackRefreshPolicy = GameplayEffectStackRefreshPolicy.None;
             periodicMagnitude = 0f;
+            gameplayTags = new[]
+            {
+                $"effect.{stableId}",
+                $"duration.{durationPolicy.ToString().ToLowerInvariant()}"
+            };
             modifiers = configuredModifiers != null
                 ? (GameplayEffectModifier[])configuredModifiers.Clone()
                 : Array.Empty<GameplayEffectModifier>();

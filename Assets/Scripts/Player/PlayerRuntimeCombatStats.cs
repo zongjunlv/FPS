@@ -21,7 +21,9 @@ public sealed class PlayerRuntimeCombatStats : MonoBehaviour
         WeaponEffectRuntime.ActiveInstances;
 
     private GameplayEffectRuntime WeaponEffectRuntime =>
-        weaponEffects ??= new GameplayEffectRuntime(gameObject);
+        weaponEffects ??= new GameplayEffectRuntime(
+            gameObject,
+            "Player Weapon Effects");
 
     public float ApplyWeaponDamage(float baseDamage)
     {
