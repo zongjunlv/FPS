@@ -29,6 +29,8 @@ public sealed class CityNewWaveBootstrap : MonoBehaviour
     private GameplayEffectDefinition runtimeEliteEffect;
     private RaiderApproachAbilityDefinition runtimeRaiderApproach;
     private EnemyAbilitySetDefinition runtimeRaiderAbilitySet;
+    private SuppressorRangedAbilityDefinition runtimeSuppressorRanged;
+    private EnemyAbilitySetDefinition runtimeSuppressorAbilitySet;
 
     public static bool IsWaveModeActive => instance != null;
     public WaveDirector Director => director;
@@ -177,6 +179,16 @@ public sealed class CityNewWaveBootstrap : MonoBehaviour
             Destroy(runtimeRaiderApproach);
         }
 
+        if (runtimeSuppressorAbilitySet != null)
+        {
+            Destroy(runtimeSuppressorAbilitySet);
+        }
+
+        if (runtimeSuppressorRanged != null)
+        {
+            Destroy(runtimeSuppressorRanged);
+        }
+
         if (instance == this)
         {
             instance = null;
@@ -191,6 +203,7 @@ public sealed class CityNewWaveBootstrap : MonoBehaviour
     {
         EnsureEliteAffix();
         EnsureRaiderAbilities();
+        EnsureSuppressorAbilities();
         WaveDefinition definition =
             ScriptableObject.CreateInstance<WaveDefinition>();
         definition.name = definitionName;
@@ -209,7 +222,14 @@ public sealed class CityNewWaveBootstrap : MonoBehaviour
                     runtimeRaiderAbilitySet),
                 new WaveEnemyEntry(
                     sceneTemplate,
-                    Mathf.Max(1, totalCount - 2),
+                    1,
+                    LootRewardTier.Normal,
+                    "spider_suppressor",
+                    null,
+                    runtimeSuppressorAbilitySet),
+                new WaveEnemyEntry(
+                    sceneTemplate,
+                    Mathf.Max(1, totalCount - 3),
                     LootRewardTier.Normal,
                     "spider_bot"),
                 new WaveEnemyEntry(
@@ -259,6 +279,50 @@ public sealed class CityNewWaveBootstrap : MonoBehaviour
             "RAIDER",
             new Color(0.1f, 0.9f, 1f, 1f),
             new EnemyAbilityDefinition[] { runtimeRaiderApproach });
+    }
+
+    private void EnsureSuppressorAbilities()
+    {
+        if (runtimeSuppressorRanged != null &&
+            runtimeSuppressorAbilitySet != null)
+        {
+            return;
+        }
+
+        runtimeSuppressorRanged =
+            ScriptableObject.CreateInstance<
+                SuppressorRangedAbilityDefinition>();
+        runtimeSuppressorRanged.name =
+            "Suppressor Tactical Ranged Ability";
+        runtimeSuppressorRanged.hideFlags =
+            HideFlags.HideAndDontSave;
+        runtimeSuppressorRanged.Configure(
+            "enemy.ability.suppressor_ranged",
+            6f,
+            10f,
+            14f,
+            4f,
+            2f,
+            1.15f,
+            1.5f,
+            0.5f,
+            0.45f,
+            1.2f,
+            0.65f,
+            280f);
+
+        runtimeSuppressorAbilitySet =
+            ScriptableObject.CreateInstance<
+                EnemyAbilitySetDefinition>();
+        runtimeSuppressorAbilitySet.name =
+            "Spider Suppressor Ability Set";
+        runtimeSuppressorAbilitySet.hideFlags =
+            HideFlags.HideAndDontSave;
+        runtimeSuppressorAbilitySet.Configure(
+            "enemy.role.spider_suppressor",
+            "SUPPRESSOR",
+            new Color(1f, 0.28f, 0.08f, 1f),
+            new EnemyAbilityDefinition[] { runtimeSuppressorRanged });
     }
 
     private void EnsureEliteAffix()

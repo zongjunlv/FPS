@@ -5,13 +5,19 @@ using UnityEngine;
 public sealed class EnemyAbilityController : MonoBehaviour
 {
     private const float ProgressThreshold = 0.15f;
+    private const float CandidateEyeHeight = 0.7f;
+    private const int LineOfFireHitCapacity = 8;
 
     private readonly RaiderTacticsStateMachine tactics = new();
+    private readonly SuppressorTacticsStateMachine suppressorTactics = new();
+    private readonly RaycastHit[] lineOfFireHits =
+        new RaycastHit[LineOfFireHitCapacity];
     private EnemyNavigationController navigation;
     private EnemyBurnEffectController overhead;
     private EnemyController enemy;
     private EnemyAbilitySetDefinition activeSet;
     private RaiderApproachAbilityDefinition raider;
+    private SuppressorRangedAbilityDefinition suppressor;
     private Transform target;
     private Vector3 flankDestination;
     private Vector3 lastProgressPosition;
@@ -20,18 +26,45 @@ public sealed class EnemyAbilityController : MonoBehaviour
     private bool preferRightFlank;
     private float noProgressElapsed;
 
-    public bool IsActive => activeSet != null && raider != null;
+    public bool IsActive => activeSet != null &&
+        (raider != null || suppressor != null);
+    public bool IsRaider => activeSet != null && raider != null;
+    public bool IsSuppressor => activeSet != null && suppressor != null;
     public EnemyAbilitySetDefinition ActiveSet => activeSet;
     public Transform ActiveTarget => target;
     public RaiderTacticsPhase Phase => tactics.Phase;
+    public SuppressorTacticsPhase SuppressorPhase =>
+        suppressorTactics.Phase;
     public Vector3 FlankDestination => flankDestination;
     public bool HasFlankDestination => hasFlankDestination;
     public int SuccessfulFlankSelections { get; private set; }
     public int PathFailureCount { get; private set; }
-    public float AttackRange => IsActive ? raider.AttackRange : 2.8f;
-    public float WindupDuration => IsActive ? raider.WindupDuration : 0.55f;
-    public float AttackCooldown => IsActive ? raider.AttackCooldown : 1.35f;
-    public float DamageMultiplier => IsActive ? raider.DamageMultiplier : 1f;
+    public float AttackRange => IsRaider
+        ? raider.AttackRange
+        : IsSuppressor
+            ? suppressor.MaximumRange
+            : 2.8f;
+    public float WindupDuration => IsRaider
+        ? raider.WindupDuration
+        : IsSuppressor
+            ? suppressor.WindupDuration
+            : 0.55f;
+    public float AttackCooldown => IsRaider
+        ? raider.AttackCooldown
+        : IsSuppressor
+            ? suppressor.AttackCooldown
+            : 1.35f;
+    public float DamageMultiplier => IsRaider
+        ? raider.DamageMultiplier
+        : IsSuppressor
+            ? suppressor.DamageMultiplier
+            : 1f;
+    public float TracerSpeed => IsSuppressor
+        ? suppressor.TracerSpeed
+        : 260f;
+    public EnemyAttackMode AttackMode => IsSuppressor
+        ? EnemyAttackMode.Hitscan
+        : EnemyAttackMode.Melee;
 
     private void Awake()
     {
@@ -39,6 +72,7 @@ public sealed class EnemyAbilityController : MonoBehaviour
         overhead = GetComponent<EnemyBurnEffectController>();
         enemy = GetComponent<EnemyController>();
         tactics.Reset(false);
+        suppressorTactics.Reset(false);
     }
 
     public bool ApplyAbilitySet(
@@ -54,24 +88,86 @@ public sealed class EnemyAbilityController : MonoBehaviour
 
         RaiderApproachAbilityDefinition approach =
             definition.FindAbility<RaiderApproachAbilityDefinition>();
+        SuppressorRangedAbilityDefinition ranged =
+            definition.FindAbility<SuppressorRangedAbilityDefinition>();
 
-        if (approach == null)
+        if (approach == null && ranged == null)
         {
+            return false;
+        }
+
+        if (approach != null && ranged != null)
+        {
+            Debug.LogError(
+                "An enemy ability set can own only one tactical " +
+                "movement ability.",
+                this);
             return false;
         }
 
         activeSet = definition;
         raider = approach;
+        suppressor = ranged;
         target = newTarget;
         preferRightFlank = enemy != null &&
             enemy.SpawnResetCount % 2 == 0;
-        tactics.Reset(true);
+        tactics.Reset(raider != null);
+        suppressorTactics.Reset(suppressor != null);
         EnsureOverhead();
         overhead?.SetRoleStatus(
             definition.StatusLabel,
             definition.StatusColor);
-        navigation?.SetSpeedMultiplier(raider.FlankSpeedMultiplier);
+        navigation?.SetSpeedMultiplier(
+            raider != null
+                ? raider.FlankSpeedMultiplier
+                : suppressor.MovementSpeedMultiplier);
         return true;
+    }
+
+    public EnemyMovementDirective ResolveMovement(
+        Transform chaseTarget,
+        Vector3 knownTargetPosition,
+        bool hasVisualContact,
+        float distance,
+        float deltaTime)
+    {
+        if (!IsActive || chaseTarget == null)
+        {
+            EndEngagement();
+            return EnemyMovementDirective.None;
+        }
+
+        target = chaseTarget;
+
+        if (IsSuppressor)
+        {
+            return ResolveSuppressorMovement(
+                chaseTarget,
+                knownTargetPosition,
+                hasVisualContact,
+                distance,
+                deltaTime);
+        }
+
+        if (hasVisualContact && distance <= raider.AttackRange)
+        {
+            hasFlankDestination = false;
+            return EnemyMovementDirective.None;
+        }
+
+        if (TryResolveChaseDestination(
+                chaseTarget,
+                hasVisualContact,
+                distance,
+                deltaTime,
+                out Vector3 destination))
+        {
+            return EnemyMovementDirective.MoveTo(destination);
+        }
+
+        return tactics.Phase == RaiderTacticsPhase.Regrouping
+            ? EnemyMovementDirective.Hold
+            : EnemyMovementDirective.None;
     }
 
     public bool TryResolveChaseDestination(
@@ -85,7 +181,7 @@ public sealed class EnemyAbilityController : MonoBehaviour
             ? chaseTarget.position
             : transform.position;
 
-        if (!IsActive || chaseTarget == null)
+        if (!IsRaider || chaseTarget == null)
         {
             EndEngagement();
             return false;
@@ -159,7 +255,14 @@ public sealed class EnemyAbilityController : MonoBehaviour
             return;
         }
 
-        tactics.ApplyAttackDecision(decision);
+        if (IsRaider)
+        {
+            tactics.ApplyAttackDecision(decision);
+        }
+        else if (IsSuppressor)
+        {
+            suppressorTactics.ApplyAttackDecision(decision);
+        }
     }
 
     public void EndEngagement()
@@ -171,8 +274,16 @@ public sealed class EnemyAbilityController : MonoBehaviour
 
         hasFlankDestination = false;
         hasCommittedCharge = false;
+        flankDestination = Vector3.zero;
         noProgressElapsed = 0f;
-        tactics.BeginRegroup(raider.RegroupDuration);
+        if (IsRaider)
+        {
+            tactics.BeginRegroup(raider.RegroupDuration);
+        }
+        else if (IsSuppressor)
+        {
+            suppressorTactics.BeginRecovery(suppressor.RecoveryDuration);
+        }
         navigation?.SetSpeedMultiplier(1f);
     }
 
@@ -180,6 +291,7 @@ public sealed class EnemyAbilityController : MonoBehaviour
     {
         activeSet = null;
         raider = null;
+        suppressor = null;
         target = null;
         hasFlankDestination = false;
         hasCommittedCharge = false;
@@ -189,6 +301,7 @@ public sealed class EnemyAbilityController : MonoBehaviour
         SuccessfulFlankSelections = 0;
         PathFailureCount = 0;
         tactics.Reset(false);
+        suppressorTactics.Reset(false);
         navigation?.ResetMovementProfile();
         EnsureOverhead();
         overhead?.ClearRoleStatus();
@@ -241,6 +354,266 @@ public sealed class EnemyAbilityController : MonoBehaviour
         tactics.BeginFlank();
         navigation.SetSpeedMultiplier(raider.FlankSpeedMultiplier);
         return true;
+    }
+
+    private EnemyMovementDirective ResolveSuppressorMovement(
+        Transform chaseTarget,
+        Vector3 knownTargetPosition,
+        bool hasVisualContact,
+        float distance,
+        float deltaTime)
+    {
+        if (suppressorTactics.Phase ==
+                SuppressorTacticsPhase.Recovering &&
+            !suppressorTactics.TickRecovery(deltaTime))
+        {
+            navigation.SetSpeedMultiplier(1f);
+            return EnemyMovementDirective.Hold;
+        }
+
+        if (hasFlankDestination)
+        {
+            if (navigation.HasReachedDestination)
+            {
+                hasFlankDestination = false;
+                noProgressElapsed = 0f;
+            }
+            else if (HasStoppedMakingSuppressorProgress(deltaTime))
+            {
+                FailSuppressorPosition();
+                return EnemyMovementDirective.Hold;
+            }
+            else
+            {
+                navigation.SetSpeedMultiplier(
+                    suppressor.MovementSpeedMultiplier);
+                return EnemyMovementDirective.MoveTo(flankDestination);
+            }
+        }
+
+        SuppressorMovementIntent intent =
+            suppressorTactics.EvaluateMovement(
+                distance,
+                hasVisualContact,
+                suppressor.MinimumRange,
+                suppressor.MaximumRange);
+
+        if (intent == SuppressorMovementIntent.Hold)
+        {
+            navigation.SetSpeedMultiplier(1f);
+            return EnemyMovementDirective.None;
+        }
+
+        if (!TrySelectSuppressorPosition(
+                chaseTarget,
+                knownTargetPosition,
+                hasVisualContact,
+                intent,
+                out Vector3 destination))
+        {
+            FailSuppressorPosition();
+            return EnemyMovementDirective.Hold;
+        }
+
+        navigation.SetSpeedMultiplier(
+            suppressor.MovementSpeedMultiplier);
+        return EnemyMovementDirective.MoveTo(destination);
+    }
+
+    private bool TrySelectSuppressorPosition(
+        Transform chaseTarget,
+        Vector3 knownTargetPosition,
+        bool hasVisualContact,
+        SuppressorMovementIntent intent,
+        out Vector3 resolved)
+    {
+        Vector3 radial = transform.position - knownTargetPosition;
+        radial.y = 0f;
+
+        if (radial.sqrMagnitude <= 0.001f)
+        {
+            radial = -chaseTarget.forward;
+            radial.y = 0f;
+        }
+
+        radial.Normalize();
+        float radius = suppressor.PreferredRange;
+        float baseAngle = Mathf.Clamp(
+            Mathf.Atan2(
+                suppressor.RepositionLateralOffset,
+                radius) * Mathf.Rad2Deg,
+            15f,
+            45f);
+        int firstSide = preferRightFlank ? 1 : -1;
+        int candidateCount = intent ==
+            SuppressorMovementIntent.Relocate ? 6 : 5;
+        bool found = false;
+        resolved = default;
+
+        for (int index = 0; index < candidateCount; index++)
+        {
+            float angle;
+
+            if (intent != SuppressorMovementIntent.Relocate && index == 0)
+            {
+                angle = 0f;
+            }
+            else
+            {
+                int pairedIndex = intent ==
+                    SuppressorMovementIntent.Relocate
+                    ? index
+                    : index - 1;
+                int ringStep = pairedIndex / 2 + 1;
+                int side = pairedIndex % 2 == 0
+                    ? firstSide
+                    : -firstSide;
+                angle = side * baseAngle * ringStep;
+            }
+
+            Vector3 candidateDirection =
+                Quaternion.AngleAxis(angle, Vector3.up) * radial;
+            Vector3 candidate = knownTargetPosition +
+                candidateDirection * radius;
+
+            if (TryResolveFiringPosition(
+                    candidate,
+                    knownTargetPosition,
+                    hasVisualContact ? chaseTarget : null,
+                    out resolved))
+            {
+                found = true;
+                break;
+            }
+        }
+
+        if (!found)
+        {
+            return false;
+        }
+
+        flankDestination = resolved;
+        hasFlankDestination = true;
+        preferRightFlank = !preferRightFlank;
+        lastProgressPosition = transform.position;
+        noProgressElapsed = 0f;
+        SuccessfulFlankSelections++;
+        return true;
+    }
+
+    private bool TryResolveFiringPosition(
+        Vector3 desired,
+        Vector3 targetPosition,
+        Transform expectedTarget,
+        out Vector3 resolved)
+    {
+        if (!navigation.TryResolveReachableDestination(
+                desired,
+                suppressor.PositionSampleRadius,
+                out resolved))
+        {
+            return false;
+        }
+
+        return HasClearLineOfFireFrom(
+            resolved,
+            targetPosition,
+            expectedTarget);
+    }
+
+    public bool HasClearLineOfFireFrom(
+        Vector3 observerPosition,
+        Transform expectedTarget)
+    {
+        if (expectedTarget == null)
+        {
+            return false;
+        }
+
+        return HasClearLineOfFireFrom(
+            observerPosition,
+            expectedTarget.position,
+            expectedTarget);
+    }
+
+    private bool HasClearLineOfFireFrom(
+        Vector3 observerPosition,
+        Vector3 targetPosition,
+        Transform expectedTarget)
+    {
+        Vector3 origin = observerPosition +
+            Vector3.up * CandidateEyeHeight;
+        Vector3 targetPoint = targetPosition +
+            Vector3.up * CandidateEyeHeight;
+        Vector3 offset = targetPoint - origin;
+        float distance = offset.magnitude;
+
+        if (distance <= 0.001f)
+        {
+            return true;
+        }
+
+        int hitCount = Physics.RaycastNonAlloc(
+            origin,
+            offset / distance,
+            lineOfFireHits,
+            distance,
+            Physics.DefaultRaycastLayers,
+            QueryTriggerInteraction.Ignore);
+        float nearestBlockingDistance = float.PositiveInfinity;
+
+        for (int index = 0; index < hitCount; index++)
+        {
+            Transform hitTransform = lineOfFireHits[index].transform;
+
+            if (hitTransform == null ||
+                hitTransform == transform ||
+                hitTransform.IsChildOf(transform))
+            {
+                continue;
+            }
+
+            if (expectedTarget != null &&
+                (hitTransform == expectedTarget ||
+                 hitTransform.IsChildOf(expectedTarget) ||
+                 expectedTarget.IsChildOf(hitTransform)))
+            {
+                continue;
+            }
+
+            nearestBlockingDistance = Mathf.Min(
+                nearestBlockingDistance,
+                lineOfFireHits[index].distance);
+        }
+
+        return float.IsPositiveInfinity(nearestBlockingDistance);
+    }
+
+    private bool HasStoppedMakingSuppressorProgress(float deltaTime)
+    {
+        Vector3 movement = transform.position - lastProgressPosition;
+        movement.y = 0f;
+
+        if (movement.sqrMagnitude >=
+            ProgressThreshold * ProgressThreshold)
+        {
+            lastProgressPosition = transform.position;
+            noProgressElapsed = 0f;
+            return false;
+        }
+
+        noProgressElapsed += Mathf.Max(0f, deltaTime);
+        return noProgressElapsed >= suppressor.NoProgressTimeout;
+    }
+
+    private void FailSuppressorPosition()
+    {
+        PathFailureCount++;
+        hasFlankDestination = false;
+        noProgressElapsed = 0f;
+        preferRightFlank = !preferRightFlank;
+        suppressorTactics.BeginRecovery(suppressor.RecoveryDuration);
+        navigation.SetSpeedMultiplier(1f);
     }
 
     private bool HasStoppedMakingProgress(float deltaTime)

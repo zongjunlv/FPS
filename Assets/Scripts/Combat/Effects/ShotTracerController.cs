@@ -16,6 +16,8 @@ public sealed class ShotTracerController : MonoBehaviour
     private float traveledDistance;
     private float fadeElapsed;
     private bool reachedEnd;
+    private Color activeStartColor;
+    private Color activeEndColor;
 
     internal void Prepare(
         ShotTracerPool tracerPool,
@@ -38,6 +40,21 @@ public sealed class ShotTracerController : MonoBehaviour
         Vector3 end,
         float speed)
     {
+        Activate(
+            start,
+            end,
+            speed,
+            new Color(1f, 0.78f, 0.2f, 1f),
+            new Color(1f, 0.25f, 0.04f, 0.15f));
+    }
+
+    internal void Activate(
+        Vector3 start,
+        Vector3 end,
+        float speed,
+        Color startColor,
+        Color endColor)
+    {
         startPoint = start;
         Vector3 offset = end - start;
         totalDistance = offset.magnitude;
@@ -48,18 +65,12 @@ public sealed class ShotTracerController : MonoBehaviour
         traveledDistance = Mathf.Min(0.25f, totalDistance);
         fadeElapsed = 0f;
         reachedEnd = totalDistance <= traveledDistance;
+        activeStartColor = startColor;
+        activeEndColor = endColor;
 
         line.positionCount = 2;
-        line.startColor = new Color(
-            1f,
-            0.78f,
-            0.2f,
-            1f);
-        line.endColor = new Color(
-            1f,
-            0.25f,
-            0.04f,
-            0.15f);
+        line.startColor = activeStartColor;
+        line.endColor = activeEndColor;
         UpdateLine();
         line.enabled = true;
         gameObject.SetActive(true);
@@ -91,16 +102,12 @@ public sealed class ShotTracerController : MonoBehaviour
         fadeElapsed += Time.deltaTime;
         float alpha = 1f - Mathf.Clamp01(
             fadeElapsed / FadeDuration);
-        line.startColor = new Color(
-            1f,
-            0.78f,
-            0.2f,
-            alpha);
-        line.endColor = new Color(
-            1f,
-            0.25f,
-            0.04f,
-            alpha * 0.15f);
+        Color fadedStart = activeStartColor;
+        fadedStart.a *= alpha;
+        Color fadedEnd = activeEndColor;
+        fadedEnd.a *= alpha;
+        line.startColor = fadedStart;
+        line.endColor = fadedEnd;
 
         if (fadeElapsed >= FadeDuration)
         {

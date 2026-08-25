@@ -45,6 +45,18 @@ public sealed class ShotTracerPool : MonoBehaviour
         return tracer;
     }
 
+    public ShotTracerController Play(
+        Vector3 start,
+        Vector3 end,
+        float speed,
+        Color startColor,
+        Color endColor)
+    {
+        ShotTracerController tracer = FindAvailableTracer();
+        tracer.Activate(start, end, speed, startColor, endColor);
+        return tracer;
+    }
+
     internal void Release(ShotTracerController tracer)
     {
         if (tracer != null && tracer.gameObject.activeSelf)

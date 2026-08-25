@@ -8,6 +8,12 @@ using UnityEngine.Playables;
     typeof(EnemyNavigationController))]
 public sealed class EnemyCombatController : MonoBehaviour
 {
+    private const int HitscanCapacity = 8;
+    private static readonly Color EnemyTracerStart =
+        new(1f, 0.12f, 0.05f, 1f);
+    private static readonly Color EnemyTracerEnd =
+        new(1f, 0.7f, 0.08f, 0.2f);
+
     [SerializeField, Min(0.5f)] private float attackRange = 2.8f;
     [SerializeField, Min(0f)] private float aimDuration = 0.55f;
     [SerializeField, Min(0.05f)] private float attackCooldown = 1.35f;
@@ -23,6 +29,9 @@ public sealed class EnemyCombatController : MonoBehaviour
     private PlayableGraph attackGraph;
     private Coroutine attackAnimationRoutine;
     private EnemyAbilityController abilities;
+    private ShotTracerPool rangedTracerPool;
+    private readonly RaycastHit[] hitscanResults =
+        new RaycastHit[HitscanCapacity];
 
     public EnemyAttackDecision Decision { get; private set; } =
         EnemyAttackDecision.Chase;
@@ -81,6 +90,37 @@ public sealed class EnemyCombatController : MonoBehaviour
 
         Vector3 toTarget = target.position - transform.position;
         float distance = toTarget.magnitude;
+        Vector3 knownTargetPosition = perception.HasVisualContact
+            ? target.position
+            : perception.HasSquadSearchAssignment
+                ? perception.SquadSearchDestination
+                : perception.LastKnownPosition;
+        EnemyMovementDirective movement = abilities != null
+            ? abilities.ResolveMovement(
+                target,
+                knownTargetPosition,
+                perception.HasVisualContact,
+                distance,
+                Time.deltaTime)
+            : EnemyMovementDirective.None;
+
+        if (movement.Kind != EnemyMovementDirectiveKind.None)
+        {
+            attackState.CancelAim();
+            Decision = EnemyAttackDecision.Chase;
+
+            if (movement.Kind == EnemyMovementDirectiveKind.Move)
+            {
+                navigation.SetDestination(movement.Destination);
+            }
+            else
+            {
+                navigation.Stop();
+            }
+
+            return;
+        }
+
         Decision = attackState.Evaluate(
             distance,
             perception.HasVisualContact,
@@ -89,22 +129,7 @@ public sealed class EnemyCombatController : MonoBehaviour
 
         if (Decision == EnemyAttackDecision.Chase)
         {
-            Vector3 chaseDestination = perception.HasVisualContact
-                ? target.position
-                : perception.HasSquadSearchAssignment
-                    ? perception.SquadSearchDestination
-                    : perception.LastKnownPosition;
-            if (abilities != null && abilities.IsActive &&
-                abilities.TryResolveChaseDestination(
-                    target,
-                    perception.HasVisualContact,
-                    distance,
-                    Time.deltaTime,
-                    out Vector3 abilityDestination))
-            {
-                chaseDestination = abilityDestination;
-            }
-            navigation.SetDestination(chaseDestination);
+            navigation.SetDestination(knownTargetPosition);
             return;
         }
 
@@ -181,6 +206,13 @@ public sealed class EnemyCombatController : MonoBehaviour
 
     private void ApplyAttack(Transform target)
     {
+        if (abilities != null &&
+            abilities.AttackMode == EnemyAttackMode.Hitscan)
+        {
+            ApplyHitscanAttack(target);
+            return;
+        }
+
         Health targetHealth = target.GetComponent<Health>();
 
         if (targetHealth == null || targetHealth.IsDead)
@@ -200,6 +232,117 @@ public sealed class EnemyCombatController : MonoBehaviour
                 DamageType.Melee));
         SuccessfulAttackCount++;
         PlayAttackPresentation();
+    }
+
+    private void ApplyHitscanAttack(Transform target)
+    {
+        Health targetHealth = target.GetComponent<Health>();
+
+        if (targetHealth == null || targetHealth.IsDead)
+        {
+            return;
+        }
+
+        Vector3 targetPoint = target.position + Vector3.up * 0.7f;
+        Vector3 rawDirection = targetPoint - transform.position;
+        Vector3 direction = rawDirection.sqrMagnitude > 0.001f
+            ? rawDirection.normalized
+            : transform.forward;
+        Vector3 origin = transform.position +
+            Vector3.up * 0.7f + direction * 0.65f;
+        Vector3 offset = targetPoint - origin;
+        float castDistance = Mathf.Max(
+            0.01f,
+            Mathf.Min(offset.magnitude, abilities.AttackRange + 1f));
+        direction = offset.sqrMagnitude > 0.001f
+            ? offset.normalized
+            : direction;
+        int hitCount = Physics.RaycastNonAlloc(
+            origin,
+            direction,
+            hitscanResults,
+            castDistance,
+            Physics.DefaultRaycastLayers,
+            QueryTriggerInteraction.Ignore);
+        int nearestIndex = -1;
+        float nearestDistance = float.PositiveInfinity;
+
+        for (int index = 0; index < hitCount; index++)
+        {
+            Transform hitTransform = hitscanResults[index].transform;
+
+            if (hitTransform == null ||
+                hitTransform == transform ||
+                hitTransform.IsChildOf(transform))
+            {
+                continue;
+            }
+
+            if (hitscanResults[index].distance < nearestDistance)
+            {
+                nearestIndex = index;
+                nearestDistance = hitscanResults[index].distance;
+            }
+        }
+
+        Vector3 endPoint = targetPoint;
+        bool hitTarget = nearestIndex < 0;
+        IDamageable hitDamageable = targetHealth;
+
+        if (nearestIndex >= 0)
+        {
+            RaycastHit hit = hitscanResults[nearestIndex];
+            endPoint = hit.point;
+            hitDamageable = DamageableResolver.Find(hit.transform);
+            Transform hitTransform = hit.transform;
+            hitTarget = hitTransform == target ||
+                hitTransform.IsChildOf(target) ||
+                target.IsChildOf(hitTransform);
+        }
+
+        if (hitTarget)
+        {
+            DamageResult result = hitDamageable.ApplyDamage(
+                new DamageInfo(
+                    (enemy != null ? enemy.AttackDamage : 20f) *
+                    abilities.DamageMultiplier,
+                    endPoint,
+                    direction,
+                    gameObject,
+                    DamageType.Hitscan));
+
+            if (result.WasApplied)
+            {
+                SuccessfulAttackCount++;
+            }
+        }
+
+        EnsureRangedTracerPool();
+        rangedTracerPool?.Play(
+            origin,
+            endPoint,
+            abilities.TracerSpeed,
+            EnemyTracerStart,
+            EnemyTracerEnd);
+        PlayAttackPresentation();
+    }
+
+    private void EnsureRangedTracerPool()
+    {
+        if (rangedTracerPool != null)
+        {
+            return;
+        }
+
+        rangedTracerPool = FindAnyObjectByType<ShotTracerPool>();
+
+        if (rangedTracerPool != null)
+        {
+            return;
+        }
+
+        var poolObject = new GameObject("Shared Shot Tracer Pool");
+        rangedTracerPool = poolObject.AddComponent<ShotTracerPool>();
     }
 
     private void PlayAttackPresentation()
