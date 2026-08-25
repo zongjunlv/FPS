@@ -53,13 +53,17 @@ public sealed class SceneEnemyFactory : MonoBehaviour, IEnemyFactory
         instance.transform.position = request.Position;
         instance.transform.rotation = request.Rotation;
         instance.SetFactoryManaged(true);
-        instance.ResetForSpawn(request.Target);
-        instance.ApplyAffix(request.Entry?.Affix);
 
         if (!instance.gameObject.activeSelf)
         {
             instance.gameObject.SetActive(true);
         }
+
+        instance.ResetForSpawn(request.Target);
+        instance.ApplyAffix(request.Entry?.Affix);
+        instance.ApplyAbilitySet(
+            request.Entry?.AbilitySet,
+            request.Target);
 
         NavMeshAgent agent = instance.GetComponent<NavMeshAgent>();
 
@@ -73,7 +77,6 @@ public sealed class SceneEnemyFactory : MonoBehaviour, IEnemyFactory
         }
         EnemyNavigationController navigation =
             instance.GetComponent<EnemyNavigationController>();
-        navigation?.ResetForSpawn();
 
         if (navigation == null || !navigation.UsesNavMesh)
         {

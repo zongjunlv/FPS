@@ -10,6 +10,7 @@ public sealed class WaveEnemyEntry
     [SerializeField] private LootRewardTier rewardTier = LootRewardTier.Normal;
     [SerializeField] private string enemyTypeId = "*";
     [SerializeField] private EnemyAffixDefinition affix;
+    [SerializeField] private EnemyAbilitySetDefinition abilitySet;
 
     public WaveEnemyEntry(EnemyController enemyTemplate, int entryWeight = 1)
         : this(
@@ -17,6 +18,7 @@ public sealed class WaveEnemyEntry
             entryWeight,
             LootRewardTier.Normal,
             "*",
+            null,
             null)
     {
     }
@@ -26,7 +28,8 @@ public sealed class WaveEnemyEntry
         int entryWeight,
         LootRewardTier tier,
         string typeId = "*",
-        EnemyAffixDefinition enemyAffix = null)
+        EnemyAffixDefinition enemyAffix = null,
+        EnemyAbilitySetDefinition enemyAbilitySet = null)
     {
         template = enemyTemplate;
         weight = Mathf.Max(1, entryWeight);
@@ -35,6 +38,7 @@ public sealed class WaveEnemyEntry
             ? "*"
             : typeId.Trim();
         affix = enemyAffix;
+        abilitySet = enemyAbilitySet;
     }
 
     public EnemyController Template => template;
@@ -44,6 +48,7 @@ public sealed class WaveEnemyEntry
         ? "*"
         : enemyTypeId.Trim();
     public EnemyAffixDefinition Affix => affix;
+    public EnemyAbilitySetDefinition AbilitySet => abilitySet;
 }
 
 [CreateAssetMenu(

@@ -142,6 +142,9 @@ public sealed class PooledEnemyFactory : MonoBehaviour, IEnemyFactory
         instance.SetFactoryManaged(true);
         instance.ResetForSpawn(request.Target);
         instance.ApplyAffix(request.Entry?.Affix);
+        instance.ApplyAbilitySet(
+            request.Entry?.AbilitySet,
+            request.Target);
         instance.gameObject.SetActive(true);
 
         NavMeshAgent agent = instance.GetComponent<NavMeshAgent>();
@@ -157,7 +160,6 @@ public sealed class PooledEnemyFactory : MonoBehaviour, IEnemyFactory
 
         EnemyNavigationController navigation =
             instance.GetComponent<EnemyNavigationController>();
-        navigation?.ResetForSpawn();
 
         if (navigation == null || !navigation.UsesNavMesh)
         {

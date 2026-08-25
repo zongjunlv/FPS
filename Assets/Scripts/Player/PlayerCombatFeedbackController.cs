@@ -20,6 +20,7 @@ public sealed class PlayerCombatFeedbackController : MonoBehaviour
     private AudioSource damageAudioSource;
     private AudioClip playerDamagedClip;
     private PlayerVitalsHudPresenter vitalsHud;
+    private int damageFlashHoldFrames;
 
     public event Action ViewChanged;
 
@@ -94,10 +95,18 @@ public sealed class PlayerCombatFeedbackController : MonoBehaviour
     private void Update()
     {
         float previousAlpha = DamageFlashAlpha;
-        DamageFlashAlpha = Mathf.MoveTowards(
-            DamageFlashAlpha,
-            0f,
-            Time.unscaledDeltaTime * 1.8f);
+
+        if (damageFlashHoldFrames > 0)
+        {
+            damageFlashHoldFrames--;
+        }
+        else
+        {
+            DamageFlashAlpha = Mathf.MoveTowards(
+                DamageFlashAlpha,
+                0f,
+                Time.unscaledDeltaTime * 1.8f);
+        }
 
         if (!Mathf.Approximately(previousAlpha, DamageFlashAlpha))
         {
@@ -149,6 +158,7 @@ public sealed class PlayerCombatFeedbackController : MonoBehaviour
     {
         DamageFeedbackCount++;
         DamageFlashAlpha = 1f;
+        damageFlashHoldFrames = 1;
         LastDamageSide = ResolveDamageSide(damage);
         ViewChanged?.Invoke();
 

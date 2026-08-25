@@ -17,6 +17,7 @@ public class EnemyController : MonoBehaviour
     private float configuredHealth;
     private float configuredArmor;
     private EnemyAffixController affixController;
+    private EnemyAbilityController abilityController;
 
     public int SpawnResetCount { get; private set; }
     public int PoolPreparationCount { get; private set; }
@@ -43,6 +44,7 @@ public class EnemyController : MonoBehaviour
         ? Mathf.Max(1f, affixController.LootQuantityMultiplier)
         : 1f;
     public EnemyAffixController AffixController => affixController;
+    public EnemyAbilityController AbilityController => abilityController;
 
     public void SetFactoryManaged(bool managed)
     {
@@ -65,6 +67,7 @@ public class EnemyController : MonoBehaviour
         health.Initialize(configuredHealth, configuredArmor);
         health.Died += HandleDeath;
         EnsureBurnEffects();
+        EnsureAbilities();
         EnsureAffixes();
         EnsureHitboxes();
         CacheRuntimeBaseline();
@@ -98,6 +101,12 @@ public class EnemyController : MonoBehaviour
     {
         affixController = GetComponent<EnemyAffixController>();
         affixController ??= gameObject.AddComponent<EnemyAffixController>();
+    }
+
+    private void EnsureAbilities()
+    {
+        abilityController = GetComponent<EnemyAbilityController>();
+        abilityController ??= gameObject.AddComponent<EnemyAbilityController>();
     }
 
     private void OnDestroy()
@@ -144,6 +153,7 @@ public class EnemyController : MonoBehaviour
     public void ResetForSpawn(Transform target)
     {
         deathPresentationTriggered = false;
+        abilityController?.ClearForPool();
         affixController?.ClearAffix(false);
         EnemyBurnEffectController burnEffects =
             GetComponent<EnemyBurnEffectController>();
@@ -184,6 +194,7 @@ public class EnemyController : MonoBehaviour
 
     public void PrepareForPool()
     {
+        abilityController?.ClearForPool();
         affixController?.ClearAffix();
         EnemyBurnEffectController burnEffects =
             GetComponent<EnemyBurnEffectController>();
@@ -211,6 +222,18 @@ public class EnemyController : MonoBehaviour
     {
         EnsureAffixes();
         return affixController.ApplyAffix(definition, configuredArmor);
+    }
+
+    public bool ApplyAbilitySet(
+        EnemyAbilitySetDefinition definition,
+        Transform target)
+    {
+        EnsureAbilities();
+        bool applied = abilityController.ApplyAbilitySet(
+            definition,
+            target);
+        GetComponent<EnemyCombatController>()?.RefreshAbilityProfile();
+        return applied;
     }
 
     private void CacheRuntimeBaseline()

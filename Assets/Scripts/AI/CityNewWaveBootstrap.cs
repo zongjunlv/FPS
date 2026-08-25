@@ -27,6 +27,8 @@ public sealed class CityNewWaveBootstrap : MonoBehaviour
     private LootDropTableDefinition runtimeDropTable;
     private EnemyAffixDefinition runtimeEliteAffix;
     private GameplayEffectDefinition runtimeEliteEffect;
+    private RaiderApproachAbilityDefinition runtimeRaiderApproach;
+    private EnemyAbilitySetDefinition runtimeRaiderAbilitySet;
 
     public static bool IsWaveModeActive => instance != null;
     public WaveDirector Director => director;
@@ -165,6 +167,16 @@ public sealed class CityNewWaveBootstrap : MonoBehaviour
             Destroy(runtimeEliteEffect);
         }
 
+        if (runtimeRaiderAbilitySet != null)
+        {
+            Destroy(runtimeRaiderAbilitySet);
+        }
+
+        if (runtimeRaiderApproach != null)
+        {
+            Destroy(runtimeRaiderApproach);
+        }
+
         if (instance == this)
         {
             instance = null;
@@ -178,6 +190,7 @@ public sealed class CityNewWaveBootstrap : MonoBehaviour
         float spawnInterval)
     {
         EnsureEliteAffix();
+        EnsureRaiderAbilities();
         WaveDefinition definition =
             ScriptableObject.CreateInstance<WaveDefinition>();
         definition.name = definitionName;
@@ -189,7 +202,14 @@ public sealed class CityNewWaveBootstrap : MonoBehaviour
             {
                 new WaveEnemyEntry(
                     sceneTemplate,
-                    Mathf.Max(1, totalCount - 1),
+                    1,
+                    LootRewardTier.Normal,
+                    "spider_raider",
+                    null,
+                    runtimeRaiderAbilitySet),
+                new WaveEnemyEntry(
+                    sceneTemplate,
+                    Mathf.Max(1, totalCount - 2),
                     LootRewardTier.Normal,
                     "spider_bot"),
                 new WaveEnemyEntry(
@@ -201,6 +221,44 @@ public sealed class CityNewWaveBootstrap : MonoBehaviour
             });
         runtimeDefinitions.Add(definition);
         return definition;
+    }
+
+    private void EnsureRaiderAbilities()
+    {
+        if (runtimeRaiderApproach != null &&
+            runtimeRaiderAbilitySet != null)
+        {
+            return;
+        }
+
+        runtimeRaiderApproach =
+            ScriptableObject.CreateInstance<RaiderApproachAbilityDefinition>();
+        runtimeRaiderApproach.name = "Raider Flank Approach Ability";
+        runtimeRaiderApproach.hideFlags = HideFlags.HideAndDontSave;
+        runtimeRaiderApproach.Configure(
+            "enemy.ability.raider_flank",
+            5.5f,
+            2.5f,
+            2f,
+            4.75f,
+            1.35f,
+            1.75f,
+            1.5f,
+            0.8f,
+            2.3f,
+            0.25f,
+            0.9f,
+            0.8f);
+
+        runtimeRaiderAbilitySet =
+            ScriptableObject.CreateInstance<EnemyAbilitySetDefinition>();
+        runtimeRaiderAbilitySet.name = "Spider Raider Ability Set";
+        runtimeRaiderAbilitySet.hideFlags = HideFlags.HideAndDontSave;
+        runtimeRaiderAbilitySet.Configure(
+            "enemy.role.spider_raider",
+            "RAIDER",
+            new Color(0.1f, 0.9f, 1f, 1f),
+            new EnemyAbilityDefinition[] { runtimeRaiderApproach });
     }
 
     private void EnsureEliteAffix()

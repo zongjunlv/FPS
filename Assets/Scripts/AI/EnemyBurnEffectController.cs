@@ -30,6 +30,8 @@ public sealed class EnemyBurnEffectController : MonoBehaviour
     private bool overheadPresentationEnabled = true;
     private string affixStatusLabel;
     private Color affixStatusColor = Color.white;
+    private string roleStatusLabel;
+    private Color roleStatusColor = Color.white;
     private const float HealthFillWidth = 116f;
     private const float OverheadWorldScale = 0.0065f;
 
@@ -48,6 +50,8 @@ public sealed class EnemyBurnEffectController : MonoBehaviour
         statusLabel != null ? statusLabel.text : string.Empty;
     public bool HasAffixStatus => !string.IsNullOrWhiteSpace(
         affixStatusLabel);
+    public bool HasRoleStatus => !string.IsNullOrWhiteSpace(
+        roleStatusLabel);
     public float PresentationWorldScale =>
         presentationRoot != null
             ? presentationRoot.transform.localScale.x
@@ -186,6 +190,21 @@ public sealed class EnemyBurnEffectController : MonoBehaviour
     public void ClearAffixStatus()
     {
         affixStatusLabel = string.Empty;
+        SyncPresentation();
+    }
+
+    public void SetRoleStatus(string label, Color color)
+    {
+        roleStatusLabel = string.IsNullOrWhiteSpace(label)
+            ? "RAIDER"
+            : label.Trim();
+        roleStatusColor = color;
+        SyncPresentation();
+    }
+
+    public void ClearRoleStatus()
+    {
+        roleStatusLabel = string.Empty;
         SyncPresentation();
     }
 
@@ -386,24 +405,36 @@ public sealed class EnemyBurnEffectController : MonoBehaviour
         }
 
         bool hasAffix = HasAffixStatus;
+        bool hasRole = HasRoleStatus;
 
         if (statusRoot != null)
         {
-            statusRoot.SetActive(showOverhead && (stacks > 0 || hasAffix));
+            statusRoot.SetActive(
+                showOverhead && (stacks > 0 || hasAffix || hasRole));
         }
 
         if (statusLabel != null)
         {
-            statusLabel.text = hasAffix && stacks > 0
-                ? $"{affixStatusLabel} · BURN ×{stacks}"
-                : hasAffix
-                    ? affixStatusLabel
+            string roleAndAffix = hasRole && hasAffix
+                ? $"{roleStatusLabel} · {affixStatusLabel}"
+                : hasRole
+                    ? roleStatusLabel
+                    : hasAffix
+                        ? affixStatusLabel
+                        : string.Empty;
+            statusLabel.text = stacks > 0 &&
+                               !string.IsNullOrEmpty(roleAndAffix)
+                ? $"{roleAndAffix} · BURN ×{stacks}"
+                : !string.IsNullOrEmpty(roleAndAffix)
+                    ? roleAndAffix
                     : stacks > 0
                         ? $"BURN ×{stacks}"
                         : string.Empty;
             statusLabel.color = hasAffix
                 ? affixStatusColor
-                : new Color(1f, 0.48f, 0.08f, 1f);
+                : hasRole
+                    ? roleStatusColor
+                    : new Color(1f, 0.48f, 0.08f, 1f);
         }
 
         if (burnVisualRoot != null)

@@ -22,6 +22,7 @@ public sealed class EnemyCombatController : MonoBehaviour
     private AudioSource audioSource;
     private PlayableGraph attackGraph;
     private Coroutine attackAnimationRoutine;
+    private EnemyAbilityController abilities;
 
     public EnemyAttackDecision Decision { get; private set; } =
         EnemyAttackDecision.Chase;
@@ -34,6 +35,7 @@ public sealed class EnemyCombatController : MonoBehaviour
         navigation = GetComponent<EnemyNavigationController>();
         animator = GetComponent<Animator>();
         audioSource = GetComponent<AudioSource>();
+        abilities = GetComponent<EnemyAbilityController>();
 
         if (audioSource == null)
         {
@@ -47,10 +49,7 @@ public sealed class EnemyCombatController : MonoBehaviour
             Resources.Load<EnemyCombatPresentationProfile>(
                 "EnemyCombatPresentation");
         attackState = new EnemyAttackStateMachine();
-        attackState.Configure(
-            attackRange,
-            aimDuration,
-            attackCooldown);
+        RefreshAbilityProfile();
     }
 
     private void Update()
@@ -66,6 +65,17 @@ public sealed class EnemyCombatController : MonoBehaviour
             perception.State != EnemyAwarenessState.Alert)
         {
             attackState.CancelAim();
+            abilities?.EndEngagement();
+            return;
+        }
+
+        Health targetHealth = target.GetComponent<Health>();
+
+        if (targetHealth != null && targetHealth.IsDead)
+        {
+            attackState.CancelAim();
+            abilities?.EndEngagement();
+            navigation.Stop();
             return;
         }
 
@@ -75,6 +85,7 @@ public sealed class EnemyCombatController : MonoBehaviour
             distance,
             perception.HasVisualContact,
             Time.deltaTime);
+        abilities?.NotifyAttackDecision(Decision);
 
         if (Decision == EnemyAttackDecision.Chase)
         {
@@ -83,6 +94,16 @@ public sealed class EnemyCombatController : MonoBehaviour
                 : perception.HasSquadSearchAssignment
                     ? perception.SquadSearchDestination
                     : perception.LastKnownPosition;
+            if (abilities != null && abilities.IsActive &&
+                abilities.TryResolveChaseDestination(
+                    target,
+                    perception.HasVisualContact,
+                    distance,
+                    Time.deltaTime,
+                    out Vector3 abilityDestination))
+            {
+                chaseDestination = abilityDestination;
+            }
             navigation.SetDestination(chaseDestination);
             return;
         }
@@ -105,9 +126,26 @@ public sealed class EnemyCombatController : MonoBehaviour
     {
         PrepareForPool();
         attackState ??= new EnemyAttackStateMachine();
-        attackState.Configure(attackRange, aimDuration, attackCooldown);
+        abilities = GetComponent<EnemyAbilityController>();
+        RefreshAbilityProfile();
         Decision = EnemyAttackDecision.Chase;
         SuccessfulAttackCount = 0;
+    }
+
+    public void RefreshAbilityProfile()
+    {
+        abilities = GetComponent<EnemyAbilityController>();
+        attackState ??= new EnemyAttackStateMachine();
+        attackState.Configure(
+            abilities != null && abilities.IsActive
+                ? abilities.AttackRange
+                : attackRange,
+            abilities != null && abilities.IsActive
+                ? abilities.WindupDuration
+                : aimDuration,
+            abilities != null && abilities.IsActive
+                ? abilities.AttackCooldown
+                : attackCooldown);
     }
 
     public void PrepareForPool()
@@ -119,6 +157,7 @@ public sealed class EnemyCombatController : MonoBehaviour
         }
 
         attackState?.CancelAim();
+        abilities?.EndEngagement();
         navigation?.Stop();
         audioSource?.Stop();
         DestroyAttackGraph();
@@ -153,7 +192,8 @@ public sealed class EnemyCombatController : MonoBehaviour
             (target.position - transform.position).normalized;
         targetHealth.ApplyDamage(
             new DamageInfo(
-                enemy != null ? enemy.AttackDamage : 20f,
+                (enemy != null ? enemy.AttackDamage : 20f) *
+                (abilities != null ? abilities.DamageMultiplier : 1f),
                 target.position,
                 direction,
                 gameObject,

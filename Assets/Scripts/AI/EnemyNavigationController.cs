@@ -8,6 +8,7 @@ public sealed class EnemyNavigationController : MonoBehaviour
     [SerializeField, Min(2)] private int generatedPatrolPointCount = 4;
     [SerializeField, Min(0.05f)] private float arrivalDistance = 0.45f;
     [SerializeField, Min(0.1f)] private float fallbackMoveSpeed = 2.6f;
+    [SerializeField, Min(0.1f)] private float navMeshMoveSpeed = 2.8f;
 
     private readonly List<Vector3> patrolPoints = new();
     private NavMeshAgent agent;
@@ -16,6 +17,7 @@ public sealed class EnemyNavigationController : MonoBehaviour
     private bool destinationIsPatrol;
     private bool movementStopped;
     private NavMeshPath reachablePath;
+    private float speedMultiplier = 1f;
 
     public Vector3 Destination { get; private set; }
     public int PatrolPointCount => patrolPoints.Count;
@@ -60,6 +62,10 @@ public sealed class EnemyNavigationController : MonoBehaviour
         agent != null &&
         agent.enabled &&
         agent.isOnNavMesh;
+    public float SpeedMultiplier => speedMultiplier;
+    public float CurrentMoveSpeed => UsesNavMesh
+        ? agent.speed
+        : fallbackMoveSpeed * speedMultiplier;
 
     private void Awake()
     {
@@ -93,6 +99,7 @@ public sealed class EnemyNavigationController : MonoBehaviour
 
     public void ResetForSpawn()
     {
+        ResetMovementProfile();
         patrolIndex = 0;
         hasDestination = false;
         destinationIsPatrol = false;
@@ -110,6 +117,7 @@ public sealed class EnemyNavigationController : MonoBehaviour
 
     public void PrepareForPool()
     {
+        ResetMovementProfile();
         hasDestination = false;
         destinationIsPatrol = false;
         movementStopped = true;
@@ -128,7 +136,7 @@ public sealed class EnemyNavigationController : MonoBehaviour
             return;
         }
 
-        agent.speed = 2.8f;
+        agent.speed = navMeshMoveSpeed * speedMultiplier;
         agent.angularSpeed = 420f;
         agent.acceleration = 12f;
         agent.stoppingDistance = 0.3f;
@@ -153,7 +161,7 @@ public sealed class EnemyNavigationController : MonoBehaviour
         }
 
         Vector3 step = direction.normalized *
-            fallbackMoveSpeed * Time.deltaTime;
+            fallbackMoveSpeed * speedMultiplier * Time.deltaTime;
         transform.position += Vector3.ClampMagnitude(
             step,
             direction.magnitude);
@@ -249,6 +257,26 @@ public sealed class EnemyNavigationController : MonoBehaviour
         {
             agent.isStopped = true;
             agent.ResetPath();
+        }
+    }
+
+    public void SetSpeedMultiplier(float multiplier)
+    {
+        speedMultiplier = Mathf.Max(0.1f, multiplier);
+
+        if (agent != null)
+        {
+            agent.speed = navMeshMoveSpeed * speedMultiplier;
+        }
+    }
+
+    public void ResetMovementProfile()
+    {
+        speedMultiplier = 1f;
+
+        if (agent != null)
+        {
+            agent.speed = navMeshMoveSpeed;
         }
     }
 
