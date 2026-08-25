@@ -225,6 +225,13 @@ public sealed class EnemySquadCoordinator : MonoBehaviour,
                 continue;
             }
 
+            // Avoid costly NavMesh search-point resolution for receivers
+            // that already own fresher visual information.
+            if (!receiver.ShouldConsiderSquadAlert(timestamp))
+            {
+                continue;
+            }
+
             Vector3 searchPoint = ResolveSearchPoint(
                 receiver,
                 lastKnownPosition,

@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "disabled": {
+    "averageFps": 69.93123118483479,
+    "averageFrameMs": 14.38616306535644,
+    "p95FrameMs": 48.29924926161766,
+    "averageMainThreadMs": 14.287074746247324,
+    "p95MainThreadMs": 48.267334,
+    "maximumPerceptionLatencyFrames": 25.0,
+    "stableSampleInstantiateCount": 0.0,
+    "aiDecisionTicks": 280941.0,
+    "aiSkippedDecisionTicks": 0.0,
+    "maximumAiDecisionLatencyFrames": 93.0
+  },
+  "enabled": {
+    "averageFps": 95.29727350688606,
+    "averageFrameMs": 10.511758966554163,
+    "p95FrameMs": 29.484586790204048,
+    "averageMainThreadMs": 10.479993908709336,
+    "p95MainThreadMs": 29.396042,
+    "maximumPerceptionLatencyFrames": 30.0,
+    "stableSampleInstantiateCount": 0.0,
+    "aiDecisionTicks": 227153.0,
+    "aiSkippedDecisionTicks": 204497.0,
+    "maximumAiDecisionLatencyFrames": 99.0
+  },
+  "changePercent": {
+    "averageFps": 36.27283817584514,
+    "averageFrameMs": -26.93146241427149,
+    "p95FrameMs": -38.95435800565374,
+    "averageMainThreadMs": -26.647028206652063,
+    "p95MainThreadMs": -39.0974401030726,
+    "maximumPerceptionLatencyFrames": 20.0,
+    "stableSampleInstantiateCount": 0.0,
+    "aiDecisionTicks": -19.145656917288683,
+    "aiSkippedDecisionTicks": 0.0,
+    "maximumAiDecisionLatencyFrames": 6.451612903225806
+  }
+}

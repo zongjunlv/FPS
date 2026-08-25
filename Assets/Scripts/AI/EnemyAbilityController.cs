@@ -33,6 +33,7 @@ public sealed class EnemyAbilityController : MonoBehaviour
     private IEnemyNeighborQuery neighborQuery;
     private Health health;
     private float supportCooldownRemaining;
+    private EnemyAiLodController lod;
 
     public bool IsActive => activeSet != null &&
         (raider != null || suppressor != null || support != null);
@@ -86,6 +87,7 @@ public sealed class EnemyAbilityController : MonoBehaviour
         overhead = GetComponent<EnemyBurnEffectController>();
         enemy = GetComponent<EnemyController>();
         health = GetComponent<Health>();
+        lod = GetComponent<EnemyAiLodController>();
         neighborQuery = EnemySquadCoordinator.Instance ??
             EnemySquadCoordinator.EnsureForActiveScene();
         tactics.Reset(false);
@@ -110,8 +112,18 @@ public sealed class EnemyAbilityController : MonoBehaviour
             return;
         }
 
+        lod ??= GetComponent<EnemyAiLodController>();
+        float elapsedTime = Time.deltaTime;
+
+        if (lod != null && !lod.TryAcquireTick(
+                EnemyAiLodChannel.Ability,
+                out elapsedTime))
+        {
+            return;
+        }
+
         PruneOutgoingSupport();
-        supportCooldownRemaining -= Time.deltaTime;
+        supportCooldownRemaining -= elapsedTime;
 
         if (supportCooldownRemaining <= 0f)
         {

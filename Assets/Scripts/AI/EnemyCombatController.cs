@@ -29,6 +29,9 @@ public sealed class EnemyCombatController : MonoBehaviour
     private PlayableGraph attackGraph;
     private Coroutine attackAnimationRoutine;
     private EnemyAbilityController abilities;
+    private EnemyAiLodController lod;
+    private Transform cachedHealthTarget;
+    private Health cachedTargetHealth;
     private ShotTracerPool rangedTracerPool;
     private readonly RaycastHit[] hitscanResults =
         new RaycastHit[HitscanCapacity];
@@ -45,6 +48,7 @@ public sealed class EnemyCombatController : MonoBehaviour
         animator = GetComponent<Animator>();
         audioSource = GetComponent<AudioSource>();
         abilities = GetComponent<EnemyAbilityController>();
+        lod = GetComponent<EnemyAiLodController>();
 
         if (audioSource == null)
         {
@@ -78,13 +82,29 @@ public sealed class EnemyCombatController : MonoBehaviour
             return;
         }
 
-        Health targetHealth = target.GetComponent<Health>();
+        if (cachedHealthTarget != target)
+        {
+            cachedHealthTarget = target;
+            cachedTargetHealth = target.GetComponent<Health>();
+        }
+
+        Health targetHealth = cachedTargetHealth;
 
         if (targetHealth != null && targetHealth.IsDead)
         {
             attackState.CancelAim();
             abilities?.EndEngagement();
             navigation.Stop();
+            return;
+        }
+
+        lod ??= GetComponent<EnemyAiLodController>();
+        float elapsedTime = Time.deltaTime;
+
+        if (lod != null && !lod.TryAcquireTick(
+                EnemyAiLodChannel.Combat,
+                out elapsedTime))
+        {
             return;
         }
 
@@ -101,7 +121,7 @@ public sealed class EnemyCombatController : MonoBehaviour
                 knownTargetPosition,
                 perception.HasVisualContact,
                 distance,
-                Time.deltaTime)
+                elapsedTime)
             : EnemyMovementDirective.None;
 
         if (movement.Kind != EnemyMovementDirectiveKind.None)
@@ -124,7 +144,7 @@ public sealed class EnemyCombatController : MonoBehaviour
         Decision = attackState.Evaluate(
             distance,
             perception.HasVisualContact,
-            Time.deltaTime);
+            elapsedTime);
         abilities?.NotifyAttackDecision(Decision);
 
         if (Decision == EnemyAttackDecision.Chase)
@@ -134,7 +154,7 @@ public sealed class EnemyCombatController : MonoBehaviour
         }
 
         navigation.Stop();
-        FaceTarget(toTarget);
+        FaceTarget(toTarget, elapsedTime);
 
         if (Decision == EnemyAttackDecision.Attack)
         {
@@ -155,6 +175,8 @@ public sealed class EnemyCombatController : MonoBehaviour
         RefreshAbilityProfile();
         Decision = EnemyAttackDecision.Chase;
         SuccessfulAttackCount = 0;
+        cachedHealthTarget = null;
+        cachedTargetHealth = null;
     }
 
     public void RefreshAbilityProfile()
@@ -189,7 +211,7 @@ public sealed class EnemyCombatController : MonoBehaviour
         Decision = EnemyAttackDecision.Chase;
     }
 
-    private void FaceTarget(Vector3 direction)
+    private void FaceTarget(Vector3 direction, float elapsedTime)
     {
         direction.y = 0f;
 
@@ -201,7 +223,7 @@ public sealed class EnemyCombatController : MonoBehaviour
         transform.rotation = Quaternion.RotateTowards(
             transform.rotation,
             Quaternion.LookRotation(direction.normalized),
-            turnSpeed * Time.deltaTime);
+            turnSpeed * elapsedTime);
     }
 
     private void ApplyAttack(Transform target)

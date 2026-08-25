@@ -40,6 +40,7 @@ public sealed class Issue13PerformanceBenchmark : MonoBehaviour
     private FullScreenMode benchmarkScreenMode;
     private string benchmarkQualityLevel;
     private int perceptionBudget;
+    private bool aiLodEnabled = true;
     private string variant;
     private string outputPath;
     private int shots;
@@ -91,6 +92,11 @@ public sealed class Issue13PerformanceBenchmark : MonoBehaviour
                 arguments,
                 "-benchmark-perception-budget",
                 DefaultPerceptionBudget));
+        aiLodEnabled = !string.Equals(
+            ReadString(arguments, "-benchmark-ai-lod", "enabled"),
+            "disabled",
+            StringComparison.OrdinalIgnoreCase);
+        EnemyAiLodController.SetGlobalEnabled(aiLodEnabled);
         benchmarkWidth = Mathf.Max(
             640,
             ReadInt(arguments, "-benchmark-width", 1280));
@@ -461,6 +467,7 @@ public sealed class Issue13PerformanceBenchmark : MonoBehaviour
                 ? "Development"
                 : "Release",
             behaviorProfile = BehaviorProfile,
+            aiLodEnabled = aiLodEnabled,
             perceptionChecksPerFrame = perceptionBudget,
             enemyCount = actualEnemyCount,
             warmupSeconds = warmupSeconds,
@@ -527,6 +534,16 @@ public sealed class Issue13PerformanceBenchmark : MonoBehaviour
                 ReadMaximumPerceptionLatencyFrames(),
             maximumPerceptionLatencyMs =
                 ReadMaximumPerceptionLatencyFrames() * averageFrameMs,
+            nearEnemyCount = CountLodTier(EnemyAiLodTier.Near),
+            midEnemyCount = CountLodTier(EnemyAiLodTier.Mid),
+            farEnemyCount = CountLodTier(EnemyAiLodTier.Far),
+            aiDecisionTicks = ReadLodMetric(
+                controller => controller.ExecutedDecisionTicks),
+            aiSkippedDecisionTicks = ReadLodMetric(
+                controller => controller.SkippedDecisionTicks),
+            maximumAiDecisionLatencyFrames = (int)ReadLodMetric(
+                controller => controller.MaximumDecisionLatencyFrames,
+                true),
             enemyPoolObjects = enemyPool?.PooledObjectCount ?? 0,
             enemyPoolReuseCount = enemyPool?.ReuseCount ?? 0,
             enemyPoolExpansionCount = enemyPool?.ExpansionCount ?? 0,
@@ -561,6 +578,43 @@ public sealed class Issue13PerformanceBenchmark : MonoBehaviour
         return scheduler != null
             ? scheduler.TotalCheckCount
             : -1L;
+    }
+
+    private static int CountLodTier(EnemyAiLodTier tier)
+    {
+        int count = 0;
+
+        foreach (EnemyAiLodController controller in
+                 FindObjectsByType<EnemyAiLodController>(
+                     FindObjectsInactive.Exclude,
+                     FindObjectsSortMode.None))
+        {
+            if (controller.CurrentTier == tier)
+            {
+                count++;
+            }
+        }
+
+        return count;
+    }
+
+    private static long ReadLodMetric(
+        Func<EnemyAiLodController, int> selector,
+        bool maximum = false)
+    {
+        long value = 0L;
+
+        foreach (EnemyAiLodController controller in
+                 FindObjectsByType<EnemyAiLodController>(
+                     FindObjectsInactive.Exclude,
+                     FindObjectsSortMode.None))
+        {
+            value = maximum
+                ? Math.Max(value, selector(controller))
+                : value + selector(controller);
+        }
+
+        return value;
     }
 
     private static string ReadPoolSummary()
@@ -755,6 +809,8 @@ public sealed class Issue13PerformanceBenchmark : MonoBehaviour
         {
             gcRecorder.Dispose();
         }
+
+        EnemyAiLodController.SetGlobalEnabled(true);
     }
 }
 
@@ -775,6 +831,7 @@ public sealed class Issue13BenchmarkReport
     public string qualityLevel;
     public string buildType;
     public string behaviorProfile;
+    public bool aiLodEnabled;
     public int perceptionChecksPerFrame;
     public int enemyCount;
     public double warmupSeconds;
@@ -804,6 +861,12 @@ public sealed class Issue13BenchmarkReport
     public long perceptionChecks;
     public int maximumPerceptionLatencyFrames;
     public double maximumPerceptionLatencyMs;
+    public int nearEnemyCount;
+    public int midEnemyCount;
+    public int farEnemyCount;
+    public long aiDecisionTicks;
+    public long aiSkippedDecisionTicks;
+    public int maximumAiDecisionLatencyFrames;
     public int enemyPoolObjects;
     public int enemyPoolReuseCount;
     public int enemyPoolExpansionCount;

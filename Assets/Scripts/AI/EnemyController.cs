@@ -93,6 +93,11 @@ public class EnemyController : MonoBehaviour
         RuntimeNavMeshBootstrap.EnsureForActiveScene();
         EnemySquadCoordinator.EnsureForActiveScene();
 
+        if (GetComponent<EnemyAiLodController>() == null)
+        {
+            gameObject.AddComponent<EnemyAiLodController>();
+        }
+
         if (GetComponent<EnemyPerceptionController>() == null)
         {
             gameObject.AddComponent<EnemyPerceptionController>();
@@ -202,6 +207,7 @@ public class EnemyController : MonoBehaviour
         }
 
         health.Initialize(configuredHealth, configuredArmor);
+        GetComponent<EnemyAiLodController>()?.ResetForSpawn(target);
         GetComponent<EnemyCombatController>()?.ResetForSpawn();
         GetComponent<EnemyNavigationController>()?.ResetForSpawn();
         GetComponent<EnemyPerceptionController>()?.ResetForSpawn(target);
@@ -224,6 +230,7 @@ public class EnemyController : MonoBehaviour
             GetComponent<EnemyBurnEffectController>();
         burnEffects?.ClearBurn();
         burnEffects?.SetOverheadPresentationEnabled(false);
+        GetComponent<EnemyAiLodController>()?.PrepareForPool();
         GetComponent<EnemyCombatController>()?.PrepareForPool();
         GetComponent<EnemyNavigationController>()?.PrepareForPool();
         GetComponent<EnemyPerceptionController>()?.PrepareForPool();

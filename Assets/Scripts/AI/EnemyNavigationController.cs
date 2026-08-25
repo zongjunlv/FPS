@@ -18,6 +18,8 @@ public sealed class EnemyNavigationController : MonoBehaviour
     private bool movementStopped;
     private NavMeshPath reachablePath;
     private float speedMultiplier = 1f;
+    private bool lodSuspended;
+    private EnemyAiLodController lod;
 
     public Vector3 Destination { get; private set; }
     public int PatrolPointCount => patrolPoints.Count;
@@ -66,6 +68,7 @@ public sealed class EnemyNavigationController : MonoBehaviour
     public float CurrentMoveSpeed => UsesNavMesh
         ? agent.speed
         : fallbackMoveSpeed * speedMultiplier;
+    public bool IsLodSuspended => lodSuspended;
 
     private void Awake()
     {
@@ -73,6 +76,7 @@ public sealed class EnemyNavigationController : MonoBehaviour
         agent = GetComponent<NavMeshAgent>();
         ConfigureAgent();
         GeneratePatrolPoints();
+        lod = GetComponent<EnemyAiLodController>();
     }
 
     public void AttachToNavMesh()
@@ -104,6 +108,7 @@ public sealed class EnemyNavigationController : MonoBehaviour
         hasDestination = false;
         destinationIsPatrol = false;
         movementStopped = false;
+        lodSuspended = false;
         Destination = transform.position;
 
         if (UsesNavMesh)
@@ -121,6 +126,7 @@ public sealed class EnemyNavigationController : MonoBehaviour
         hasDestination = false;
         destinationIsPatrol = false;
         movementStopped = true;
+        lodSuspended = false;
 
         if (UsesNavMesh)
         {
@@ -151,6 +157,16 @@ public sealed class EnemyNavigationController : MonoBehaviour
             return;
         }
 
+        lod ??= GetComponent<EnemyAiLodController>();
+        float elapsedTime = Time.deltaTime;
+
+        if (lod != null && !lod.TryAcquireTick(
+                EnemyAiLodChannel.Navigation,
+                out elapsedTime))
+        {
+            return;
+        }
+
         Vector3 direction = Destination - transform.position;
         direction.y = 0f;
 
@@ -161,14 +177,14 @@ public sealed class EnemyNavigationController : MonoBehaviour
         }
 
         Vector3 step = direction.normalized *
-            fallbackMoveSpeed * speedMultiplier * Time.deltaTime;
+            fallbackMoveSpeed * speedMultiplier * elapsedTime;
         transform.position += Vector3.ClampMagnitude(
             step,
             direction.magnitude);
         transform.rotation = Quaternion.RotateTowards(
             transform.rotation,
             Quaternion.LookRotation(direction.normalized),
-            420f * Time.deltaTime);
+            420f * elapsedTime);
     }
 
     public void ConfigurePatrolPoints(IEnumerable<Vector3> points)
@@ -260,6 +276,23 @@ public sealed class EnemyNavigationController : MonoBehaviour
         }
     }
 
+    public void SetLodSuspended(bool suspended)
+    {
+        if (lodSuspended == suspended)
+        {
+            return;
+        }
+
+        lodSuspended = suspended;
+
+        if (!UsesNavMesh || movementStopped)
+        {
+            return;
+        }
+
+        agent.isStopped = suspended;
+    }
+
     public void SetSpeedMultiplier(float multiplier)
     {
         speedMultiplier = Mathf.Max(0.1f, multiplier);
@@ -304,7 +337,7 @@ public sealed class EnemyNavigationController : MonoBehaviour
 
         if (UsesNavMesh)
         {
-            agent.isStopped = false;
+            agent.isStopped = lodSuspended;
 
             if (destinationChanged || resumeAfterStop)
             {

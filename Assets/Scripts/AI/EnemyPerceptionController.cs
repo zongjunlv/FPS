@@ -23,6 +23,7 @@ public sealed class EnemyPerceptionController : MonoBehaviour
     private float latestVisualIntelTime = float.NegativeInfinity;
     private readonly RaycastHit[] sightHits = new RaycastHit[32];
     private EnemyPerceptionScheduler perceptionScheduler;
+    private EnemyAiLodController lod;
     private int lastSightCheckFrame = -1;
 
     public EnemyAwarenessState State =>
@@ -49,6 +50,10 @@ public sealed class EnemyPerceptionController : MonoBehaviour
     public int SightCheckCount { get; private set; }
     public int SaturatedSightQueryCount { get; private set; }
     public int MaximumSightCheckLatencyFrames { get; private set; }
+    public EnemyAiLodTier LodTier => lod != null
+        ? lod.CurrentTier
+        : EnemyAiLodTier.Near;
+    internal EnemyAiLodController Lod => lod;
 
     private void Awake()
     {
@@ -65,6 +70,7 @@ public sealed class EnemyPerceptionController : MonoBehaviour
         squadCoordinator = EnemySquadCoordinator.Instance;
         perceptionScheduler =
             EnemyPerceptionScheduler.EnsureForActiveScene();
+        lod = GetComponent<EnemyAiLodController>();
     }
 
     private void OnEnable()
@@ -111,11 +117,26 @@ public sealed class EnemyPerceptionController : MonoBehaviour
             return;
         }
 
+        lod ??= GetComponent<EnemyAiLodController>();
+        float elapsedTime = Time.deltaTime;
+
+        if (lod != null && !lod.TryAcquireTick(
+                EnemyAiLodChannel.Perception,
+                out elapsedTime))
+        {
+            return;
+        }
+
+        if (target == null)
+        {
+            HasVisualContact = false;
+        }
+
         if (HasVisualContact)
         {
             investigatingSound = false;
             hasSquadSearchAssignment = false;
-            awareness.Observe(target.position, Time.deltaTime);
+            awareness.Observe(target.position, elapsedTime);
 
             if (lastSightCheckFrame == Time.frameCount)
             {
@@ -134,7 +155,7 @@ public sealed class EnemyPerceptionController : MonoBehaviour
         else if (awareness.State == EnemyAwarenessState.Search)
         {
             awareness.AdvanceSearch(
-                Time.deltaTime,
+                elapsedTime,
                 navigation.HasReachedDestination);
         }
         else if (investigatingSound)
@@ -148,7 +169,7 @@ public sealed class EnemyPerceptionController : MonoBehaviour
         }
         else
         {
-            awareness.Tick(Time.deltaTime);
+            awareness.Tick(elapsedTime);
         }
 
         if (awareness.State == EnemyAwarenessState.Patrol)
@@ -194,8 +215,15 @@ public sealed class EnemyPerceptionController : MonoBehaviour
         awareness.ApplySharedAlert(
             alert.LastKnownPosition,
             alert.Confidence);
+        lod ??= GetComponent<EnemyAiLodController>();
+        lod?.RequestImmediateEvaluation(false);
         navigation.SetDestination(squadSearchDestination);
         return true;
+    }
+
+    public bool ShouldConsiderSquadAlert(float timestamp)
+    {
+        return !HasVisualContact && timestamp > latestVisualIntelTime;
     }
 
     public bool TryResolveSquadSearchPoint(
@@ -345,6 +373,7 @@ public sealed class EnemyPerceptionController : MonoBehaviour
         HasVisualContact = CanSeeTarget();
         SightCheckCount++;
         lastSightCheckFrame = Time.frameCount;
+        lod?.NotifySightCheck(Time.frameCount);
     }
 
     private void HandleSound(SoundStimulus stimulus)
@@ -359,6 +388,8 @@ public sealed class EnemyPerceptionController : MonoBehaviour
 
         awareness.Hear(stimulus.Position, strength);
         investigatingSound = true;
+        lod ??= GetComponent<EnemyAiLodController>();
+        lod?.RequestImmediateEvaluation(false);
         navigation.SetDestination(stimulus.Position);
     }
 
