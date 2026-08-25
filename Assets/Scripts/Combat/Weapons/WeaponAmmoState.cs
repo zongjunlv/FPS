@@ -88,6 +88,20 @@ public sealed class WeaponAmmoState
         return accepted;
     }
 
+    public int AddMagazineAmmo(int requestedAmount)
+    {
+        if (requestedAmount <= 0 || CurrentAmmo >= MagazineCapacity)
+        {
+            return 0;
+        }
+
+        int accepted = Math.Min(
+            requestedAmount,
+            MagazineCapacity - CurrentAmmo);
+        CurrentAmmo += accepted;
+        return accepted;
+    }
+
     public bool TryBeginReload()
     {
         if (!CanReload)

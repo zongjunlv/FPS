@@ -258,6 +258,8 @@ public sealed class WaveDirector : MonoBehaviour, IWaveProgressSource
         configured = true;
         player.GetComponent<PlayerRunProgression>()
             ?.BindKillSource(this);
+        player.GetComponent<PlayerCombatEventRouter>()
+            ?.BindKillSource(this);
         UnityEngine.Object.FindAnyObjectByType<UnifiedGameHud>()
             ?.BindWave(this);
         PublishProgress();

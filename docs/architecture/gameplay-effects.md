@@ -52,3 +52,11 @@ Issue 33 增加 `Timed` 生命周期。燃烧定义包含 Tick 伤害、Tick 间
 同一目标上的同 ID 燃烧合并为一个运行时实例，但每层独立保存施加来源和剩余时间。每次 Tick 按层分别产生 `DamageInfo`，伤害类型为 `StatusEffect`，因此最后一层造成击杀时，`Health.LastAppliedDamage` 和波次奖励仍能获得正确来源。
 
 武器命中存活敌人后施加一层燃烧。存活敌人头顶常驻实时血条，血量降低时按绿、黄、红变化；燃烧期间追加橙色火星和 `BURN ×层数` 状态行。状态到期只隐藏状态行，死亡或 `PrepareForPool` 会隐藏整组信息，`ResetForSpawn` 恢复干净满血条，避免对象池复用污染下一代敌人。
+
+## 击杀事件触发效果
+
+Issue 34 建立 `GameplayEffectEventContext` 与玩家级事件流。只有 `PlayerCombatEventRouter` 订阅权威的 `WaveDirector.EnemyDied`；它校验最后伤害来源属于玩家，并按波次与生成编号去重，再把与敌人、波次系统解耦的 `EnemyKilled` 上下文交给效果订阅者。
+
+自动装填效果由一个可移除的 Persistent Effect 实例表示。实例存在时订阅事件流，每次有效击杀为当前弹匣补充3发，不消耗备弹且不超过弹匣上限；实例移除时立即退订。切枪过程中当前武器归属尚未完成，因此该次击杀明确忽略，不延迟结算；切换完成后的后续击杀只补充新装备武器。
+
+`WeaponController.AddMagazineAmmo` 仅在实际增加子弹时发布 `AmmoChanged`，因此旧弹药界面与统一 HUD 同帧刷新；满弹时不会产生伪刷新。

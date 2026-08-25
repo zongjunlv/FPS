@@ -284,6 +284,18 @@ public class WeaponController : MonoBehaviour
         return accepted;
     }
 
+    public int AddMagazineAmmo(int amount)
+    {
+        int accepted = ammoState.AddMagazineAmmo(amount);
+
+        if (accepted > 0)
+        {
+            AmmoChanged?.Invoke();
+        }
+
+        return accepted;
+    }
+
     public bool CancelReload()
     {
         if (!ammoState.CancelReload())

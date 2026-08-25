@@ -25,6 +25,8 @@ public sealed class PlayerCombatCompositionRoot : MonoBehaviour
     public Health PlayerHealth { get; private set; }
     public PlayerCombatFeedbackController CombatFeedback { get; private set; }
     public UnifiedGameHudBootstrap HudBootstrap { get; private set; }
+    public PlayerCombatEventRouter CombatEvents { get; private set; }
+    public PlayerKillAmmoEffectController KillAmmoEffect { get; private set; }
 
     private AmmoHudPresenter ammoHud;
     private PlayerCrosshairPresenter crosshair;
@@ -70,7 +72,8 @@ public sealed class PlayerCombatCompositionRoot : MonoBehaviour
         vitalsHud.Bind(PlayerHealth);
         player.SetRuntimeStats(RuntimeStats);
 
-        if (!combat.Initialize() || !CombatFeedback.Initialize())
+        if (!combat.Initialize() || !CombatFeedback.Initialize() ||
+            !KillAmmoEffect.Initialize())
         {
             Fail("A configured combat service rejected initialization.");
             return false;
@@ -123,6 +126,8 @@ public sealed class PlayerCombatCompositionRoot : MonoBehaviour
         vitalsHud = GetOrAdd<PlayerVitalsHudPresenter>();
         CombatFeedback = GetOrAdd<PlayerCombatFeedbackController>();
         HudBootstrap = GetOrAdd<UnifiedGameHudBootstrap>();
+        CombatEvents = GetOrAdd<PlayerCombatEventRouter>();
+        KillAmmoEffect = GetOrAdd<PlayerKillAmmoEffectController>();
 
         damageAudio = GetOrAdd<AudioSource>();
         damageAudio.playOnAwake = false;
@@ -150,6 +155,7 @@ public sealed class PlayerCombatCompositionRoot : MonoBehaviour
             vitalsHud,
             damageAudio,
             feedbackAudio);
+        KillAmmoEffect.Configure(combat, CombatEvents);
         HudBootstrap.Configure(gameObject, null);
     }
 
