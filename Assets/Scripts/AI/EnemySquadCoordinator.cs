@@ -27,6 +27,9 @@ public sealed class EnemySquadCoordinator : MonoBehaviour,
         lastBroadcastTime = new();
     private readonly List<EnemyAlertDebugRelation> debugRelations = new();
     private readonly List<Vector3> reservedSearchPoints = new();
+    private readonly List<EnemyPerceptionController> alertCandidates =
+        new(128);
+    private EnemySpatialIndexService spatialIndex;
     private float alertRadius = 18f;
     private float broadcastCooldown = 1f;
     private float alertLifetime = 3f;
@@ -59,6 +62,7 @@ public sealed class EnemySquadCoordinator : MonoBehaviour,
     private void Awake()
     {
         Instance = this;
+        spatialIndex = EnemySpatialIndexService.EnsureForActiveScene();
         debugView = GetComponent<EnemySquadAlertDebugView>();
 
         if (debugView == null)
@@ -119,6 +123,8 @@ public sealed class EnemySquadCoordinator : MonoBehaviour,
         }
 
         members.Add(member);
+        spatialIndex ??= EnemySpatialIndexService.EnsureForActiveScene();
+        spatialIndex.Register(member);
         member.BindSquadCoordinator(this, alertLifetime);
     }
 
@@ -130,6 +136,7 @@ public sealed class EnemySquadCoordinator : MonoBehaviour,
         }
 
         members.Remove(member);
+        spatialIndex?.Unregister(member);
         lastBroadcastTime.Remove(member);
     }
 
@@ -137,41 +144,16 @@ public sealed class EnemySquadCoordinator : MonoBehaviour,
         EnemyController source,
         float radius,
         string requiredTag,
-        List<EnemyController> results)
+        List<EnemyController> results,
+        int maximumResults = int.MaxValue)
     {
-        if (results == null)
-        {
-            throw new System.ArgumentNullException(nameof(results));
-        }
-
-        results.Clear();
-
-        for (int index = members.Count - 1; index >= 0; index--)
-        {
-            EnemyPerceptionController perception = members[index];
-
-            if (perception == null)
-            {
-                members.RemoveAt(index);
-                continue;
-            }
-
-            EnemyController candidate =
-                perception.GetComponent<EnemyController>();
-
-            if (!EnemyNeighborQueryUtility.IsInRange(
-                    source,
-                    candidate,
-                    radius) ||
-                !candidate.HasGameplayTag(requiredTag))
-            {
-                continue;
-            }
-
-            results.Add(candidate);
-        }
-
-        return results.Count;
+        spatialIndex ??= EnemySpatialIndexService.EnsureForActiveScene();
+        return spatialIndex.CollectAliveNeighbors(
+            source,
+            radius,
+            requiredTag,
+            results,
+            maximumResults);
     }
 
     public bool TryBroadcast(
@@ -209,21 +191,18 @@ public sealed class EnemySquadCoordinator : MonoBehaviour,
         debugRelations.Clear();
         reservedSearchPoints.Clear();
         int receiverSlot = 0;
+        spatialIndex ??= EnemySpatialIndexService.EnsureForActiveScene();
+        spatialIndex.Synchronize(source);
+        spatialIndex.CollectPerceptions(
+            source.transform.position,
+            alertRadius,
+            source,
+            "*",
+            alertCandidates);
 
-        for (int index = members.Count - 1; index >= 0; index--)
+        for (int index = 0; index < alertCandidates.Count; index++)
         {
-            EnemyPerceptionController receiver = members[index];
-
-            if (receiver == null)
-            {
-                members.RemoveAt(index);
-                continue;
-            }
-
-            if (receiver == source)
-            {
-                continue;
-            }
+            EnemyPerceptionController receiver = alertCandidates[index];
 
             // Avoid costly NavMesh search-point resolution for receivers
             // that already own fresher visual information.
@@ -236,7 +215,7 @@ public sealed class EnemySquadCoordinator : MonoBehaviour,
                 receiver,
                 lastKnownPosition,
                 receiverSlot,
-                Mathf.Max(1, members.Count - 1),
+                Mathf.Max(1, alertCandidates.Count),
                 reservedSearchPoints);
             bool accepted = receiver.ReceiveSquadAlert(
                 LastAlert,

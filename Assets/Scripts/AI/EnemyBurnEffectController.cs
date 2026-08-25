@@ -37,6 +37,8 @@ public sealed class EnemyBurnEffectController : MonoBehaviour
     private int supportSourceCount;
     private const float HealthFillWidth = 116f;
     private const float OverheadWorldScale = 0.0065f;
+    private const string OverheadRootName = "Enemy Overhead Information";
+    private const string BurnVisualRootName = "Burn Flame Particles";
 
     public bool IsBurning => StackCount > 0;
     public int StackCount => FindBurnInstance()?.StackCount ?? 0;
@@ -321,8 +323,14 @@ public sealed class EnemyBurnEffectController : MonoBehaviour
             return;
         }
 
+        // Runtime-created children are part of Unity's Instantiate clone.
+        // Their private controller references are not, so an active scene
+        // enemy used as a pool template would otherwise create a second copy.
+        DetachInheritedRuntimeChild(OverheadRootName);
+        DetachInheritedRuntimeChild(BurnVisualRootName);
+
         presentationRoot = new GameObject(
-            "Enemy Overhead Information",
+            OverheadRootName,
             typeof(RectTransform),
             typeof(Canvas));
         presentationRoot.transform.SetParent(transform, false);
@@ -365,7 +373,7 @@ public sealed class EnemyBurnEffectController : MonoBehaviour
         statusLabel.color = new Color(1f, 0.48f, 0.08f, 1f);
         statusLabel.text = string.Empty;
 
-        burnVisualRoot = new GameObject("Burn Flame Particles");
+        burnVisualRoot = new GameObject(BurnVisualRootName);
         burnVisualRoot.transform.SetParent(transform, false);
         burnVisualRoot.transform.localPosition = Vector3.up * 1.15f;
 
@@ -397,6 +405,28 @@ public sealed class EnemyBurnEffectController : MonoBehaviour
             renderer.sharedMaterial = particleMaterial;
         }
 
+    }
+
+    private void DetachInheritedRuntimeChild(string childName)
+    {
+        Transform inherited = transform.Find(childName);
+
+        if (inherited == null)
+        {
+            return;
+        }
+
+        inherited.gameObject.SetActive(false);
+        inherited.SetParent(null, false);
+
+        if (Application.isPlaying)
+        {
+            Destroy(inherited.gameObject);
+        }
+        else
+        {
+            DestroyImmediate(inherited.gameObject);
+        }
     }
 
     private void SyncPresentation()

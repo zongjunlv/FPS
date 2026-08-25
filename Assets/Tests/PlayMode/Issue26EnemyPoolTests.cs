@@ -76,6 +76,37 @@ namespace FPS.Tests.PlayMode
         }
 
         [UnityTest]
+        public IEnumerator EveryPooledEnemyOwnsExactlyOneOverheadHealthBar()
+        {
+            yield return LoadRuntime();
+            Component director = Find(RuntimeType("WaveDirector"));
+            Component pool = Find(RuntimeType("PooledEnemyFactory"));
+            List<Component> enemies = ActiveEnemies(director);
+            Component[] availableClones = pool.GetComponentsInChildren(
+                RuntimeType("EnemyController"), true);
+            enemies.AddRange(availableClones);
+            Assert.That(enemies.Count, Is.GreaterThan(2),
+                "需要同时检查活动敌人和池内休眠克隆体。");
+
+            foreach (Component enemy in enemies)
+            {
+                int overheadCount = 0;
+
+                foreach (Transform item in enemy.GetComponentsInChildren<
+                             Transform>(true))
+                {
+                    if (item.name == "Enemy Overhead Information")
+                    {
+                        overheadCount++;
+                    }
+                }
+
+                Assert.That(overheadCount, Is.EqualTo(1),
+                    $"{enemy.name} 应且仅应拥有一条头顶血条。");
+            }
+        }
+
+        [UnityTest]
         public IEnumerator PlayerFailureReturnsEveryLeaseAndClearsRegistrations()
         {
             LogAssert.ignoreFailingMessages = true;

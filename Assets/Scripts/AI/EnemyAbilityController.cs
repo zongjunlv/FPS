@@ -88,8 +88,8 @@ public sealed class EnemyAbilityController : MonoBehaviour
         enemy = GetComponent<EnemyController>();
         health = GetComponent<Health>();
         lod = GetComponent<EnemyAiLodController>();
-        neighborQuery = EnemySquadCoordinator.Instance ??
-            EnemySquadCoordinator.EnsureForActiveScene();
+        neighborQuery = EnemySpatialIndexService.Instance ??
+            EnemySpatialIndexService.EnsureForActiveScene();
         tactics.Reset(false);
         suppressorTactics.Reset(false);
 
@@ -398,8 +398,8 @@ public sealed class EnemyAbilityController : MonoBehaviour
             return 0;
         }
 
-        neighborQuery ??= EnemySquadCoordinator.Instance ??
-            EnemySquadCoordinator.EnsureForActiveScene();
+        neighborQuery ??= EnemySpatialIndexService.Instance ??
+            EnemySpatialIndexService.EnsureForActiveScene();
         neighborQuery.CollectAliveNeighbors(
             enemy,
             support.Radius,

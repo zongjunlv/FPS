@@ -157,6 +157,38 @@ namespace FPS.Tests.PlayMode
         }
 
         [Test]
+        public void CloningLiveEnemyKeepsExactlyOneOverheadHealthBar()
+        {
+            GameObject template = new("Live Enemy Template");
+            GameObject clone = null;
+
+            try
+            {
+                template.AddComponent<EnemyController>();
+                Assert.That(CountOverheadRoots(template), Is.EqualTo(1));
+                Assert.That(CountNamedChildren(
+                    template, "Burn Flame Particles"), Is.EqualTo(1));
+
+                clone = Object.Instantiate(template);
+
+                Assert.That(CountOverheadRoots(clone), Is.EqualTo(1),
+                    "对象池克隆运行中敌人时不得重复创建头顶血条。");
+                Assert.That(CountNamedChildren(
+                    clone, "Burn Flame Particles"), Is.EqualTo(1),
+                    "对象池克隆运行中敌人时不得重复创建燃烧表现节点。");
+            }
+            finally
+            {
+                if (clone != null)
+                {
+                    Object.DestroyImmediate(clone);
+                }
+
+                Object.DestroyImmediate(template);
+            }
+        }
+
+        [Test]
         public void PerceptionRuntimeNavigationOverlayIsRemoved()
         {
             MethodInfo overlay = typeof(EnemyPerceptionController).GetMethod(
@@ -208,6 +240,27 @@ namespace FPS.Tests.PlayMode
             {
                 Object.DestroyImmediate(target);
             }
+        }
+
+        private static int CountOverheadRoots(GameObject enemy) =>
+            CountNamedChildren(enemy, "Enemy Overhead Information");
+
+        private static int CountNamedChildren(
+            GameObject enemy,
+            string objectName)
+        {
+            int count = 0;
+
+            foreach (Transform item in
+                     enemy.GetComponentsInChildren<Transform>(true))
+            {
+                if (item.name == objectName)
+                {
+                    count++;
+                }
+            }
+
+            return count;
         }
     }
 }

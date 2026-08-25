@@ -41,6 +41,7 @@ public sealed class Issue13PerformanceBenchmark : MonoBehaviour
     private string benchmarkQualityLevel;
     private int perceptionBudget;
     private bool aiLodEnabled = true;
+    private bool spatialIndexEnabled = true;
     private string variant;
     private string outputPath;
     private int shots;
@@ -97,6 +98,14 @@ public sealed class Issue13PerformanceBenchmark : MonoBehaviour
             "disabled",
             StringComparison.OrdinalIgnoreCase);
         EnemyAiLodController.SetGlobalEnabled(aiLodEnabled);
+        spatialIndexEnabled = !string.Equals(
+            ReadString(
+                arguments,
+                "-benchmark-spatial-index",
+                "enabled"),
+            "disabled",
+            StringComparison.OrdinalIgnoreCase);
+        EnemySpatialIndexService.SetGlobalEnabled(spatialIndexEnabled);
         benchmarkWidth = Mathf.Max(
             640,
             ReadInt(arguments, "-benchmark-width", 1280));
@@ -204,6 +213,7 @@ public sealed class Issue13PerformanceBenchmark : MonoBehaviour
         }
 
         StartRecorders();
+        EnemySpatialIndexService.Instance?.ResetMetrics();
         poolInstantiateAtSampleStart =
             enemyPool != null ? enemyPool.InstantiateCount : 0;
         int sampleCount = 0;
@@ -468,6 +478,7 @@ public sealed class Issue13PerformanceBenchmark : MonoBehaviour
                 : "Release",
             behaviorProfile = BehaviorProfile,
             aiLodEnabled = aiLodEnabled,
+            spatialIndexEnabled = spatialIndexEnabled,
             perceptionChecksPerFrame = perceptionBudget,
             enemyCount = actualEnemyCount,
             warmupSeconds = warmupSeconds,
@@ -544,6 +555,17 @@ public sealed class Issue13PerformanceBenchmark : MonoBehaviour
             maximumAiDecisionLatencyFrames = (int)ReadLodMetric(
                 controller => controller.MaximumDecisionLatencyFrames,
                 true),
+            neighborQueryCount =
+                EnemySpatialIndexService.Instance?.QueryCount ?? 0L,
+            neighborCandidateVisits =
+                EnemySpatialIndexService.Instance?.CandidateVisitCount ?? 0L,
+            neighborQueryMilliseconds = ReadNeighborQueryMilliseconds(),
+            averageNeighborQueryMicroseconds =
+                ReadAverageNeighborQueryMicroseconds(),
+            spatialCellMoveCount =
+                EnemySpatialIndexService.Instance?.CellMoveCount ?? 0,
+            spatialPeakRegisteredCount =
+                EnemySpatialIndexService.Instance?.PeakRegisteredCount ?? 0,
             enemyPoolObjects = enemyPool?.PooledObjectCount ?? 0,
             enemyPoolReuseCount = enemyPool?.ReuseCount ?? 0,
             enemyPoolExpansionCount = enemyPool?.ExpansionCount ?? 0,
@@ -615,6 +637,24 @@ public sealed class Issue13PerformanceBenchmark : MonoBehaviour
         }
 
         return value;
+    }
+
+    private static double ReadNeighborQueryMilliseconds()
+    {
+        EnemySpatialIndexService service = EnemySpatialIndexService.Instance;
+        return service != null
+            ? service.QueryElapsedTicks * 1000.0 /
+              System.Diagnostics.Stopwatch.Frequency
+            : 0.0;
+    }
+
+    private static double ReadAverageNeighborQueryMicroseconds()
+    {
+        EnemySpatialIndexService service = EnemySpatialIndexService.Instance;
+        return service != null && service.QueryCount > 0
+            ? service.QueryElapsedTicks * 1000000.0 /
+              System.Diagnostics.Stopwatch.Frequency / service.QueryCount
+            : 0.0;
     }
 
     private static string ReadPoolSummary()
@@ -811,6 +851,7 @@ public sealed class Issue13PerformanceBenchmark : MonoBehaviour
         }
 
         EnemyAiLodController.SetGlobalEnabled(true);
+        EnemySpatialIndexService.SetGlobalEnabled(true);
     }
 }
 
@@ -832,6 +873,7 @@ public sealed class Issue13BenchmarkReport
     public string buildType;
     public string behaviorProfile;
     public bool aiLodEnabled;
+    public bool spatialIndexEnabled;
     public int perceptionChecksPerFrame;
     public int enemyCount;
     public double warmupSeconds;
@@ -867,6 +909,12 @@ public sealed class Issue13BenchmarkReport
     public long aiDecisionTicks;
     public long aiSkippedDecisionTicks;
     public int maximumAiDecisionLatencyFrames;
+    public long neighborQueryCount;
+    public long neighborCandidateVisits;
+    public double neighborQueryMilliseconds;
+    public double averageNeighborQueryMicroseconds;
+    public int spatialCellMoveCount;
+    public int spatialPeakRegisteredCount;
     public int enemyPoolObjects;
     public int enemyPoolReuseCount;
     public int enemyPoolExpansionCount;

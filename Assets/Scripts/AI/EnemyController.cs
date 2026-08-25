@@ -211,6 +211,14 @@ public class EnemyController : MonoBehaviour
         GetComponent<EnemyCombatController>()?.ResetForSpawn();
         GetComponent<EnemyNavigationController>()?.ResetForSpawn();
         GetComponent<EnemyPerceptionController>()?.ResetForSpawn(target);
+        EnemySpatialIndexService spatialIndex =
+            EnemySpatialIndexService.Instance;
+
+        if (gameObject.activeInHierarchy && spatialIndex != null)
+        {
+            spatialIndex.Synchronize(
+                GetComponent<EnemyPerceptionController>());
+        }
 
         foreach (DamageHitbox hitbox in
                  GetComponentsInChildren<DamageHitbox>(true))
@@ -223,6 +231,8 @@ public class EnemyController : MonoBehaviour
 
     public void PrepareForPool()
     {
+        EnemySpatialIndexService.Instance?.Unregister(
+            GetComponent<EnemyPerceptionController>());
         abilityController?.ClearForPool();
         supportEffects?.ClearAll();
         affixController?.ClearAffix();

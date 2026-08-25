@@ -7,7 +7,8 @@ public interface IEnemyNeighborQuery
         EnemyController source,
         float radius,
         string requiredTag,
-        List<EnemyController> results);
+        List<EnemyController> results,
+        int maximumResults = int.MaxValue);
 }
 
 public static class EnemyNeighborQueryUtility
