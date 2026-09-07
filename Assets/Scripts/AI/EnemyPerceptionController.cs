@@ -35,6 +35,7 @@ public sealed class EnemyPerceptionController : MonoBehaviour
     private int targetSightColliderCount;
     private int sightGeneration;
     private Vector3 latestSightTargetPosition;
+    private EnemyAiLodTier lastSightCheckLodTier = EnemyAiLodTier.Far;
 
     public EnemyAwarenessState State =>
         awareness?.State ?? EnemyAwarenessState.Patrol;
@@ -60,7 +61,9 @@ public sealed class EnemyPerceptionController : MonoBehaviour
     public int SightCheckCount { get; private set; }
     public int SaturatedSightQueryCount { get; private set; }
     public int MaximumSightCheckLatencyFrames { get; private set; }
+    public int MaximumNearSightCheckLatencyFrames { get; private set; }
     public int MaximumSightResultDelayFrames { get; private set; }
+    public int MaximumNearSightResultDelayFrames { get; private set; }
     public EnemyAiLodTier LodTier => lod != null
         ? lod.CurrentTier
         : EnemyAiLodTier.Near;
@@ -162,7 +165,7 @@ public sealed class EnemyPerceptionController : MonoBehaviour
 
             if (awareness.State == EnemyAwarenessState.Alert)
             {
-                squadCoordinator?.TryBroadcast(
+                squadCoordinator?.TryBroadcastBudgeted(
                     this,
                     latestSightTargetPosition,
                     1f,
@@ -275,7 +278,10 @@ public sealed class EnemyPerceptionController : MonoBehaviour
         SightCheckCount = 0;
         SaturatedSightQueryCount = 0;
         MaximumSightCheckLatencyFrames = 0;
+        MaximumNearSightCheckLatencyFrames = 0;
+        lastSightCheckLodTier = EnemyAiLodTier.Far;
         MaximumSightResultDelayFrames = 0;
+        MaximumNearSightResultDelayFrames = 0;
         RefreshSightColliderCache();
     }
 
@@ -390,7 +396,8 @@ public sealed class EnemyPerceptionController : MonoBehaviour
         CommitSightResult(
             visible,
             false,
-            target != null ? target.position : transform.position);
+            target != null ? target.position : transform.position,
+            LodTier);
     }
 
     internal EnemySightQueryDescriptor CreateSightQueryDescriptor()
@@ -416,7 +423,8 @@ public sealed class EnemyPerceptionController : MonoBehaviour
         bool visible,
         bool saturated,
         int submittedFrame,
-        Vector3 observedTargetPosition)
+        Vector3 observedTargetPosition,
+        EnemyAiLodTier submittedLodTier)
     {
         if (generation != sightGeneration || !isActiveAndEnabled)
         {
@@ -433,20 +441,38 @@ public sealed class EnemyPerceptionController : MonoBehaviour
         MaximumSightResultDelayFrames = Mathf.Max(
             MaximumSightResultDelayFrames,
             Time.frameCount - submittedFrame);
-        CommitSightResult(visible, saturated, observedTargetPosition);
+        if (submittedLodTier == EnemyAiLodTier.Near)
+        {
+            MaximumNearSightResultDelayFrames = Mathf.Max(
+                MaximumNearSightResultDelayFrames,
+                Time.frameCount - submittedFrame);
+        }
+        CommitSightResult(
+            visible,
+            saturated,
+            observedTargetPosition,
+            submittedLodTier);
         return true;
     }
 
     private void CommitSightResult(
         bool visible,
         bool saturated,
-        Vector3 observedTargetPosition)
+        Vector3 observedTargetPosition,
+        EnemyAiLodTier submittedLodTier)
     {
         if (lastSightCheckFrame >= 0)
         {
             MaximumSightCheckLatencyFrames = Mathf.Max(
                 MaximumSightCheckLatencyFrames,
                 Time.frameCount - lastSightCheckFrame);
+            if (submittedLodTier == EnemyAiLodTier.Near &&
+                lastSightCheckLodTier == EnemyAiLodTier.Near)
+            {
+                MaximumNearSightCheckLatencyFrames = Mathf.Max(
+                    MaximumNearSightCheckLatencyFrames,
+                    Time.frameCount - lastSightCheckFrame);
+            }
         }
 
         HasVisualContact = visible;
@@ -463,6 +489,7 @@ public sealed class EnemyPerceptionController : MonoBehaviour
 
         SightCheckCount++;
         lastSightCheckFrame = Time.frameCount;
+        lastSightCheckLodTier = submittedLodTier;
         lod?.NotifySightCheck(Time.frameCount);
     }
 

@@ -22,6 +22,11 @@ public sealed class CombatEffectPool : MonoBehaviour
     public int SparkCapacityValue => sparkPool?.Capacity ?? 0;
     public int AudioCapacityValue => audioPool?.Capacity ?? 0;
     public int AudioActiveCount => audioPool?.ActiveCount ?? 0;
+    public int TotalVisualInstanceCapacity =>
+        (concretePool?.Capacity ?? 0) +
+        (metalPool?.Capacity ?? 0) +
+        (sparkPool?.Capacity ?? 0) +
+        (audioPool?.Capacity ?? 0);
 
     public static CombatEffectPool Ensure(
         Transform owner,

@@ -26,11 +26,17 @@ jobs:
       - name: Run Unity quality gate
         run: ./scripts/ci/run-unity-quality-gate.sh all
 
+      - name: Run 100-enemy performance regression gate
+        run: ./scripts/performance/run-issue45-performance-gate.sh
+
       - name: Publish human-readable summary
         if: always()
         run: |
           if [[ -f artifacts/quality-gate/summary.md ]]; then
             cat artifacts/quality-gate/summary.md >> "$GITHUB_STEP_SUMMARY"
+          fi
+          if [[ -f artifacts/performance/issue45/summary.md ]]; then
+            cat artifacts/performance/issue45/summary.md >> "$GITHUB_STEP_SUMMARY"
           fi
 
       - name: Upload XML, JSON, Markdown and logs
@@ -38,6 +44,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: unity-quality-gate-${{ github.run_id }}
-          path: artifacts/quality-gate
+          path: |
+            artifacts/quality-gate
+            artifacts/performance/issue45
           if-no-files-found: error
           retention-days: 14

@@ -8,6 +8,8 @@ public sealed class UnifiedGameHud : MonoBehaviour
 {
     private const float VitalsBarWidth = 290f;
     private const float ExperienceBarWidth = 238f;
+    private static readonly string[] CachedIntegerText =
+        BuildCachedIntegerText(1000);
 
     private HudIconCatalog iconCatalog;
 
@@ -465,19 +467,20 @@ public sealed class UnifiedGameHud : MonoBehaviour
         SetBarWidth(
             armorTrail,
             vitalsPresenter.TrailingArmorNormalized);
-        healthText.text =
-            $"HEALTH  {Mathf.RoundToInt(health.CurrentHealth):000} / " +
-            $"{Mathf.RoundToInt(health.MaxHealth):000}";
-        armorText.text =
-            $"ARMOR   {Mathf.RoundToInt(health.CurrentArmor):000} / " +
-            $"{Mathf.RoundToInt(health.MaxArmor):000}";
+        healthText.SetText(
+            "HEALTH  {0:000} / {1:000}",
+            health.CurrentHealth,
+            health.MaxHealth);
+        armorText.SetText(
+            "ARMOR   {0:000} / {1:000}",
+            health.CurrentArmor,
+            health.MaxArmor);
         if (movementText != null)
         {
             float multiplier = runtimeStats != null
                 ? runtimeStats.SurvivalModifiers.MovementSpeedMultiplier
                 : 1f;
-            movementText.text =
-                $"MOVE  {Mathf.RoundToInt(multiplier * 100f)}%";
+            movementText.SetText("MOVE  {0:0}%", multiplier * 100f);
         }
         VitalsRefreshCount++;
     }
@@ -504,12 +507,19 @@ public sealed class UnifiedGameHud : MonoBehaviour
         fireModeText.text =
             $"FIRE · {weapon.FireModeName} · " +
             $"{Mathf.RoundToInt(fireRateMultiplier * 100f)}%";
-        ammoText.text = weapon.CurrentAmmo.ToString();
-        reserveAmmoText.text = weapon.ReserveAmmo.ToString();
+        ammoText.text = CachedNumber(weapon.CurrentAmmo);
+        reserveAmmoText.text = CachedNumber(weapon.ReserveAmmo);
         ammoSeparatorText.text = "/";
-        weaponSlotText.text = combat != null
-            ? $"SLOT {combat.EquippedWeaponIndex + 1:00}"
-            : string.Empty;
+        if (combat != null)
+        {
+            weaponSlotText.SetText(
+                "SLOT {0:00}",
+                combat.EquippedWeaponIndex + 1);
+        }
+        else
+        {
+            weaponSlotText.text = string.Empty;
+        }
         string weaponState = ammoPresenter != null
             ? ammoPresenter.StatusText
             : weapon.IsReloading ? "RELOADING" : string.Empty;
@@ -523,6 +533,25 @@ public sealed class UnifiedGameHud : MonoBehaviour
             ? new Color(1f, 0.25f, 0.2f, 1f)
             : Color.white;
         WeaponRefreshCount++;
+    }
+
+    private static string CachedNumber(int value)
+    {
+        return value >= 0 && value < CachedIntegerText.Length
+            ? CachedIntegerText[value]
+            : value.ToString();
+    }
+
+    private static string[] BuildCachedIntegerText(int count)
+    {
+        var values = new string[count];
+
+        for (int index = 0; index < values.Length; index++)
+        {
+            values[index] = index.ToString();
+        }
+
+        return values;
     }
 
     private void RefreshCrosshair()

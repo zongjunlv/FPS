@@ -22,6 +22,7 @@ public readonly struct EnemyAlertDebugRelation
 public sealed class EnemySquadCoordinator : MonoBehaviour,
     IEnemyNeighborQuery
 {
+    private const int MaximumBroadcastsPerFrame = 1;
     private readonly List<EnemyPerceptionController> members = new();
     private readonly Dictionary<EnemyPerceptionController, float>
         lastBroadcastTime = new();
@@ -35,6 +36,8 @@ public sealed class EnemySquadCoordinator : MonoBehaviour,
     private float alertLifetime = 3f;
     private float searchRadius = 4f;
     private int nextSequence;
+    private int broadcastBudgetFrame = -1;
+    private int broadcastsThisFrame;
     private EnemySquadAlertDebugView debugView;
 
     public static EnemySquadCoordinator Instance { get; private set; }
@@ -106,6 +109,8 @@ public sealed class EnemySquadCoordinator : MonoBehaviour,
         BroadcastCount = 0;
         LastRecipientCount = 0;
         nextSequence = 0;
+        broadcastBudgetFrame = -1;
+        broadcastsThisFrame = 0;
         debugRelations.Clear();
         debugView?.Hide();
 
@@ -237,6 +242,37 @@ public sealed class EnemySquadCoordinator : MonoBehaviour,
 
         debugView?.Show(LastAlert, debugRelations);
         return true;
+    }
+
+    public bool TryBroadcastBudgeted(
+        EnemyPerceptionController source,
+        Vector3 lastKnownPosition,
+        float confidence,
+        float timestamp)
+    {
+        if (broadcastBudgetFrame != Time.frameCount)
+        {
+            broadcastBudgetFrame = Time.frameCount;
+            broadcastsThisFrame = 0;
+        }
+
+        if (broadcastsThisFrame >= MaximumBroadcastsPerFrame)
+        {
+            return false;
+        }
+
+        bool broadcast = TryBroadcast(
+            source,
+            lastKnownPosition,
+            confidence,
+            timestamp);
+
+        if (broadcast)
+        {
+            broadcastsThisFrame++;
+        }
+
+        return broadcast;
     }
 
     private Vector3 ResolveSearchPoint(

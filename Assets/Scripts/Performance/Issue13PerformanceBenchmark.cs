@@ -18,6 +18,7 @@ public sealed class Issue13PerformanceBenchmark : MonoBehaviour
     private const string DefaultQualityLevel = "PC";
     private const string BehaviorProfile = "alert-chase-fire-v1";
     private const int MaximumSampleFrames = 24000;
+    private const long GcSpikeThresholdBytes = 32768L;
 
     private readonly double[] frameMilliseconds =
         new double[MaximumSampleFrames];
@@ -52,6 +53,8 @@ public sealed class Issue13PerformanceBenchmark : MonoBehaviour
     private PooledEnemyFactory enemyPool;
     private readonly List<EnemySpawnHandle> benchmarkEnemies = new();
     private int poolInstantiateAtSampleStart;
+    private int tracerCapacityAtSampleStart;
+    private int effectCapacityAtSampleStart;
 
     [RuntimeInitializeOnLoadMethod(
         RuntimeInitializeLoadType.AfterSceneLoad)]
@@ -223,6 +226,8 @@ public sealed class Issue13PerformanceBenchmark : MonoBehaviour
         EnemyPerceptionScheduler.Instance?.ResetMetrics();
         poolInstantiateAtSampleStart =
             enemyPool != null ? enemyPool.InstantiateCount : 0;
+        tracerCapacityAtSampleStart = ReadTracerCapacity();
+        effectCapacityAtSampleStart = ReadEffectCapacity();
         int sampleCount = 0;
         double sampleStart = Time.realtimeSinceStartupAsDouble;
         double sampleEnd = sampleStart + sampleSeconds;
@@ -449,6 +454,13 @@ public sealed class Issue13PerformanceBenchmark : MonoBehaviour
         int sampleCount,
         double actualDuration)
     {
+        int maximumConsecutiveGcAllocationFrames =
+            MaximumConsecutiveValuesAbove(gcBytes, sampleCount, 0L);
+        int maximumConsecutiveGcSpikeFrames =
+            MaximumConsecutiveValuesAbove(
+                gcBytes,
+                sampleCount,
+                GcSpikeThresholdBytes);
         Array.Sort(frameMilliseconds, 0, sampleCount);
         Array.Sort(mainThreadMilliseconds, 0, sampleCount);
         Array.Sort(gcBytes, 0, sampleCount);
@@ -542,6 +554,10 @@ public sealed class Issue13PerformanceBenchmark : MonoBehaviour
             gcAllocFramePercent = sampleCount > 0
                 ? allocatedFrames * 100.0 / sampleCount
                 : 0.0,
+            maximumConsecutiveGcAllocationFrames =
+                maximumConsecutiveGcAllocationFrames,
+            maximumConsecutiveGcSpikeFrames =
+                maximumConsecutiveGcSpikeFrames,
             peakUnityUsedMemoryMb =
                 peakUnityUsedMemory / 1048576.0,
             peakManagedMemoryMb =
@@ -551,6 +567,8 @@ public sealed class Issue13PerformanceBenchmark : MonoBehaviour
             perceptionChecks = ReadPerceptionChecks(),
             maximumPerceptionLatencyFrames =
                 ReadMaximumPerceptionLatencyFrames(),
+            maximumNearSightResultDelayFrames =
+                ReadMaximumNearSightResultDelayFrames(),
             maximumPerceptionLatencyMs =
                 ReadMaximumPerceptionLatencyFrames() * averageFrameMs,
             maximumSightResultDelayFrames =
@@ -593,6 +611,15 @@ public sealed class Issue13PerformanceBenchmark : MonoBehaviour
             stableSampleInstantiateCount = enemyPool != null
                 ? enemyPool.InstantiateCount - poolInstantiateAtSampleStart
                 : -1,
+            stableSampleEnemyInstantiateCount = enemyPool != null
+                ? enemyPool.InstantiateCount - poolInstantiateAtSampleStart
+                : -1,
+            stableSampleTracerInstantiateCount = Mathf.Max(
+                0,
+                ReadTracerCapacity() - tracerCapacityAtSampleStart),
+            stableSampleEffectInstantiateCount = Mathf.Max(
+                0,
+                ReadEffectCapacity() - effectCapacityAtSampleStart),
             poolSummary = ReadPoolSummary()
         };
     }
@@ -612,6 +639,89 @@ public sealed class Issue13PerformanceBenchmark : MonoBehaviour
         }
 
         return maximum;
+    }
+
+    private static int ReadMaximumPerceptionLatencyFrames(
+        EnemyAiLodTier tier)
+    {
+        int maximum = 0;
+
+        foreach (EnemyPerceptionController perception in
+                 FindObjectsByType<EnemyPerceptionController>(
+                     FindObjectsInactive.Exclude,
+                     FindObjectsSortMode.None))
+        {
+            if (perception.LodTier == tier)
+            {
+                maximum = Mathf.Max(
+                    maximum,
+                    perception.MaximumNearSightCheckLatencyFrames);
+            }
+        }
+
+        return maximum;
+    }
+
+    private static int ReadMaximumNearSightResultDelayFrames()
+    {
+        int maximum = 0;
+
+        foreach (EnemyPerceptionController perception in
+                 FindObjectsByType<EnemyPerceptionController>(
+                     FindObjectsInactive.Exclude,
+                     FindObjectsSortMode.None))
+        {
+            maximum = Mathf.Max(
+                maximum,
+                perception.MaximumNearSightResultDelayFrames);
+        }
+
+        return maximum;
+    }
+
+    private static int MaximumConsecutiveValuesAbove(
+        long[] values,
+        int count,
+        long threshold)
+    {
+        int maximum = 0;
+        int current = 0;
+
+        for (int index = 0; index < count; index++)
+        {
+            current = values[index] > threshold ? current + 1 : 0;
+            maximum = Mathf.Max(maximum, current);
+        }
+
+        return maximum;
+    }
+
+    private static int ReadTracerCapacity()
+    {
+        int total = 0;
+
+        foreach (ShotTracerPool pool in FindObjectsByType<ShotTracerPool>(
+                     FindObjectsInactive.Include,
+                     FindObjectsSortMode.None))
+        {
+            total += pool.Capacity;
+        }
+
+        return total;
+    }
+
+    private static int ReadEffectCapacity()
+    {
+        int total = 0;
+
+        foreach (CombatEffectPool pool in FindObjectsByType<CombatEffectPool>(
+                     FindObjectsInactive.Include,
+                     FindObjectsSortMode.None))
+        {
+            total += pool.TotalVisualInstanceCapacity;
+        }
+
+        return total;
     }
 
     private static int ReadMaximumSightResultDelayFrames()
@@ -936,12 +1046,15 @@ public sealed class Issue13BenchmarkReport
     public long maximumGcBytesInFrame;
     public long totalGcBytes;
     public double gcAllocFramePercent;
+    public int maximumConsecutiveGcAllocationFrames;
+    public int maximumConsecutiveGcSpikeFrames;
     public double peakUnityUsedMemoryMb;
     public double peakManagedMemoryMb;
     public bool mainThreadRecorderValid;
     public bool gcRecorderValid;
     public long perceptionChecks;
     public int maximumPerceptionLatencyFrames;
+    public int maximumNearSightResultDelayFrames;
     public double maximumPerceptionLatencyMs;
     public int maximumSightResultDelayFrames;
     public long sightScheduledBatchCount;
@@ -965,5 +1078,8 @@ public sealed class Issue13BenchmarkReport
     public int enemyPoolReuseCount;
     public int enemyPoolExpansionCount;
     public int stableSampleInstantiateCount;
+    public int stableSampleEnemyInstantiateCount;
+    public int stableSampleTracerInstantiateCount;
+    public int stableSampleEffectInstantiateCount;
     public string poolSummary;
 }

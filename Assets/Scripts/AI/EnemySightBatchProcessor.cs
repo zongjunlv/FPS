@@ -358,7 +358,8 @@ internal sealed class EnemySightBatchProcessor : IDisposable
                     visibleResults[index] != 0,
                     saturatedResults[index] != 0,
                     request.SubmittedFrame,
-                    request.ObservedTargetPosition))
+                    request.ObservedTargetPosition,
+                    request.LodTier))
             {
                 DiscardedStaleResultCount++;
                 continue;

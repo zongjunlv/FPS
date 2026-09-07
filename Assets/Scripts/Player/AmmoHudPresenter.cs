@@ -99,7 +99,10 @@ public class AmmoHudPresenter : MonoBehaviour
             return;
         }
 
-        DisplayText = $"{weapon.CurrentAmmo} / {weapon.ReserveAmmo}";
+        if (LegacyOnGuiEnabled)
+        {
+            DisplayText = $"{weapon.CurrentAmmo} / {weapon.ReserveAmmo}";
+        }
         WeaponNameText = weapon.WeaponName;
         FireModeText = weapon.FireModeName;
         NotifyViewChanged();
