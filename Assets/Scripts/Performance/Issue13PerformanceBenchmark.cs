@@ -42,6 +42,7 @@ public sealed class Issue13PerformanceBenchmark : MonoBehaviour
     private int perceptionBudget;
     private bool aiLodEnabled = true;
     private bool spatialIndexEnabled = true;
+    private bool jobSightEnabled = true;
     private string variant;
     private string outputPath;
     private int shots;
@@ -106,6 +107,11 @@ public sealed class Issue13PerformanceBenchmark : MonoBehaviour
             "disabled",
             StringComparison.OrdinalIgnoreCase);
         EnemySpatialIndexService.SetGlobalEnabled(spatialIndexEnabled);
+        jobSightEnabled = !string.Equals(
+            ReadString(arguments, "-benchmark-job-sight", "enabled"),
+            "disabled",
+            StringComparison.OrdinalIgnoreCase);
+        EnemyPerceptionScheduler.SetBatchEnabled(jobSightEnabled);
         benchmarkWidth = Mathf.Max(
             640,
             ReadInt(arguments, "-benchmark-width", 1280));
@@ -214,6 +220,7 @@ public sealed class Issue13PerformanceBenchmark : MonoBehaviour
 
         StartRecorders();
         EnemySpatialIndexService.Instance?.ResetMetrics();
+        EnemyPerceptionScheduler.Instance?.ResetMetrics();
         poolInstantiateAtSampleStart =
             enemyPool != null ? enemyPool.InstantiateCount : 0;
         int sampleCount = 0;
@@ -479,6 +486,7 @@ public sealed class Issue13PerformanceBenchmark : MonoBehaviour
             behaviorProfile = BehaviorProfile,
             aiLodEnabled = aiLodEnabled,
             spatialIndexEnabled = spatialIndexEnabled,
+            jobSightEnabled = jobSightEnabled,
             perceptionChecksPerFrame = perceptionBudget,
             enemyCount = actualEnemyCount,
             warmupSeconds = warmupSeconds,
@@ -545,6 +553,19 @@ public sealed class Issue13PerformanceBenchmark : MonoBehaviour
                 ReadMaximumPerceptionLatencyFrames(),
             maximumPerceptionLatencyMs =
                 ReadMaximumPerceptionLatencyFrames() * averageFrameMs,
+            maximumSightResultDelayFrames =
+                ReadMaximumSightResultDelayFrames(),
+            sightScheduledBatchCount =
+                EnemyPerceptionScheduler.Instance?.ScheduledBatchCount ?? 0L,
+            sightCompletedBatchCount =
+                EnemyPerceptionScheduler.Instance?.CompletedBatchCount ?? 0L,
+            sightScheduledCommandCount =
+                EnemyPerceptionScheduler.Instance?.ScheduledCommandCount ?? 0L,
+            sightDiscardedStaleResultCount =
+                EnemyPerceptionScheduler.Instance?
+                    .DiscardedStaleResultCount ?? 0L,
+            sightPeakBatchSize =
+                EnemyPerceptionScheduler.Instance?.PeakBatchSize ?? 0,
             nearEnemyCount = CountLodTier(EnemyAiLodTier.Near),
             midEnemyCount = CountLodTier(EnemyAiLodTier.Mid),
             farEnemyCount = CountLodTier(EnemyAiLodTier.Far),
@@ -588,6 +609,23 @@ public sealed class Issue13PerformanceBenchmark : MonoBehaviour
             maximum = Mathf.Max(
                 maximum,
                 perception.MaximumSightCheckLatencyFrames);
+        }
+
+        return maximum;
+    }
+
+    private static int ReadMaximumSightResultDelayFrames()
+    {
+        int maximum = 0;
+
+        foreach (EnemyPerceptionController perception in
+                 FindObjectsByType<EnemyPerceptionController>(
+                     FindObjectsInactive.Exclude,
+                     FindObjectsSortMode.None))
+        {
+            maximum = Mathf.Max(
+                maximum,
+                perception.MaximumSightResultDelayFrames);
         }
 
         return maximum;
@@ -852,6 +890,7 @@ public sealed class Issue13PerformanceBenchmark : MonoBehaviour
 
         EnemyAiLodController.SetGlobalEnabled(true);
         EnemySpatialIndexService.SetGlobalEnabled(true);
+        EnemyPerceptionScheduler.SetBatchEnabled(true);
     }
 }
 
@@ -874,6 +913,7 @@ public sealed class Issue13BenchmarkReport
     public string behaviorProfile;
     public bool aiLodEnabled;
     public bool spatialIndexEnabled;
+    public bool jobSightEnabled;
     public int perceptionChecksPerFrame;
     public int enemyCount;
     public double warmupSeconds;
@@ -903,6 +943,12 @@ public sealed class Issue13BenchmarkReport
     public long perceptionChecks;
     public int maximumPerceptionLatencyFrames;
     public double maximumPerceptionLatencyMs;
+    public int maximumSightResultDelayFrames;
+    public long sightScheduledBatchCount;
+    public long sightCompletedBatchCount;
+    public long sightScheduledCommandCount;
+    public long sightDiscardedStaleResultCount;
+    public int sightPeakBatchSize;
     public int nearEnemyCount;
     public int midEnemyCount;
     public int farEnemyCount;

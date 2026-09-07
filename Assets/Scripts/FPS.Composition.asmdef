@@ -12,7 +12,9 @@
     "Unity.InputSystem.ForUI",
     "Unity.AI.Navigation",
     "UnityEngine.UI",
-    "Unity.TextMeshPro"
+    "Unity.TextMeshPro",
+    "Unity.Burst",
+    "Unity.Collections"
   ],
   "includePlatforms": [],
   "excludePlatforms": [],

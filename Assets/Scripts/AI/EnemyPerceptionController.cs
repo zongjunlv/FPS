@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 
 [RequireComponent(typeof(EnemyNavigationController))]
@@ -22,9 +23,18 @@ public sealed class EnemyPerceptionController : MonoBehaviour
     private Vector3 squadSearchDestination;
     private float latestVisualIntelTime = float.NegativeInfinity;
     private readonly RaycastHit[] sightHits = new RaycastHit[32];
+    private readonly EntityId[] selfSightColliderIds = new EntityId[32];
+    private readonly EntityId[] targetSightColliderIds = new EntityId[32];
+    private readonly List<Collider> sightColliderBuffer = new(32);
     private EnemyPerceptionScheduler perceptionScheduler;
     private EnemyAiLodController lod;
+    private Health health;
+    private bool healthLookupCompleted;
     private int lastSightCheckFrame = -1;
+    private int selfSightColliderCount;
+    private int targetSightColliderCount;
+    private int sightGeneration;
+    private Vector3 latestSightTargetPosition;
 
     public EnemyAwarenessState State =>
         awareness?.State ?? EnemyAwarenessState.Patrol;
@@ -50,10 +60,12 @@ public sealed class EnemyPerceptionController : MonoBehaviour
     public int SightCheckCount { get; private set; }
     public int SaturatedSightQueryCount { get; private set; }
     public int MaximumSightCheckLatencyFrames { get; private set; }
+    public int MaximumSightResultDelayFrames { get; private set; }
     public EnemyAiLodTier LodTier => lod != null
         ? lod.CurrentTier
         : EnemyAiLodTier.Near;
     internal EnemyAiLodController Lod => lod;
+    internal int SightGeneration => sightGeneration;
 
     private void Awake()
     {
@@ -75,6 +87,8 @@ public sealed class EnemyPerceptionController : MonoBehaviour
 
     private void OnEnable()
     {
+        sightGeneration++;
+        RefreshSightColliderCache();
         squadCoordinator ??= EnemySquadCoordinator.Instance ??
             EnemySquadCoordinator.EnsureForActiveScene();
         perceptionScheduler ??=
@@ -91,6 +105,8 @@ public sealed class EnemyPerceptionController : MonoBehaviour
 
     private void Start()
     {
+        ResolveHealth();
+
         if (target == null)
         {
             GameObject player =
@@ -101,6 +117,7 @@ public sealed class EnemyPerceptionController : MonoBehaviour
 
     private void OnDisable()
     {
+        sightGeneration++;
         if (soundEvents != null)
         {
             soundEvents.SoundPublished -= HandleSound;
@@ -136,7 +153,7 @@ public sealed class EnemyPerceptionController : MonoBehaviour
         {
             investigatingSound = false;
             hasSquadSearchAssignment = false;
-            awareness.Observe(target.position, elapsedTime);
+            awareness.Observe(latestSightTargetPosition, elapsedTime);
 
             if (lastSightCheckFrame == Time.frameCount)
             {
@@ -147,7 +164,7 @@ public sealed class EnemyPerceptionController : MonoBehaviour
             {
                 squadCoordinator?.TryBroadcast(
                     this,
-                    target.position,
+                    latestSightTargetPosition,
                     1f,
                     Time.time);
             }
@@ -239,10 +256,12 @@ public sealed class EnemyPerceptionController : MonoBehaviour
     public void SetTarget(Transform newTarget)
     {
         target = newTarget;
+        RefreshSightColliderCache();
     }
 
     public void ResetForSpawn(Transform newTarget)
     {
+        sightGeneration++;
         awareness.Reset();
         squadAlertMemory.Reset();
         target = newTarget;
@@ -250,15 +269,19 @@ public sealed class EnemyPerceptionController : MonoBehaviour
         hasSquadSearchAssignment = false;
         squadSearchDestination = Vector3.zero;
         latestVisualIntelTime = float.NegativeInfinity;
+        latestSightTargetPosition = transform.position;
         HasVisualContact = false;
         lastSightCheckFrame = -1;
         SightCheckCount = 0;
         SaturatedSightQueryCount = 0;
         MaximumSightCheckLatencyFrames = 0;
+        MaximumSightResultDelayFrames = 0;
+        RefreshSightColliderCache();
     }
 
     public void PrepareForPool()
     {
+        sightGeneration++;
         target = null;
         investigatingSound = false;
         hasSquadSearchAssignment = false;
@@ -363,6 +386,62 @@ public sealed class EnemyPerceptionController : MonoBehaviour
 
     internal void PerformScheduledSightCheck()
     {
+        bool visible = CanSeeTarget();
+        CommitSightResult(
+            visible,
+            false,
+            target != null ? target.position : transform.position);
+    }
+
+    internal EnemySightQueryDescriptor CreateSightQueryDescriptor()
+    {
+        return new EnemySightQueryDescriptor(
+            target != null,
+            transform.position + Vector3.up * 0.75f,
+            target != null
+                ? target.position + Vector3.up * 0.9f
+                : transform.position,
+            target != null ? target.position : transform.position,
+            transform.forward,
+            sightDistance,
+            Mathf.Cos(fieldOfView * 0.5f * Mathf.Deg2Rad),
+            selfSightColliderIds,
+            selfSightColliderCount,
+            targetSightColliderIds,
+            targetSightColliderCount);
+    }
+
+    internal bool ApplyBatchedSightResult(
+        int generation,
+        bool visible,
+        bool saturated,
+        int submittedFrame,
+        Vector3 observedTargetPosition)
+    {
+        if (generation != sightGeneration || !isActiveAndEnabled)
+        {
+            return false;
+        }
+
+        ResolveHealth();
+
+        if (health != null && health.IsDead)
+        {
+            return false;
+        }
+
+        MaximumSightResultDelayFrames = Mathf.Max(
+            MaximumSightResultDelayFrames,
+            Time.frameCount - submittedFrame);
+        CommitSightResult(visible, saturated, observedTargetPosition);
+        return true;
+    }
+
+    private void CommitSightResult(
+        bool visible,
+        bool saturated,
+        Vector3 observedTargetPosition)
+    {
         if (lastSightCheckFrame >= 0)
         {
             MaximumSightCheckLatencyFrames = Mathf.Max(
@@ -370,10 +449,63 @@ public sealed class EnemyPerceptionController : MonoBehaviour
                 Time.frameCount - lastSightCheckFrame);
         }
 
-        HasVisualContact = CanSeeTarget();
+        HasVisualContact = visible;
+
+        if (visible)
+        {
+            latestSightTargetPosition = observedTargetPosition;
+        }
+
+        if (saturated)
+        {
+            SaturatedSightQueryCount++;
+        }
+
         SightCheckCount++;
         lastSightCheckFrame = Time.frameCount;
         lod?.NotifySightCheck(Time.frameCount);
+    }
+
+    private void RefreshSightColliderCache()
+    {
+        selfSightColliderCount = CacheColliderIds(
+            transform,
+            selfSightColliderIds);
+        targetSightColliderCount = CacheColliderIds(
+            target,
+            targetSightColliderIds);
+    }
+
+    private int CacheColliderIds(Transform root, EntityId[] destination)
+    {
+        if (root == null)
+        {
+            return 0;
+        }
+
+        sightColliderBuffer.Clear();
+        root.GetComponentsInChildren(true, sightColliderBuffer);
+        int count = Mathf.Min(
+            destination.Length,
+            sightColliderBuffer.Count);
+
+        for (int index = 0; index < count; index++)
+        {
+            destination[index] = sightColliderBuffer[index].GetEntityId();
+        }
+
+        return count;
+    }
+
+    private void ResolveHealth()
+    {
+        if (healthLookupCompleted)
+        {
+            return;
+        }
+
+        health = GetComponent<Health>();
+        healthLookupCompleted = true;
     }
 
     private void HandleSound(SoundStimulus stimulus)
