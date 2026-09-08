@@ -1,0 +1,23 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: bbfd43ba4c2447a2a01392be6f8c6786, type: 3}
+  m_Name: HandgunAmmo
+  m_EditorClassIdentifier: FPS.Inventory::ItemDefinition
+  stableId: handgun_ammo
+  displayName: "\u624B\u67AA\u5F39\u836F"
+  description: "\u8F7B\u578B\u624B\u67AA\u5F39\u836F\u76D2\uFF0C\u53EA\u8865\u5145\u624B\u67AA\u5907\u5F39\u3002"
+  icon: {fileID: 0}
+  itemType: 0
+  maximumStack: 6
+  effectType: 3
+  effectAmount: 24
+  gameplayEffect: {fileID: 0}

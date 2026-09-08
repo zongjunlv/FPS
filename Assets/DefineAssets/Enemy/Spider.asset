@@ -12,7 +12,9 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: ea501f122b48f4cd9942b4fa8c89252e, type: 3}
   m_Name: Spider
   m_EditorClassIdentifier: Assembly-CSharp::EnemyDefinition
+  stableId: spider_bot
   Name: Spider
   HP: 50
   Attack: 25
   Defend: 1
+  rewardExperience: 40

@@ -1,0 +1,27 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: f039cd3864c54db39c802e4b7d64e581, type: 3}
+  m_Name: SuppressorRanged
+  m_EditorClassIdentifier: FPS.Composition::SuppressorRangedAbilityDefinition
+  stableId: enemy.ability.suppressor_ranged
+  minimumRange: 6
+  preferredRange: 10
+  maximumRange: 14
+  repositionLateralOffset: 4
+  positionSampleRadius: 2
+  movementSpeedMultiplier: 1.15
+  noProgressTimeout: 1.5
+  recoveryDuration: 0.5
+  windupDuration: 0.45
+  attackCooldown: 1.2
+  damageMultiplier: 0.65
+  tracerSpeed: 280

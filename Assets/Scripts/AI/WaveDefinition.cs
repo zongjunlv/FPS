@@ -5,6 +5,7 @@ using UnityEngine;
 [Serializable]
 public sealed class WaveEnemyEntry
 {
+    [SerializeField] private EnemyArchetypeDefinition archetype;
     [SerializeField] private EnemyController template;
     [SerializeField, Min(1)] private int weight = 1;
     [SerializeField] private LootRewardTier rewardTier = LootRewardTier.Normal;
@@ -23,6 +24,16 @@ public sealed class WaveEnemyEntry
             null,
             null)
     {
+    }
+
+    public WaveEnemyEntry(
+        EnemyArchetypeDefinition enemyArchetype,
+        int entryWeight = 1)
+    {
+        archetype = enemyArchetype != null
+            ? enemyArchetype
+            : throw new ArgumentNullException(nameof(enemyArchetype));
+        weight = Mathf.Max(1, entryWeight);
     }
 
     public WaveEnemyEntry(
@@ -47,17 +58,32 @@ public sealed class WaveEnemyEntry
         roleTag = ThreatRoleConstraint.NormalizeRole(configuredRoleTag);
     }
 
-    public EnemyController Template => template;
+    public EnemyArchetypeDefinition Archetype => archetype;
+    public EnemyController Template => archetype != null
+        ? archetype.Template
+        : template;
     public int Weight => Mathf.Max(1, weight);
-    public LootRewardTier RewardTier => rewardTier;
-    public string EnemyTypeId => string.IsNullOrWhiteSpace(enemyTypeId)
-        ? "*"
-        : enemyTypeId.Trim();
-    public EnemyAffixDefinition Affix => affix;
-    public EnemyAbilitySetDefinition AbilitySet => abilitySet;
-    public int ThreatCost => Mathf.Max(1, threatCost);
-    public string RoleTag => ThreatRoleConstraint.NormalizeRole(roleTag);
-    public bool IsElite => rewardTier == LootRewardTier.Elite;
+    public LootRewardTier RewardTier => archetype != null
+        ? archetype.RewardTier
+        : rewardTier;
+    public string EnemyTypeId => archetype != null
+        ? archetype.EnemyTypeId
+        : string.IsNullOrWhiteSpace(enemyTypeId)
+            ? "*"
+            : enemyTypeId.Trim();
+    public EnemyAffixDefinition Affix => archetype != null
+        ? archetype.Affix
+        : affix;
+    public EnemyAbilitySetDefinition AbilitySet => archetype != null
+        ? archetype.AbilitySet
+        : abilitySet;
+    public int ThreatCost => archetype != null
+        ? archetype.ThreatCost
+        : Mathf.Max(1, threatCost);
+    public string RoleTag => archetype != null
+        ? archetype.RoleTag
+        : ThreatRoleConstraint.NormalizeRole(roleTag);
+    public bool IsElite => RewardTier == LootRewardTier.Elite;
 }
 
 [CreateAssetMenu(
@@ -65,6 +91,7 @@ public sealed class WaveEnemyEntry
     menuName = "FPS/Waves/Wave Definition")]
 public sealed class WaveDefinition : ScriptableObject
 {
+    [SerializeField] private string stableId;
     [SerializeField, Min(1)] private int totalEnemyCount = 6;
     [SerializeField, Min(1)] private int maximumAliveCount = 3;
     [SerializeField, Min(0f)] private float spawnInterval = 0.75f;
@@ -83,6 +110,7 @@ public sealed class WaveDefinition : ScriptableObject
     private int resolvedThreatCost;
     private bool usedCompositionFallback;
 
+    public string StableId => stableId;
     public int TotalEnemyCount => totalEnemyCount;
     public int MaximumAliveCount => maximumAliveCount;
     public float SpawnInterval => spawnInterval;
@@ -101,6 +129,17 @@ public sealed class WaveDefinition : ScriptableObject
         compositionMode == WaveCompositionMode.ThreatBudget
             ? resolvedBudgetEntries
             : enemyEntries;
+
+    public void ConfigureIdentity(string id)
+    {
+        if (string.IsNullOrWhiteSpace(id))
+        {
+            throw new ArgumentException(
+                "A wave requires a stable ID.", nameof(id));
+        }
+
+        stableId = id.Trim();
+    }
 
     public void Configure(
         int totalCount,
@@ -172,19 +211,11 @@ public sealed class WaveDefinition : ScriptableObject
         roleConstraints = constraints != null
             ? new List<ThreatRoleConstraint>(constraints)
             : new List<ThreatRoleConstraint>();
-        ThreatBudgetWavePlan plan = ThreatBudgetWaveComposer.Compose(
-            enemyEntries,
-            budget,
-            seed,
-            roleConstraints,
-            eliteThreatRatio);
         compositionMode = WaveCompositionMode.ThreatBudget;
         threatBudget = Mathf.Max(1, budget);
         compositionSeed = seed;
         maximumEliteThreatRatio = Mathf.Clamp01(eliteThreatRatio);
-        resolvedBudgetEntries = new List<WaveEnemyEntry>(plan.Entries);
-        resolvedThreatCost = plan.TotalThreat;
-        usedCompositionFallback = plan.UsedFallback;
+        RebuildThreatBudgetPlan();
         totalEnemyCount = resolvedBudgetEntries.Count;
         maximumAliveCount = Mathf.Clamp(
             maximumAlive,
@@ -200,6 +231,28 @@ public sealed class WaveDefinition : ScriptableObject
         maximumSpawnRadius = Mathf.Max(
             minimumSpawnRadius,
             maximumRadius);
+    }
+
+    private void OnEnable()
+    {
+        if (compositionMode == WaveCompositionMode.ThreatBudget)
+        {
+            RebuildThreatBudgetPlan();
+        }
+    }
+
+    private void RebuildThreatBudgetPlan()
+    {
+        ThreatBudgetWavePlan plan = ThreatBudgetWaveComposer.Compose(
+            enemyEntries ?? new List<WaveEnemyEntry>(),
+            Mathf.Max(1, threatBudget),
+            compositionSeed,
+            roleConstraints ?? new List<ThreatRoleConstraint>(),
+            maximumEliteThreatRatio);
+        resolvedBudgetEntries = new List<WaveEnemyEntry>(plan.Entries);
+        resolvedThreatCost = plan.TotalThreat;
+        usedCompositionFallback = plan.UsedFallback;
+        totalEnemyCount = resolvedBudgetEntries.Count;
     }
 
     public WaveEnemyEntry GetEntry(int spawnIndex)

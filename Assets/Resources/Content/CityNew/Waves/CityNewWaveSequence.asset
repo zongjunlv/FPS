@@ -1,0 +1,22 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a1600000000000000000000000000020, type: 3}
+  m_Name: CityNewWaveSequence
+  m_EditorClassIdentifier: FPS.Composition::WaveSequenceDefinition
+  stableId: city_new.sequence.default
+  stages:
+  - wave: {fileID: 11400000, guid: d7d06a31939174264a845c66a4a6c822, type: 2}
+    intermissionAfterSeconds: 3
+  - wave: {fileID: 11400000, guid: f70cc7815c8fa47419448a2562b7f0ee, type: 2}
+    intermissionAfterSeconds: 3
+  - wave: {fileID: 11400000, guid: c6b6795515ee3475ba36df444f00f379, type: 2}
+    intermissionAfterSeconds: 0

@@ -78,6 +78,26 @@ public sealed class ItemDefinition : ScriptableObject
         ConfigureRuntimeGameplayEffect();
     }
 
+    public void ConfigureGameplayEffect(
+        GameplayEffectDefinition configuredEffect)
+    {
+        if (runtimeGameplayEffect != null)
+        {
+            if (Application.isPlaying)
+            {
+                Destroy(runtimeGameplayEffect);
+            }
+            else
+            {
+                DestroyImmediate(runtimeGameplayEffect);
+            }
+
+            runtimeGameplayEffect = null;
+        }
+
+        gameplayEffect = configuredEffect;
+    }
+
     private GameplayEffectDefinition EnsureRuntimeGameplayEffect()
     {
         if (runtimeGameplayEffect == null)

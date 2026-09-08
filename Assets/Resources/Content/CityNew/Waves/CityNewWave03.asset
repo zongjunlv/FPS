@@ -1,0 +1,86 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 66ae8c616e8e43b4b46d682703162fef, type: 3}
+  m_Name: CityNewWave03
+  m_EditorClassIdentifier: FPS.Composition::WaveDefinition
+  stableId: city_new.wave.03
+  totalEnemyCount: 10
+  maximumAliveCount: 4
+  spawnInterval: 0.5
+  retryInterval: 0.2
+  playerSafetyDistance: 10
+  enemySpacing: 3
+  minimumSpawnRadius: 12
+  maximumSpawnRadius: 24
+  enemyEntries:
+  - archetype: {fileID: 11400000, guid: d3724ec406bf647faa5f2e202ea3ce7d, type: 2}
+    template: {fileID: 0}
+    weight: 2
+    rewardTier: 0
+    enemyTypeId: '*'
+    affix: {fileID: 0}
+    abilitySet: {fileID: 0}
+    threatCost: 1
+    roleTag: assault
+  - archetype: {fileID: 11400000, guid: ed75343c3618a481c8a583be241537bb, type: 2}
+    template: {fileID: 0}
+    weight: 2
+    rewardTier: 0
+    enemyTypeId: '*'
+    affix: {fileID: 0}
+    abilitySet: {fileID: 0}
+    threatCost: 1
+    roleTag: assault
+  - archetype: {fileID: 11400000, guid: cff52cf87864842138e601d2cde7383b, type: 2}
+    template: {fileID: 0}
+    weight: 2
+    rewardTier: 0
+    enemyTypeId: '*'
+    affix: {fileID: 0}
+    abilitySet: {fileID: 0}
+    threatCost: 1
+    roleTag: assault
+  - archetype: {fileID: 11400000, guid: a1331564b706c4f3ca02b9a8b6dc0903, type: 2}
+    template: {fileID: 0}
+    weight: 8
+    rewardTier: 0
+    enemyTypeId: '*'
+    affix: {fileID: 0}
+    abilitySet: {fileID: 0}
+    threatCost: 1
+    roleTag: assault
+  - archetype: {fileID: 11400000, guid: a360f0ad1bc3a473b8cda1c85cd06172, type: 2}
+    template: {fileID: 0}
+    weight: 1
+    rewardTier: 0
+    enemyTypeId: '*'
+    affix: {fileID: 0}
+    abilitySet: {fileID: 0}
+    threatCost: 1
+    roleTag: assault
+  compositionMode: 1
+  threatBudget: 28
+  compositionSeed: 4103
+  maximumEliteThreatRatio: 0.25
+  roleConstraints:
+  - roleTag: raider
+    minimumCount: 1
+    maximumCount: 1
+  - roleTag: suppressor
+    minimumCount: 1
+    maximumCount: 1
+  - roleTag: support
+    minimumCount: 1
+    maximumCount: 1
+  - roleTag: elite
+    minimumCount: 1
+    maximumCount: 1

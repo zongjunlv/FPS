@@ -31,42 +31,22 @@ public sealed class CityNewInventoryBootstrap : MonoBehaviour
             return;
         }
 
-        HudIconCatalog icons = new();
-        definitions = new[]
+        CityNewContentCatalog catalog = CityNewContentCatalog.LoadDefault();
+        string error = string.Empty;
+        if (catalog == null || !catalog.TryValidate(out error))
         {
-            CreateDefinition(
-                "medical_kit",
-                "医疗包",
-                "战地急救物资，使用后立即恢复生命值。",
-                icons.Get(HudIconId.Health),
-                5,
-                ItemEffectType.RestoreHealth,
-                35f),
-            CreateDefinition(
-                "armor_pack",
-                "护甲包",
-                "便携式护甲修复组件，可恢复受损护甲。",
-                icons.Get(HudIconId.Armor),
-                5,
-                ItemEffectType.RestoreArmor,
-                35f),
-            CreateDefinition(
-                "rifle_ammo",
-                "步枪弹药",
-                "标准步枪弹药箱，只补充步枪备弹。",
-                icons.Get(HudIconId.Rifle),
-                4,
-                ItemEffectType.AddRifleAmmo,
-                60f),
-            CreateDefinition(
-                "handgun_ammo",
-                "手枪弹药",
-                "轻型手枪弹药盒，只补充手枪备弹。",
-                icons.Get(HudIconId.Handgun),
-                6,
-                ItemEffectType.AddHandgunAmmo,
-                24f)
-        };
+            Debug.LogError(
+                "CityNew inventory content is unavailable: " +
+                (catalog == null ? "default catalog is missing." : error),
+                this);
+            return;
+        }
+
+        definitions = new ItemDefinition[catalog.Items.Count];
+        for (int index = 0; index < definitions.Length; index++)
+        {
+            definitions[index] = catalog.Items[index];
+        }
 
         for (int index = 0; index < definitions.Length; index++)
         {
@@ -76,27 +56,40 @@ public sealed class CityNewInventoryBootstrap : MonoBehaviour
         inventory.BindQuickSlot(0, "medical_kit");
         inventory.BindQuickSlot(1, "armor_pack");
 
-        pickups = new WorldItemPickup[definitions.Length];
+        ItemDefinition medicalKit = FindDefinition("medical_kit");
+        ItemDefinition armorPack = FindDefinition("armor_pack");
+        ItemDefinition rifleAmmo = FindDefinition("rifle_ammo");
+        ItemDefinition handgunAmmo = FindDefinition("handgun_ammo");
+        if (medicalKit == null || armorPack == null ||
+            rifleAmmo == null || handgunAmmo == null)
+        {
+            Debug.LogError(
+                "CityNew inventory requires medical_kit, armor_pack, " +
+                "rifle_ammo and handgun_ammo assets.", this);
+            return;
+        }
+
+        pickups = new WorldItemPickup[4];
         pickups[0] = CreatePickup(
-            definitions[0],
+            medicalKit,
             1,
             new Vector3(0.75f, 0f, 2.2f),
             new Color(0.86f, 0.89f, 0.88f, 1f),
             new Color(0.86f, 0.12f, 0.12f, 1f));
         pickups[1] = CreatePickup(
-            definitions[1],
+            armorPack,
             2,
             new Vector3(-0.75f, 0f, 2.2f),
             new Color(0.12f, 0.24f, 0.35f, 1f),
             new Color(0.28f, 0.62f, 1f, 1f));
         pickups[2] = CreatePickup(
-            definitions[2],
+            rifleAmmo,
             4,
             new Vector3(1.65f, 0f, 3.25f),
             new Color(0.25f, 0.28f, 0.18f, 1f),
             new Color(0.75f, 0.9f, 0.3f, 1f));
         pickups[3] = CreatePickup(
-            definitions[3],
+            handgunAmmo,
             4,
             new Vector3(-1.65f, 0f, 3.25f),
             new Color(0.32f, 0.24f, 0.14f, 1f),
@@ -105,17 +98,6 @@ public sealed class CityNewInventoryBootstrap : MonoBehaviour
 
     private void OnDestroy()
     {
-        if (definitions != null)
-        {
-            for (int index = 0; index < definitions.Length; index++)
-            {
-                if (definitions[index] != null)
-                {
-                    Destroy(definitions[index]);
-                }
-            }
-        }
-
         for (int index = 0; index < runtimeMaterials.Count; index++)
         {
             if (runtimeMaterials[index] != null)
@@ -123,30 +105,6 @@ public sealed class CityNewInventoryBootstrap : MonoBehaviour
                 Destroy(runtimeMaterials[index]);
             }
         }
-    }
-
-    private ItemDefinition CreateDefinition(
-        string id,
-        string displayName,
-        string description,
-        Sprite icon,
-        int maximumStack,
-        ItemEffectType effectType,
-        float amount)
-    {
-        ItemDefinition definition =
-            ScriptableObject.CreateInstance<ItemDefinition>();
-        definition.name = displayName;
-        definition.Configure(
-            id,
-            displayName,
-            description,
-            icon,
-            ItemType.Consumable,
-            maximumStack,
-            effectType,
-            amount);
-        return definition;
     }
 
     private WorldItemPickup CreatePickup(

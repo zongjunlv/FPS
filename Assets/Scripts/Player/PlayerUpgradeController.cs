@@ -10,7 +10,6 @@ public sealed class PlayerUpgradeController : MonoBehaviour
     [SerializeField] private List<UpgradeDefinition> definitions = new();
 
     private readonly RunUpgradeState state = new();
-    private readonly List<UpgradeDefinition> runtimeDefinitions = new();
     private PlayerRunProgression progression;
     private PlayerRuntimeCombatStats combatStats;
     private Health health;
@@ -90,13 +89,6 @@ public sealed class PlayerUpgradeController : MonoBehaviour
         ClearGameplayEffects();
         CloseChoice();
 
-        for (int index = 0; index < runtimeDefinitions.Count; index++)
-        {
-            if (runtimeDefinitions[index] != null)
-            {
-                Destroy(runtimeDefinitions[index]);
-            }
-        }
     }
 
     public void ConfigureRun(
@@ -313,152 +305,19 @@ public sealed class PlayerUpgradeController : MonoBehaviour
             return;
         }
 
-        definitions = new List<UpgradeDefinition>
+        CityNewContentCatalog catalog = CityNewContentCatalog.LoadDefault();
+        string error = string.Empty;
+        if (catalog == null || !catalog.TryValidate(out error))
         {
-            CreateRuntimeDefinition(
-                "damage_hardened_rounds",
-                "强化弹头",
-                "每层使武器伤害提高 25%。",
-                UpgradeRarity.Common,
-                3,
-                UpgradeEffectType.WeaponDamage,
-                0.25f,
-                HudIconId.Ammo),
-            CreateRuntimeDefinition(
-                "damage_weakpoint_analysis",
-                "弱点分析",
-                "每层使武器伤害提高 20%。",
-                UpgradeRarity.Rare,
-                2,
-                UpgradeEffectType.WeaponDamage,
-                0.2f,
-                HudIconId.Rifle),
-            CreateRuntimeDefinition(
-                "damage_overcharged_core",
-                "过载核心",
-                "使武器伤害提高 35%。",
-                UpgradeRarity.Epic,
-                1,
-                UpgradeEffectType.WeaponDamage,
-                0.35f,
-                HudIconId.Handgun),
-            CreateRuntimeDefinition(
-                "fire_rate_rapid_cycling",
-                "快速枪机",
-                "每层使武器射速提高 15%。",
-                UpgradeRarity.Common,
-                3,
-                UpgradeEffectType.WeaponFireRate,
-                0.15f,
-                HudIconId.Rifle),
-            CreateRuntimeDefinition(
-                "magazine_extended_capacity",
-                "扩容弹匣",
-                "每层使弹匣容量提高 20%。",
-                UpgradeRarity.Rare,
-                3,
-                UpgradeEffectType.WeaponMagazineCapacity,
-                0.2f,
-                HudIconId.Ammo),
-            CreateRuntimeDefinition(
-                "reload_quick_hands",
-                "快速换弹",
-                "每层使换弹速度提高 20%。",
-                UpgradeRarity.Common,
-                3,
-                UpgradeEffectType.WeaponReloadSpeed,
-                0.2f,
-                HudIconId.Handgun),
-            CreateRuntimeDefinition(
-                "recoil_dampening",
-                "后坐力抑制",
-                "每层使后坐力控制提高 18%。",
-                UpgradeRarity.Rare,
-                3,
-                UpgradeEffectType.WeaponRecoilControl,
-                0.18f,
-                HudIconId.Rifle),
-            CreateRuntimeDefinition(
-                "accuracy_tight_grouping",
-                "精准射击",
-                "每层使射击精准度提高 20%。",
-                UpgradeRarity.Epic,
-                2,
-                UpgradeEffectType.WeaponAccuracy,
-                0.2f,
-                HudIconId.Ammo),
-            CreateRuntimeDefinition(
-                "survival_vitality_reinforcement",
-                "生命强化",
-                "每层使最大生命值提高 20%。",
-                UpgradeRarity.Common,
-                3,
-                UpgradeEffectType.MaximumHealth,
-                0.2f,
-                HudIconId.Health),
-            CreateRuntimeDefinition(
-                "survival_reinforced_plating",
-                "强化护甲",
-                "每层使最大护甲值提高 20%。",
-                UpgradeRarity.Rare,
-                3,
-                UpgradeEffectType.MaximumArmor,
-                0.2f,
-                HudIconId.Armor),
-            CreateRuntimeDefinition(
-                "survival_emergency_treatment",
-                "紧急治疗",
-                "立即恢复 30 点生命值。",
-                UpgradeRarity.Common,
-                5,
-                UpgradeEffectType.HealthRestore,
-                30f,
-                HudIconId.Health),
-            CreateRuntimeDefinition(
-                "survival_field_armor_repair",
-                "战地护甲修复",
-                "立即恢复 30 点护甲值。",
-                UpgradeRarity.Common,
-                5,
-                UpgradeEffectType.ArmorRestore,
-                30f,
-                HudIconId.Armor),
-            CreateRuntimeDefinition(
-                "survival_mobility_training",
-                "机动训练",
-                "每层使移动速度提高 10%。",
-                UpgradeRarity.Rare,
-                3,
-                UpgradeEffectType.MovementSpeed,
-                0.1f,
-                HudIconId.Health)
-        };
-    }
+            definitions = new List<UpgradeDefinition>();
+            Debug.LogError(
+                "Player upgrade content is unavailable: " +
+                (catalog == null ? "default catalog is missing." : error),
+                this);
+            return;
+        }
 
-    private UpgradeDefinition CreateRuntimeDefinition(
-        string id,
-        string title,
-        string description,
-        UpgradeRarity rarity,
-        int maximumLevel,
-        UpgradeEffectType effectType,
-        float amount,
-        HudIconId iconId)
-    {
-        UpgradeDefinition definition =
-            ScriptableObject.CreateInstance<UpgradeDefinition>();
-        definition.name = title;
-        definition.Configure(
-            id,
-            title,
-            description,
-            new HudIconCatalog().Get(iconId),
-            rarity,
-            maximumLevel,
-            effectType,
-            amount);
-        runtimeDefinitions.Add(definition);
-        return definition;
+        definitions = new List<UpgradeDefinition>(catalog.Upgrades);
     }
 
     private bool CanApplyRuntimeEffect(UpgradeDefinition definition)

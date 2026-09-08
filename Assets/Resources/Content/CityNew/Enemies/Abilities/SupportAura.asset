@@ -1,0 +1,22 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: cd897d3e57b64ac5aa26ab4a81d43b8a, type: 3}
+  m_Name: SupportAura
+  m_EditorClassIdentifier: FPS.Composition::EnemySupportAuraAbilityDefinition
+  stableId: enemy.ability.support_aura
+  radius: 10
+  maximumTargets: 2
+  effectDuration: 3
+  cooldown: 2
+  targetPriority: 0
+  requiredTargetTag: enemy
+  buffEffect: {fileID: 11400000, guid: 1380b8fb6911e4e88b66f3ade3c50a30, type: 2}

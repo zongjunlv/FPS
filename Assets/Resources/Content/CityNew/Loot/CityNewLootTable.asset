@@ -1,0 +1,119 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d2e68e7635974de1acb65cbe10556a58, type: 3}
+  m_Name: CityNewLootTable
+  m_EditorClassIdentifier: FPS.Inventory::LootDropTableDefinition
+  stableId: city_new.loot.default
+  rules:
+  - enemyTypeId: '*'
+    minimumWave: 1
+    maximumWave: 99
+    rewardTier: 0
+    minimumRolls: 1
+    maximumRolls: 1
+    entries:
+    - itemStableId: medical_kit
+      weight: 2
+      minimumQuantity: 1
+      maximumQuantity: 1
+      dropChance: 0.35
+    - itemStableId: armor_pack
+      weight: 2
+      minimumQuantity: 1
+      maximumQuantity: 1
+      dropChance: 0.35
+    - itemStableId: rifle_ammo
+      weight: 4
+      minimumQuantity: 1
+      maximumQuantity: 2
+      dropChance: 0.6
+    - itemStableId: handgun_ammo
+      weight: 3
+      minimumQuantity: 1
+      maximumQuantity: 2
+      dropChance: 0.55
+  - enemyTypeId: '*'
+    minimumWave: 1
+    maximumWave: 99
+    rewardTier: 1
+    minimumRolls: 2
+    maximumRolls: 2
+    entries:
+    - itemStableId: armor_pack
+      weight: 3
+      minimumQuantity: 1
+      maximumQuantity: 2
+      dropChance: 1
+    - itemStableId: rifle_ammo
+      weight: 4
+      minimumQuantity: 2
+      maximumQuantity: 3
+      dropChance: 1
+    - itemStableId: medical_kit
+      weight: 2
+      minimumQuantity: 1
+      maximumQuantity: 2
+      dropChance: 1
+  - enemyTypeId: '*'
+    minimumWave: 1
+    maximumWave: 99
+    rewardTier: 2
+    minimumRolls: 2
+    maximumRolls: 2
+    entries:
+    - itemStableId: medical_kit
+      weight: 2
+      minimumQuantity: 1
+      maximumQuantity: 1
+      dropChance: 1
+    - itemStableId: armor_pack
+      weight: 2
+      minimumQuantity: 1
+      maximumQuantity: 1
+      dropChance: 1
+    - itemStableId: rifle_ammo
+      weight: 3
+      minimumQuantity: 1
+      maximumQuantity: 2
+      dropChance: 1
+    - itemStableId: handgun_ammo
+      weight: 2
+      minimumQuantity: 1
+      maximumQuantity: 2
+      dropChance: 1
+  - enemyTypeId: '*'
+    minimumWave: 1
+    maximumWave: 99
+    rewardTier: 3
+    minimumRolls: 4
+    maximumRolls: 4
+    entries:
+    - itemStableId: medical_kit
+      weight: 2
+      minimumQuantity: 2
+      maximumQuantity: 3
+      dropChance: 1
+    - itemStableId: armor_pack
+      weight: 2
+      minimumQuantity: 2
+      maximumQuantity: 3
+      dropChance: 1
+    - itemStableId: rifle_ammo
+      weight: 3
+      minimumQuantity: 3
+      maximumQuantity: 5
+      dropChance: 1
+    - itemStableId: handgun_ammo
+      weight: 2
+      minimumQuantity: 3
+      maximumQuantity: 5
+      dropChance: 1

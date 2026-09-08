@@ -1,0 +1,43 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 461c012ee96f4c60999d0dc9fc4a9e02, type: 3}
+  m_Name: CityNewContentCatalog
+  m_EditorClassIdentifier: FPS.Composition::CityNewContentCatalog
+  stableId: city_new.default
+  defaultEnemy: {fileID: 11400000, guid: 978c73e2a1f764a538a8cffe7075fde2, type: 2}
+  enemyArchetypes:
+  - {fileID: 11400000, guid: d3724ec406bf647faa5f2e202ea3ce7d, type: 2}
+  - {fileID: 11400000, guid: ed75343c3618a481c8a583be241537bb, type: 2}
+  - {fileID: 11400000, guid: cff52cf87864842138e601d2cde7383b, type: 2}
+  - {fileID: 11400000, guid: a1331564b706c4f3ca02b9a8b6dc0903, type: 2}
+  - {fileID: 11400000, guid: a360f0ad1bc3a473b8cda1c85cd06172, type: 2}
+  waveSequence: {fileID: 11400000, guid: 200f6ebcd8b4c4aaf864b3da5fa8ae34, type: 2}
+  lootDropTable: {fileID: 11400000, guid: a4f24ed7518ed44aaaf604fc65dfbad5, type: 2}
+  upgrades:
+  - {fileID: 11400000, guid: a6bd8128c0bd3496b82072fdc9a04c42, type: 2}
+  - {fileID: 11400000, guid: 46b67ae9eb94c4ff780fe97149663222, type: 2}
+  - {fileID: 11400000, guid: 055324e2cc81b4b7b9dc5b7ab5f98afb, type: 2}
+  - {fileID: 11400000, guid: 76126f61d7f3c4750988221047cf62b7, type: 2}
+  - {fileID: 11400000, guid: 04b20387196784cfdb4655bc79c1824c, type: 2}
+  - {fileID: 11400000, guid: dd8b48ac2ad6a4289a38bd63076c9574, type: 2}
+  - {fileID: 11400000, guid: 64226c8358c114513bcded719d481b9d, type: 2}
+  - {fileID: 11400000, guid: 87402bd44b5a2424cbf9823dfb5cfa54, type: 2}
+  - {fileID: 11400000, guid: 50f959c3cb8234aa7a4b4865f9265645, type: 2}
+  - {fileID: 11400000, guid: 8353eb2d33feb4c93a27c86f149d1ffb, type: 2}
+  - {fileID: 11400000, guid: 18f2e1562ff4b4fa4a6a8250cd5bf7a0, type: 2}
+  - {fileID: 11400000, guid: d07f630cafc014416a67e07d8eb5f337, type: 2}
+  - {fileID: 11400000, guid: 6a30b4b2443ef44f69f2abbfa56ce15d, type: 2}
+  items:
+  - {fileID: 11400000, guid: d06328fa7041b4102b9603c4a99bf952, type: 2}
+  - {fileID: 11400000, guid: 194265fc96be047a2a83df065c724782, type: 2}
+  - {fileID: 11400000, guid: 21cd52b611911420eb8f7fdecdb33db7, type: 2}
+  - {fileID: 11400000, guid: dbe4d93014b31470299f978bc2846a69, type: 2}

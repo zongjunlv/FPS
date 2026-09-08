@@ -1,0 +1,29 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: c0bf9fd78b36448a9cfb0e25200d59e7, type: 3}
+  m_Name: UpgradeMaximumHealth
+  m_EditorClassIdentifier: FPS.GameplayEffects::FPS.GameplayEffects.GameplayEffectDefinition
+  stableId: upgrade.maximum_health
+  durationPolicy: 0
+  duration: 1
+  tickInterval: 1
+  maximumStacks: 1
+  stackRefreshPolicy: 0
+  periodicMagnitude: 0
+  gameplayTags:
+  - effect.upgrade.maximum_health
+  - duration.persistent
+  modifiers:
+  - attribute: 0
+    operation: 1
+    magnitude: 0.2
+    priority: 0

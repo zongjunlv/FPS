@@ -149,12 +149,22 @@ public sealed class LootDropRule
     menuName = "FPS/Loot/Drop Table")]
 public sealed class LootDropTableDefinition : ScriptableObject
 {
+    [SerializeField] private string stableId;
     [SerializeField] private List<LootDropRule> rules = new();
 
+    public string StableId => stableId;
     public IReadOnlyList<LootDropRule> Rules => rules;
 
     public void Configure(IEnumerable<LootDropRule> configuredRules)
     {
+        ConfigureWithStableId(stableId, configuredRules);
+    }
+
+    public void ConfigureWithStableId(
+        string id,
+        IEnumerable<LootDropRule> configuredRules)
+    {
+        stableId = id?.Trim();
         rules = configuredRules != null
             ? new List<LootDropRule>(configuredRules)
             : new List<LootDropRule>();

@@ -28,13 +28,23 @@ public sealed class WaveStageDefinition
     menuName = "FPS/Waves/Wave Sequence Definition")]
 public sealed class WaveSequenceDefinition : ScriptableObject
 {
+    [SerializeField] private string stableId;
     [SerializeField] private List<WaveStageDefinition> stages = new();
 
+    public string StableId => stableId;
     public int WaveCount => stages != null ? stages.Count : 0;
     public IReadOnlyList<WaveStageDefinition> Stages => stages;
 
     public void Configure(IEnumerable<WaveStageDefinition> configuredStages)
     {
+        ConfigureWithStableId(stableId, configuredStages);
+    }
+
+    public void ConfigureWithStableId(
+        string id,
+        IEnumerable<WaveStageDefinition> configuredStages)
+    {
+        stableId = id?.Trim();
         stages = configuredStages != null
             ? new List<WaveStageDefinition>(configuredStages)
             : new List<WaveStageDefinition>();
