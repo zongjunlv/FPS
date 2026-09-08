@@ -5,7 +5,8 @@ using UnityEngine.SceneManagement;
 public enum EnemyFactoryBackend
 {
     Pool,
-    Instantiate
+    Instantiate,
+    Addressables
 }
 
 public sealed class CityNewWaveBootstrap : MonoBehaviour
@@ -13,7 +14,7 @@ public sealed class CityNewWaveBootstrap : MonoBehaviour
     private static CityNewWaveBootstrap instance;
 
     [SerializeField] private EnemyFactoryBackend factoryBackend =
-        EnemyFactoryBackend.Pool;
+        EnemyFactoryBackend.Addressables;
     [SerializeField] private CityNewContentCatalog contentCatalog;
 
     private EnemyController sceneTemplate;
@@ -22,6 +23,9 @@ public sealed class CityNewWaveBootstrap : MonoBehaviour
     private SceneEnemyFactory sceneFactory;
     private NavMeshEnemySpawnPointResolver resolver;
     private WaveDirector director;
+    private AddressableEnemyFactory addressableFactory;
+    private Font preparationFont;
+    private GUIStyle preparationStyle;
 
     public static bool IsWaveModeActive => instance != null;
     public WaveDirector Director => director;
@@ -29,6 +33,14 @@ public sealed class CityNewWaveBootstrap : MonoBehaviour
     public EnemyFactoryBackend FactoryBackend => factoryBackend;
     public CityNewContentCatalog ContentCatalog => contentCatalog;
     public string ConfigurationError { get; private set; }
+    public IAsyncEnemyFactory AsyncFactory => addressableFactory;
+    public string PreparationStatus => addressableFactory == null ? string.Empty :
+        addressableFactory.PreparationState == EnemyFactoryPreparationState.Loading
+            ? $"正在加载敌人资源 {addressableFactory.PreparationProgress:P0}"
+            : addressableFactory.PreparationState == EnemyFactoryPreparationState.Prewarming
+                ? $"正在准备敌人对象池 {addressableFactory.PreparationProgress:P0}"
+                : addressableFactory.PreparationState == EnemyFactoryPreparationState.Failed
+                    ? "敌人资源准备失败，请检查配置后重试" : string.Empty;
 
     private void Awake()
     {
@@ -71,14 +83,31 @@ public sealed class CityNewWaveBootstrap : MonoBehaviour
         sceneTemplate ??= FindSceneTemplate();
         GameObject playerObject = GameObject.FindGameObjectWithTag("Player");
 
-        if (sceneTemplate == null || playerObject == null)
+        if ((sceneTemplate == null && factoryBackend != EnemyFactoryBackend.Addressables) || playerObject == null)
         {
             FailConfiguration(
                 "A scene enemy template and tagged player are required.");
             yield break;
         }
 
-        ConfigureFactory();
+        try
+        {
+            ConfigureFactory();
+        }
+        catch (System.Exception exception)
+        {
+            FailConfiguration(exception.Message);
+            yield break;
+        }
+        if (addressableFactory != null)
+        {
+            yield return addressableFactory.PrepareAsync();
+            if (addressableFactory.PreparationState != EnemyFactoryPreparationState.Ready)
+            {
+                FailConfiguration(addressableFactory.PreparationError);
+                yield break;
+            }
+        }
         director.Configure(
             contentCatalog.WaveSequence,
             factory,
@@ -96,6 +125,12 @@ public sealed class CityNewWaveBootstrap : MonoBehaviour
 
     private void OnDestroy()
     {
+        if (addressableFactory != null)
+        {
+            director?.StopRun(WaveStopReason.Destroyed);
+            addressableFactory.DisposeFactory();
+        }
+        if (preparationFont != null) Destroy(preparationFont);
         if (instance == this)
         {
             instance = null;
@@ -133,6 +168,21 @@ public sealed class CityNewWaveBootstrap : MonoBehaviour
 
     private void ConfigureFactory()
     {
+        if (factoryBackend == EnemyFactoryBackend.Addressables)
+        {
+            if (sceneTemplate != null)
+            {
+                sceneTemplate.SetFactoryManaged(true);
+                sceneTemplate.PrepareForPool();
+                sceneTemplate.gameObject.SetActive(false);
+            }
+            addressableFactory = GetComponent<AddressableEnemyFactory>() ??
+                gameObject.AddComponent<AddressableEnemyFactory>();
+            addressableFactory.Configure(contentCatalog.EnemyArchetypes, 4, 64);
+            pooledFactory = addressableFactory.Pool;
+            factory = addressableFactory;
+            return;
+        }
         if (factoryBackend == EnemyFactoryBackend.Pool)
         {
             pooledFactory = GetComponent<PooledEnemyFactory>();
@@ -146,6 +196,24 @@ public sealed class CityNewWaveBootstrap : MonoBehaviour
         sceneFactory ??= gameObject.AddComponent<SceneEnemyFactory>();
         sceneFactory.Configure(sceneTemplate);
         factory = sceneFactory;
+    }
+
+    private void OnGUI()
+    {
+        string status = PreparationStatus;
+        if (string.IsNullOrEmpty(status)) return;
+        if (preparationStyle == null)
+        {
+            preparationFont = Font.CreateDynamicFontFromOSFont(
+                new[] { "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", "Arial Unicode MS" }, 22);
+            preparationStyle = new GUIStyle(GUI.skin.box)
+            {
+                font = preparationFont,
+                fontSize = 22,
+                alignment = TextAnchor.MiddleCenter
+            };
+        }
+        GUI.Box(new Rect((Screen.width - 480f) * 0.5f, 60f, 480f, 56f), status, preparationStyle);
     }
 
     private void ConfigureLootRewards(

@@ -9,6 +9,7 @@ public sealed class EnemyArchetypeDefinition : ScriptableObject
     [SerializeField] private string stableId;
     [SerializeField] private string enemyTypeId;
     [SerializeField] private EnemyController template;
+    [SerializeField] private string templateAddress = "enemy/spider";
     [SerializeField] private LootRewardTier rewardTier = LootRewardTier.Normal;
     [SerializeField] private EnemyAffixDefinition affix;
     [SerializeField] private EnemyAbilitySetDefinition abilitySet;
@@ -20,6 +21,12 @@ public sealed class EnemyArchetypeDefinition : ScriptableObject
         ? stableId
         : enemyTypeId.Trim();
     public EnemyController Template => template;
+    public string TemplateAddress => templateAddress;
+
+    public void ConfigureTemplateAddress(string address)
+    {
+        templateAddress = address?.Trim();
+    }
     public LootRewardTier RewardTier => rewardTier;
     public EnemyAffixDefinition Affix => affix;
     public EnemyAbilitySetDefinition AbilitySet => abilitySet;

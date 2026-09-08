@@ -132,3 +132,22 @@ public interface IEnemyFactory
 
     void Release(EnemySpawnHandle handle);
 }
+
+public enum EnemyFactoryPreparationState
+{
+    Idle,
+    Loading,
+    Prewarming,
+    Ready,
+    Failed,
+    Disposed
+}
+
+// Optional capability keeps synchronous factories and test doubles compatible.
+public interface IAsyncEnemyFactory : IEnemyFactory
+{
+    EnemyFactoryPreparationState PreparationState { get; }
+    float PreparationProgress { get; }
+    string PreparationError { get; }
+    System.Collections.IEnumerator PrepareAsync();
+}

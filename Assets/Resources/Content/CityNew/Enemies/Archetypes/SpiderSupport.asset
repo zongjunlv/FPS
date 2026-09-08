@@ -15,6 +15,7 @@ MonoBehaviour:
   stableId: enemy.archetype.spider_support
   enemyTypeId: spider_support
   template: {fileID: 0}
+  templateAddress: enemy/spider
   rewardTier: 0
   affix: {fileID: 0}
   abilitySet: {fileID: 11400000, guid: ead7d9ba25e8a40568b5acff7f923903, type: 2}

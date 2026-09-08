@@ -14,7 +14,9 @@
     "UnityEngine.UI",
     "Unity.TextMeshPro",
     "Unity.Burst",
-    "Unity.Collections"
+    "Unity.Collections",
+    "Unity.Addressables",
+    "Unity.ResourceManager"
   ],
   "includePlatforms": [],
   "excludePlatforms": [],

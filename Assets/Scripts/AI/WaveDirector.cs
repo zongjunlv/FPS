@@ -97,7 +97,7 @@ public sealed class WaveDirector : MonoBehaviour, IWaveProgressSource
             return;
         }
 
-        if (!flow.CanSpawn)
+        if (!flow.CanSpawn || !IsFactoryReady)
         {
             return;
         }
@@ -166,7 +166,7 @@ public sealed class WaveDirector : MonoBehaviour, IWaveProgressSource
 
     public bool StartRun()
     {
-        if (!configured || flow == null || !flow.StartRun())
+        if (!configured || flow == null || !IsFactoryReady || !flow.StartRun())
         {
             return false;
         }
@@ -175,6 +175,9 @@ public sealed class WaveDirector : MonoBehaviour, IWaveProgressSource
         BeginCurrentWavePresentation();
         return true;
     }
+
+    private bool IsFactoryReady => !(enemyFactory is IAsyncEnemyFactory asynchronous) ||
+        asynchronous.PreparationState == EnemyFactoryPreparationState.Ready;
 
     public bool StopRun(WaveStopReason reason)
     {

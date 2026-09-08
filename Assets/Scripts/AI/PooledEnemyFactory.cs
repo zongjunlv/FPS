@@ -112,12 +112,47 @@ public sealed class PooledEnemyFactory : MonoBehaviour, IEnemyFactory
         }
     }
 
+    // Unlike Configure(sceneTemplate), this never adopts or mutates a prefab asset.
+    public void ConfigurePrefab(EnemyController prefab, int capacityLimit)
+    {
+        if (prefab == null) throw new ArgumentNullException(nameof(prefab));
+        if (active.Count > 0 || pending.Count > 0)
+            throw new InvalidOperationException("Cannot reconfigure an active enemy pool.");
+        ClearPool();
+        defaultTemplate = prefab;
+        maximumCapacity = Mathf.Max(1, capacityLimit);
+        EnsureRoot();
+    }
+
+    public bool PrewarmOne(EnemyController prefab)
+    {
+        if (prefab == null || PooledObjectCount >= maximumCapacity) return false;
+        Bucket bucket = GetOrCreateBucket(prefab);
+        ReturnImmediately(CreateInstance(prefab, bucket, false), bucket);
+        return true;
+    }
+
+    public void DisposePool()
+    {
+        ClearPool();
+        defaultTemplate = null;
+    }
+
     public bool TrySpawn(
         EnemySpawnRequest request,
         Action<EnemySpawnHandle, EnemyExitReason> onEnded,
         out EnemySpawnHandle handle)
     {
         EnemyController source = request.Entry?.Template ?? defaultTemplate;
+        return TrySpawnWithTemplate(request, source, onEnded, out handle);
+    }
+
+    public bool TrySpawnWithTemplate(
+        EnemySpawnRequest request,
+        EnemyController source,
+        Action<EnemySpawnHandle, EnemyExitReason> onEnded,
+        out EnemySpawnHandle handle)
+    {
 
         if (source == null)
         {
@@ -337,6 +372,9 @@ public sealed class PooledEnemyFactory : MonoBehaviour, IEnemyFactory
             {
                 if (controller != null && controller != defaultTemplate)
                 {
+                    controller.GetComponent<WaveEnemyLifecycle>()?.Disarm();
+                    controller.PrepareForPool();
+                    controller.gameObject.SetActive(false);
                     Destroy(controller.gameObject);
                 }
             }
