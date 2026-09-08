@@ -15,7 +15,7 @@ MonoBehaviour:
   stableId: fire_rate_rapid_cycling
   title: "\u5FEB\u901F\u67AA\u673A"
   description: "\u6BCF\u5C42\u4F7F\u6B66\u5668\u5C04\u901F\u63D0\u9AD8 15%\u3002"
-  icon: {fileID: 0}
+  icon: {fileID: 21300000, guid: 3be6c7547789543ec8103ecc8aa43f74, type: 2}
   rarity: 0
   maximumLevel: 3
   effectType: 1

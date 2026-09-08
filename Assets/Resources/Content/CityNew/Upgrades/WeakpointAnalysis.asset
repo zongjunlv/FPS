@@ -15,7 +15,7 @@ MonoBehaviour:
   stableId: damage_weakpoint_analysis
   title: "\u5F31\u70B9\u5206\u6790"
   description: "\u6BCF\u5C42\u4F7F\u6B66\u5668\u4F24\u5BB3\u63D0\u9AD8 20%\u3002"
-  icon: {fileID: 0}
+  icon: {fileID: 21300000, guid: 3be6c7547789543ec8103ecc8aa43f74, type: 2}
   rarity: 1
   maximumLevel: 2
   effectType: 0

@@ -15,7 +15,7 @@ MonoBehaviour:
   stableId: handgun_ammo
   displayName: "\u624B\u67AA\u5F39\u836F"
   description: "\u8F7B\u578B\u624B\u67AA\u5F39\u836F\u76D2\uFF0C\u53EA\u8865\u5145\u624B\u67AA\u5907\u5F39\u3002"
-  icon: {fileID: 0}
+  icon: {fileID: 21300000, guid: 8a71e040351e1469f816f23c79ec1947, type: 2}
   itemType: 0
   maximumStack: 6
   effectType: 3

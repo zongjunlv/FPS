@@ -15,7 +15,7 @@ MonoBehaviour:
   stableId: recoil_dampening
   title: "\u540E\u5750\u529B\u6291\u5236"
   description: "\u6BCF\u5C42\u4F7F\u540E\u5750\u529B\u63A7\u5236\u63D0\u9AD8 18%\u3002"
-  icon: {fileID: 0}
+  icon: {fileID: 21300000, guid: 3be6c7547789543ec8103ecc8aa43f74, type: 2}
   rarity: 1
   maximumLevel: 3
   effectType: 4

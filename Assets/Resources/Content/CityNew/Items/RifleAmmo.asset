@@ -15,7 +15,7 @@ MonoBehaviour:
   stableId: rifle_ammo
   displayName: "\u6B65\u67AA\u5F39\u836F"
   description: "\u6807\u51C6\u6B65\u67AA\u5F39\u836F\u7BB1\uFF0C\u53EA\u8865\u5145\u6B65\u67AA\u5907\u5F39\u3002"
-  icon: {fileID: 0}
+  icon: {fileID: 21300000, guid: 3be6c7547789543ec8103ecc8aa43f74, type: 2}
   itemType: 0
   maximumStack: 4
   effectType: 2

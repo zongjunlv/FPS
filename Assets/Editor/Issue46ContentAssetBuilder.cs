@@ -361,7 +361,7 @@ public static class Issue46ContentAssetBuilder
     {
         ItemDefinition item = Asset<ItemDefinition>(path);
         item.Configure(
-            id, title, description, new HudIconCatalog().Get(icon),
+            id, title, description, ContentIconAssetUtility.Get(icon),
             ItemType.Consumable, stack, effectType, amount);
         item.ConfigureGameplayEffect(gameplayEffect);
         return item;
@@ -389,7 +389,6 @@ public static class Issue46ContentAssetBuilder
             ("MobilityTraining", "survival_mobility_training", "机动训练", "每层使移动速度提高 10%。", UpgradeRarity.Rare, 3, UpgradeEffectType.MovementSpeed, 0.1f, HudIconId.Health)
         };
         var result = new UpgradeDefinition[entries.Length];
-        HudIconCatalog icons = new();
         for (int index = 0; index < entries.Length; index++)
         {
             var entry = entries[index];
@@ -397,7 +396,7 @@ public static class Issue46ContentAssetBuilder
                 $"Upgrades/{entry.Path}.asset");
             upgrade.Configure(
                 entry.Id, entry.Title, entry.Description,
-                icons.Get(entry.Icon), entry.Rarity, entry.Levels,
+                ContentIconAssetUtility.Get(entry.Icon), entry.Rarity, entry.Levels,
                 entry.Type, entry.Amount);
             if (entry.Type == UpgradeEffectType.MaximumHealth)
             {

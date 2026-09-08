@@ -1,0 +1,7 @@
+{
+  "name": "FPS.ContentValidation.Tests",
+  "references": ["FPS.ContentValidation.Editor", "FPS.Composition", "FPS.GameplayEffects", "FPS.AI", "FPS.Inventory", "Unity.Addressables.Editor"],
+  "includePlatforms": ["Editor"],
+  "optionalUnityReferences": ["TestAssemblies"],
+  "autoReferenced": true
+}

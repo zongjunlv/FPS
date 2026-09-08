@@ -12,7 +12,7 @@ concurrency:
 
 jobs:
   quality-gate:
-    name: Compile, EditMode and PlayMode
+    name: Content, Compile, EditMode and PlayMode
     runs-on: [self-hosted, macOS, unity]
     timeout-minutes: 60
     env:
@@ -22,6 +22,9 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Validate formal content assets
+        run: bash ./scripts/ci/run-content-validation.sh
 
       - name: Run Unity quality gate
         run: ./scripts/ci/run-unity-quality-gate.sh all
@@ -46,6 +49,7 @@ jobs:
           name: unity-quality-gate-${{ github.run_id }}
           path: |
             artifacts/quality-gate
+            artifacts/content-validation
             artifacts/performance/issue45
           if-no-files-found: error
           retention-days: 14

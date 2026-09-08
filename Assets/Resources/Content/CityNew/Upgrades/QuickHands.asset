@@ -15,7 +15,7 @@ MonoBehaviour:
   stableId: reload_quick_hands
   title: "\u5FEB\u901F\u6362\u5F39"
   description: "\u6BCF\u5C42\u4F7F\u6362\u5F39\u901F\u5EA6\u63D0\u9AD8 20%\u3002"
-  icon: {fileID: 0}
+  icon: {fileID: 21300000, guid: 8a71e040351e1469f816f23c79ec1947, type: 2}
   rarity: 0
   maximumLevel: 3
   effectType: 3

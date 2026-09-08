@@ -1,0 +1,6 @@
+{
+  "name": "FPS.ContentValidation.Editor",
+  "references": ["FPS.Composition", "FPS.AI", "FPS.Inventory", "FPS.GameplayEffects", "FPS.Core", "FPS.Combat", "Unity.Addressables.Editor", "Unity.Addressables", "Unity.ResourceManager"],
+  "includePlatforms": ["Editor"],
+  "autoReferenced": true
+}
