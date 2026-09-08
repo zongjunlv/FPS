@@ -284,6 +284,7 @@ public sealed class InventoryView : MonoBehaviour, ICancelHandler
 
     private void OnDestroy()
     {
+        icons?.Dispose();
         Unbind();
 
         if (runtimeChineseFontAsset != null)

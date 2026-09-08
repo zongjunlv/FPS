@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -10,13 +11,19 @@ public enum HudIconId
     Ammo
 }
 
-public sealed class HudIconCatalog
+public sealed class HudIconCatalog : IDisposable
 {
     private readonly Dictionary<HudIconId, Sprite> icons = new();
+    private readonly List<UnityEngine.Object> ownedResources = new();
+    private readonly Func<string, Sprite> loadSprite;
     private Sprite placeholder;
+    private bool disposed;
 
-    public HudIconCatalog()
+    public HudIconCatalog() : this(Resources.Load<Sprite>) { }
+
+    public HudIconCatalog(Func<string, Sprite> loadSprite)
     {
+        this.loadSprite = loadSprite ?? throw new ArgumentNullException(nameof(loadSprite));
         Load(HudIconId.Health, "UI/Icons/health");
         Load(HudIconId.Armor, "UI/Icons/armor");
         LoadCropped(
@@ -32,6 +39,7 @@ public sealed class HudIconCatalog
 
     public Sprite Get(HudIconId iconId)
     {
+        if (disposed) throw new ObjectDisposedException(nameof(HudIconCatalog));
         return icons.TryGetValue(iconId, out Sprite icon) && icon != null
             ? icon
             : GetPlaceholder();
@@ -52,7 +60,7 @@ public sealed class HudIconCatalog
 
     private void Load(HudIconId iconId, string resourcePath)
     {
-        icons[iconId] = Resources.Load<Sprite>(resourcePath);
+        icons[iconId] = loadSprite(resourcePath);
     }
 
     private void LoadCropped(
@@ -60,7 +68,7 @@ public sealed class HudIconCatalog
         string resourcePath,
         Rect visibleBounds)
     {
-        Sprite source = Resources.Load<Sprite>(resourcePath);
+        Sprite source = loadSprite(resourcePath);
 
         if (source == null || source.texture == null)
         {
@@ -98,6 +106,7 @@ public sealed class HudIconCatalog
             SpriteMeshType.FullRect);
         cropped.name = source.name + "_HUD_Cropped";
         cropped.hideFlags = HideFlags.HideAndDontSave;
+        ownedResources.Add(cropped);
         icons[iconId] = cropped;
     }
 
@@ -143,6 +152,25 @@ public sealed class HudIconCatalog
             size);
         placeholder.name = "HUD Icon Placeholder";
         placeholder.hideFlags = HideFlags.HideAndDontSave;
+        ownedResources.Add(texture);
+        ownedResources.Add(placeholder);
         return placeholder;
+    }
+
+    public void Dispose()
+    {
+        if (disposed) return;
+        disposed = true;
+        // Only generated resources belong to the catalog; imported sprites remain shared.
+        for (int index = ownedResources.Count - 1; index >= 0; index--)
+        {
+            if (Application.isPlaying)
+                UnityEngine.Object.Destroy(ownedResources[index]);
+            else
+                UnityEngine.Object.DestroyImmediate(ownedResources[index]);
+        }
+        ownedResources.Clear();
+        icons.Clear();
+        placeholder = null;
     }
 }

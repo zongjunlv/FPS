@@ -131,6 +131,7 @@ public sealed class ConsumableQuickSlotHud : MonoBehaviour
 
     private void OnDestroy()
     {
+        icons?.Dispose();
         Unbind();
 
         if (runtimeChineseFontAsset != null)

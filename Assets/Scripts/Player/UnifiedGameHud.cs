@@ -140,6 +140,7 @@ public sealed class UnifiedGameHud : MonoBehaviour
 
     private void OnDestroy()
     {
+        iconCatalog?.Dispose();
         UnbindWave();
         UnbindProgression();
         Unbind();

@@ -16,6 +16,7 @@ public sealed class UpgradeChoiceView : MonoBehaviour
     private TMP_FontAsset runtimeChineseFontAsset;
     private Func<int, bool> onSelected;
     private bool selectionCommitted;
+    private HudIconCatalog fallbackIcons;
 
     public bool IsVisible => root != null && root.gameObject.activeSelf;
     public bool IsSuspended { get; private set; }
@@ -169,6 +170,7 @@ public sealed class UpgradeChoiceView : MonoBehaviour
 
     private void OnDestroy()
     {
+        fallbackIcons?.Dispose();
         if (runtimeChineseFontAsset != null)
         {
             Destroy(runtimeChineseFontAsset);
@@ -239,8 +241,9 @@ public sealed class UpgradeChoiceView : MonoBehaviour
         button.onClick.AddListener(() => Commit(capturedIndex));
 
         Image icon = CreateImage("Icon", cardRect, Color.white);
-        icon.sprite = definition.Icon ??
-            new HudIconCatalog().Get(HudIconId.Ammo);
+        icon.sprite = definition.Icon != null
+            ? definition.Icon
+            : (fallbackIcons ??= new HudIconCatalog()).Get(HudIconId.Ammo);
         icon.preserveAspect = true;
         SetRect(
             icon.rectTransform,

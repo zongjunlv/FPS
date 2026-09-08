@@ -53,7 +53,7 @@ public sealed class CombatEffectPool : MonoBehaviour
     {
         EnsureSharedPools();
 
-        if (concretePool == null && concretePrefab != null)
+        if (concretePool == null)
         {
             concretePool = new RuntimeGameObjectPool(
                 ImpactCapacity,
@@ -174,7 +174,9 @@ public sealed class CombatEffectPool : MonoBehaviour
         GameObject prefab,
         int index)
     {
-        GameObject effect = Instantiate(prefab, effectRoot);
+        GameObject effect = prefab != null
+            ? Instantiate(prefab, effectRoot)
+            : FallbackFeedbackEffect.Create(effectRoot);
         effect.name = $"Concrete Pool {index + 1:00}";
         ImpactEffectController legacyLifetime =
             effect.GetComponent<ImpactEffectController>();
@@ -301,6 +303,7 @@ public sealed class CombatEffectPool : MonoBehaviour
             result.Point + result.Normal * 0.002f,
             Quaternion.LookRotation(result.Normal));
         effect.name = "Concrete(Clone)";
+        effect.GetComponent<FallbackFeedbackEffect>()?.Play();
         effect.GetComponent<PooledEffectInstance>().Play(
             concretePool,
             style.UniqueMarkerLifetime,

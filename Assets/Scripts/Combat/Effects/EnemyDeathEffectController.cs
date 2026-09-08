@@ -5,6 +5,26 @@ public sealed class EnemyDeathEffectController : MonoBehaviour
     public float Lifetime { get; private set; }
     public int ActiveParticleSystemCount { get; private set; }
 
+    public static GameObject Present(GameObject prefab, Vector3 position)
+    {
+        if (prefab == null)
+        {
+            GameObject fallback = FallbackFeedbackEffect.Create();
+            fallback.name = "Enemy Death Fallback";
+            fallback.transform.position = position + Vector3.up * 0.25f;
+            fallback.GetComponent<FallbackFeedbackEffect>().Play(0.3f, true);
+            return fallback;
+        }
+
+        GameObject effect = Instantiate(prefab, position, Quaternion.identity);
+        EnemyDeathEffectController controller =
+            effect.GetComponent<EnemyDeathEffectController>();
+        if (controller == null)
+            controller = effect.AddComponent<EnemyDeathEffectController>();
+        controller.Configure();
+        return effect;
+    }
+
     public void Configure(
         float scale = 0.42f,
         float lifetime = 1.2f)

@@ -153,23 +153,7 @@ public class EnemyController : MonoBehaviour
 
         deathPresentationTriggered = true;
 
-        if (bombEffect != null)
-        {
-            GameObject deathEffect = Instantiate(
-                bombEffect,
-                transform.position,
-                Quaternion.identity);
-            EnemyDeathEffectController controller =
-                deathEffect.GetComponent<EnemyDeathEffectController>();
-
-            if (controller == null)
-            {
-                controller =
-                    deathEffect.AddComponent<EnemyDeathEffectController>();
-            }
-
-            controller.Configure();
-        }
+        EnemyDeathEffectController.Present(bombEffect, transform.position);
 
         if (!factoryManaged)
         {

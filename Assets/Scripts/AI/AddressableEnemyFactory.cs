@@ -2,8 +2,6 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
-using UnityEngine.AddressableAssets;
-using UnityEngine.ResourceManagement.AsyncOperations;
 
 public interface IEnemyTemplateLoadOperation : IDisposable
 {
@@ -23,18 +21,14 @@ public sealed class AddressableEnemyTemplateLoader : IEnemyTemplateLoader
 {
     private sealed class Operation : IEnemyTemplateLoadOperation
     {
-        private AsyncOperationHandle<GameObject> handle;
-        public Operation(string address) => handle = Addressables.LoadAssetAsync<GameObject>(address);
-        public bool IsDone => handle.IsValid() && handle.IsDone;
-        public bool Succeeded => IsDone && handle.Status == AsyncOperationStatus.Succeeded;
-        public float Progress => handle.IsValid() ? handle.PercentComplete : 0f;
-        public GameObject Template => Succeeded ? handle.Result : null;
-        public string Error => handle.IsValid() ? handle.OperationException?.Message : "Load handle released.";
-        public void Dispose()
-        {
-            if (handle.IsValid()) Addressables.Release(handle);
-            handle = default;
-        }
+        private readonly SharedAssetLease<GameObject> lease;
+        public Operation(string address) => lease = SharedAssetLeaseService.Default.Acquire<GameObject>(address);
+        public bool IsDone => lease.IsDone;
+        public bool Succeeded => lease.Succeeded;
+        public float Progress => lease.Progress;
+        public GameObject Template => lease.Asset;
+        public string Error => lease.Error;
+        public void Dispose() => lease.Dispose();
     }
 
     public IEnemyTemplateLoadOperation Load(string address) => new Operation(address);
@@ -50,18 +44,21 @@ public sealed class AddressableEnemyFactory : MonoBehaviour, IAsyncEnemyFactory
     private int prewarmPerTemplate;
     private int capacityLimit;
     private bool configured;
+    private EnemyController fallbackTemplate;
 
     public EnemyFactoryPreparationState PreparationState { get; private set; }
     public float PreparationProgress { get; private set; }
     public string PreparationError { get; private set; } = string.Empty;
     public PooledEnemyFactory Pool => pool;
     public int LoadedTemplateCount => templates.Count;
+    public int FallbackTemplateCount { get; private set; }
 
     public void Configure(
         IEnumerable<EnemyArchetypeDefinition> archetypes,
         int prewarmCount = 4,
         int maximumCapacity = 64,
-        IEnemyTemplateLoader templateLoader = null)
+        IEnemyTemplateLoader templateLoader = null,
+        EnemyController safeFallbackTemplate = null)
     {
         if (PreparationState == EnemyFactoryPreparationState.Disposed)
             throw new ObjectDisposedException(nameof(AddressableEnemyFactory));
@@ -78,6 +75,7 @@ public sealed class AddressableEnemyFactory : MonoBehaviour, IAsyncEnemyFactory
         prewarmPerTemplate = Mathf.Max(1, prewarmCount);
         capacityLimit = Mathf.Max(maximumCapacity, prewarmPerTemplate * addresses.Count);
         loader = templateLoader ?? new AddressableEnemyTemplateLoader();
+        fallbackTemplate = safeFallbackTemplate;
         pool = GetComponent<PooledEnemyFactory>() ?? gameObject.AddComponent<PooledEnemyFactory>();
         configured = true;
     }
@@ -94,7 +92,8 @@ public sealed class AddressableEnemyFactory : MonoBehaviour, IAsyncEnemyFactory
         PreparationState = EnemyFactoryPreparationState.Loading;
         for (int index = 0; index < addresses.Count; index++)
         {
-            IEnemyTemplateLoadOperation operation;
+            IEnemyTemplateLoadOperation operation = null;
+            string loadError = null;
             try
             {
                 operation = loader.Load(addresses[index]);
@@ -103,22 +102,33 @@ public sealed class AddressableEnemyFactory : MonoBehaviour, IAsyncEnemyFactory
             }
             catch (Exception exception)
             {
-                Fail(exception.Message);
-                yield break;
+                loadError = exception.Message;
             }
-            while (!operation.IsDone)
+            while (operation != null && !operation.IsDone)
             {
                 if (PreparationState == EnemyFactoryPreparationState.Disposed) yield break;
                 PreparationProgress = (index + operation.Progress) / addresses.Count * 0.5f;
                 yield return null;
             }
             if (PreparationState == EnemyFactoryPreparationState.Disposed) yield break;
-            EnemyController template = operation.Template != null
+            EnemyController template = operation?.Template != null
                 ? operation.Template.GetComponent<EnemyController>() : null;
-            if (!operation.Succeeded || template == null)
+            if (operation == null || !operation.Succeeded || template == null)
             {
-                Fail($"{addresses[index]}: {operation.Error ?? "EnemyController missing from prefab."}");
-                yield break;
+                string reason = $"{addresses[index]}: {loadError ?? operation?.Error ?? "EnemyController missing from prefab."}";
+                if (fallbackTemplate == null)
+                {
+                    Fail(reason);
+                    yield break;
+                }
+                if (operation != null)
+                {
+                    loads.Remove(operation);
+                    operation.Dispose();
+                }
+                template = fallbackTemplate;
+                FallbackTemplateCount++;
+                Debug.LogWarning($"敌人资源加载失败，已使用场景备用模板：{reason}", this);
             }
             templates.Add(addresses[index], template);
         }
@@ -185,6 +195,8 @@ public sealed class AddressableEnemyFactory : MonoBehaviour, IAsyncEnemyFactory
         PreparationState = EnemyFactoryPreparationState.Disposed;
         ReleaseResources();
     }
+
+    public void CancelPreparation() => DisposeFactory();
 
     private void Fail(string error)
     {

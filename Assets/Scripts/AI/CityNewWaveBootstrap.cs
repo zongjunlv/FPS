@@ -173,12 +173,13 @@ public sealed class CityNewWaveBootstrap : MonoBehaviour
             if (sceneTemplate != null)
             {
                 sceneTemplate.SetFactoryManaged(true);
-                sceneTemplate.PrepareForPool();
+                // Preserve collider/component baselines for emergency clones.
                 sceneTemplate.gameObject.SetActive(false);
             }
             addressableFactory = GetComponent<AddressableEnemyFactory>() ??
                 gameObject.AddComponent<AddressableEnemyFactory>();
-            addressableFactory.Configure(contentCatalog.EnemyArchetypes, 4, 64);
+            addressableFactory.Configure(contentCatalog.EnemyArchetypes, 4, 64,
+                safeFallbackTemplate: sceneTemplate);
             pooledFactory = addressableFactory.Pool;
             factory = addressableFactory;
             return;
