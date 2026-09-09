@@ -212,6 +212,138 @@ public sealed class RunSnapshotRuntimeAdapter : MonoBehaviour
         return true;
     }
 
+    /// <summary>
+    /// Version 1 only stored combat progression. It intentionally leaves the
+    /// fresh scene's pose, inventory, mission and wave state untouched.
+    /// </summary>
+    public bool ValidateLegacyV1Snapshot(
+        RunSnapshot snapshot,
+        out string error)
+    {
+        if (!Resolve(out error) ||
+            !SnapshotValidation.TryValidate(snapshot, out error))
+        {
+            return false;
+        }
+        if (snapshot.SchemaVersion != RunSnapshot.CurrentSchemaVersion ||
+            snapshot.Weapons == null ||
+            snapshot.Weapons.Count != loadout.WeaponCount ||
+            snapshot.Upgrades == null ||
+            snapshot.UpgradeSelectionHistory == null)
+        {
+            error = "旧版快照的武器或升级结构无效。";
+            return false;
+        }
+
+        var levels = new Dictionary<string, int>(StringComparer.Ordinal);
+        foreach (UpgradeLevelSnapshot entry in snapshot.Upgrades)
+        {
+            if (entry == null || string.IsNullOrWhiteSpace(entry.UpgradeId) ||
+                entry.Level <= 0 || !levels.TryAdd(entry.UpgradeId, entry.Level))
+            {
+                error = "旧版快照的升级条目无效或重复。";
+                return false;
+            }
+        }
+        foreach (string id in snapshot.UpgradeSelectionHistory)
+        {
+            if (id == null || !levels.TryGetValue(id, out int count) || count <= 0)
+            {
+                error = "旧版快照的升级历史与等级不一致。";
+                return false;
+            }
+            levels[id] = count - 1;
+        }
+        foreach (int count in levels.Values)
+        {
+            if (count != 0)
+            {
+                error = "旧版快照的升级历史与等级不一致。";
+                return false;
+            }
+        }
+
+        if (!upgrades.TryPreviewSnapshotUpgrades(
+                snapshot.UpgradeSelectionHistory,
+                out RunUpgradeState restored,
+                out float maxHealth,
+                out float maxArmor,
+                out error))
+        {
+            return false;
+        }
+        if (!Finite(snapshot.Health) || !Finite(snapshot.Armor) ||
+            snapshot.Health <= 0f || snapshot.Health > maxHealth ||
+            snapshot.Armor < 0f || snapshot.Armor > maxArmor)
+        {
+            error = "旧版快照的生命或护甲超出升级后的有效范围。";
+            return false;
+        }
+
+        var weapons = new Dictionary<string, WeaponController>(
+            StringComparer.Ordinal);
+        for (int index = 0; index < loadout.WeaponCount; index++)
+        {
+            WeaponController weapon = loadout.GetWeapon(index);
+            if (weapon == null || string.IsNullOrWhiteSpace(weapon.StableId) ||
+                !weapons.TryAdd(weapon.StableId, weapon))
+            {
+                error = "当前武器缺少唯一稳定 ID。";
+                return false;
+            }
+        }
+        if (snapshot.CurrentWeaponId == null ||
+            !weapons.ContainsKey(snapshot.CurrentWeaponId))
+        {
+            error = "旧版快照的当前武器 ID 不存在。";
+            return false;
+        }
+        foreach (WeaponAmmoSnapshot entry in snapshot.Weapons)
+        {
+            if (entry == null || entry.WeaponId == null ||
+                !weapons.Remove(entry.WeaponId, out WeaponController weapon) ||
+                entry.Magazine < 0 || entry.Magazine > Mathf.Max(
+                    1,
+                    Mathf.RoundToInt(
+                        weapon.BaseMagazineCapacity *
+                        restored.WeaponModifiers.MagazineCapacityMultiplier)) ||
+                entry.Reserve < 0 ||
+                entry.Reserve > weapon.BaseMaximumReserveAmmo)
+            {
+                error = "旧版快照的弹药数量越界或武器 ID 无效、重复。";
+                return false;
+            }
+        }
+        error = string.Empty;
+        return true;
+    }
+
+    public bool TryRestoreLegacyV1Snapshot(
+        RunSnapshot snapshot,
+        out string error)
+    {
+        if (!ValidateLegacyV1Snapshot(snapshot, out error)) return false;
+
+        upgrades.RestoreSnapshotUpgrades(
+            snapshot.Seed,
+            snapshot.UpgradeSelectionHistory);
+        int equippedIndex = 0;
+        for (int index = 0; index < loadout.WeaponCount; index++)
+        {
+            WeaponController weapon = loadout.GetWeapon(index);
+            weapon.PrepareSnapshotState(stats);
+            WeaponAmmoSnapshot ammo = snapshot.Weapons.Find(
+                value => value.WeaponId == weapon.StableId);
+            weapon.TryRestoreAmmo(ammo.Magazine, ammo.Reserve);
+            if (weapon.StableId == snapshot.CurrentWeaponId)
+                equippedIndex = index;
+        }
+        loadout.RestoreEquippedWeapon(equippedIndex);
+        health.TryRestoreSnapshotVitals(snapshot.Health, snapshot.Armor);
+        error = string.Empty;
+        return true;
+    }
+
     private void CaptureInventory(RunSnapshot snapshot)
     {
         PlayerInventorySnapshot runtime = inventory.CaptureSnapshot();

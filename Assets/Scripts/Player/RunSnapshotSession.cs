@@ -9,6 +9,8 @@ public static class RunSnapshotSession
     private static RunSnapshot pending;
     private static RunSnapshot pendingWorld;
     private static int? newSeed;
+    private static string pendingLoadNotice;
+    private static int pendingOriginalSchemaVersion;
     public static string LastMessage { get; private set; } = "新战局已开始；按 ESC 打开暂停与存档菜单。";
     public static string DefaultPath => Path.Combine(Application.persistentDataPath, "run-snapshot.json");
 
@@ -18,6 +20,8 @@ public static class RunSnapshotSession
         pending = null;
         pendingWorld = null;
         newSeed = null;
+        pendingLoadNotice = null;
+        pendingOriginalSchemaVersion = 0;
         LastMessage = "新战局已开始；按 ESC 打开暂停与存档菜单。";
     }
 
@@ -46,9 +50,23 @@ public static class RunSnapshotSession
             LastMessage = "新战局已开始，已有存档未删除。";
             return true;
         }
-        bool restored = adapter.TryRestore(snapshot, out error);
-        pendingWorld = restored ? snapshot : null;
-        LastMessage = restored ? "正在恢复保存时的波次与任务……" : "读取失败：" + error;
+        bool legacy = pendingOriginalSchemaVersion > 0 &&
+                      pendingOriginalSchemaVersion <
+                      RunSnapshot.CurrentSchemaVersion;
+        bool restored = legacy
+            ? adapter.TryRestoreLegacyV1Snapshot(snapshot, out error)
+            : adapter.TryRestore(snapshot, out error);
+        pendingWorld = restored && !legacy ? snapshot : null;
+        pendingOriginalSchemaVersion = 0;
+        LastMessage = restored
+            ? FormatLoadMessage(legacy
+                ? "读取成功：已恢复旧版玩家状态，任务和波次从当前版本起点开始。"
+                : "正在恢复保存时的波次与任务……")
+            : "读取失败：" + error;
+        if (legacy || !restored)
+        {
+            pendingLoadNotice = null;
+        }
         return restored;
     }
 
@@ -207,7 +225,9 @@ public static class RunSnapshotSession
         if (restored)
         {
             pendingWorld = null;
-            LastMessage = "读取成功：已恢复保存时的玩家、背包、波次、敌人与任务状态。";
+            LastMessage = FormatLoadMessage(
+                "读取成功：已恢复保存时的玩家、背包、波次、敌人与任务状态。");
+            pendingLoadNotice = null;
         }
         else
         {
@@ -218,11 +238,16 @@ public static class RunSnapshotSession
 
     public static bool HasPendingWorldRestore => pendingWorld != null;
 
-    public static void ReloadSnapshot(RunSnapshot snapshot)
+    public static void ReloadSnapshot(
+        RunSnapshot snapshot,
+        string loadNotice = null,
+        int originalSchemaVersion = 0)
     {
         pending = snapshot ?? throw new ArgumentNullException(nameof(snapshot));
         pendingWorld = null;
         newSeed = null;
+        pendingLoadNotice = loadNotice;
+        pendingOriginalSchemaVersion = originalSchemaVersion;
         Time.timeScale = 1f;
         SceneManager.LoadSceneAsync(SceneManager.GetActiveScene().path, LoadSceneMode.Single);
     }
@@ -232,8 +257,17 @@ public static class RunSnapshotSession
         pending = null;
         pendingWorld = null;
         newSeed = Guid.NewGuid().GetHashCode();
+        pendingLoadNotice = null;
+        pendingOriginalSchemaVersion = 0;
         LastMessage = "新战局已开始，原存档未删除。";
         Time.timeScale = 1f;
         SceneManager.LoadSceneAsync(SceneManager.GetActiveScene().path, LoadSceneMode.Single);
+    }
+
+    private static string FormatLoadMessage(string detail)
+    {
+        return string.IsNullOrWhiteSpace(pendingLoadNotice)
+            ? detail
+            : pendingLoadNotice + " " + detail;
     }
 }

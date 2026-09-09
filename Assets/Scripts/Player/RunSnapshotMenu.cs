@@ -10,9 +10,13 @@ public sealed class RunSnapshotMenu : MonoBehaviour
     private RunSnapshotRuntimeAdapter adapter;
     private bool busy;
     private string message;
+    private bool requiresRecoveryChoice;
+    private string preservedCorruptFilePath;
 
     public bool IsBusy => busy;
     public string StatusMessage => message;
+    public bool RequiresRecoveryChoice => requiresRecoveryChoice;
+    public string PreservedCorruptFilePath => preservedCorruptFilePath;
 
     private void Awake()
     {
@@ -44,19 +48,36 @@ public sealed class RunSnapshotMenu : MonoBehaviour
         var result = new RunSnapshotStore(path).Load();
         if (!result.Success)
         {
+            preservedCorruptFilePath = result.CorruptFilePath;
+            requiresRecoveryChoice = result.Status == SnapshotStatus.InvalidData;
             message = "未读取存档：" + result.Message;
+            if (requiresRecoveryChoice)
+            {
+                message += string.IsNullOrEmpty(preservedCorruptFilePath)
+                    ? " 存档未被覆盖，请选择再次尝试读取或开始新战局。"
+                    : " 损坏文件已单独保留，请选择再次尝试读取或开始新战局。";
+            }
             return false;
         }
 
-        if (!adapter.ValidateSnapshot(result.Snapshot, out string error))
+        string error;
+        bool validForRuntime = result.OriginalSchemaVersion == 1
+            ? adapter.ValidateLegacyV1Snapshot(result.Snapshot, out error)
+            : adapter.ValidateSnapshot(result.Snapshot, out error);
+        if (!validForRuntime)
         {
             message = "存档无法恢复：" + error;
             return false;
         }
 
+        requiresRecoveryChoice = false;
+        preservedCorruptFilePath = result.CorruptFilePath;
         busy = true;
         PrepareSceneTransition();
-        RunSnapshotSession.ReloadSnapshot(result.Snapshot);
+        RunSnapshotSession.ReloadSnapshot(
+            result.Snapshot,
+            result.Message,
+            result.OriginalSchemaVersion);
         return true;
     }
 
@@ -64,6 +85,7 @@ public sealed class RunSnapshotMenu : MonoBehaviour
     {
         if (busy) return false;
 
+        requiresRecoveryChoice = false;
         busy = true;
         PrepareSceneTransition();
         RunSnapshotSession.NewGame();

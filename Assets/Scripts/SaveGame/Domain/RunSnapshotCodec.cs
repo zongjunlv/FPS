@@ -1,9 +1,7 @@
 using System;
 using System.IO;
-using System.Runtime.Serialization;
 using System.Runtime.Serialization.Json;
 using System.Text;
-using System.Xml;
 
 namespace FPS.SaveGame
 {
@@ -31,27 +29,17 @@ namespace FPS.SaveGame
                 error = "存档为空或超出大小限制。";
                 return false;
             }
-            try
-            {
-                using (var stream = new MemoryStream(Encoding.UTF8.GetBytes(json)))
-                {
-                    var loaded = new DataContractJsonSerializer(typeof(RunSnapshot)).ReadObject(stream) as RunSnapshot;
-                    if (!SnapshotValidation.TryValidate(loaded, out error)) return false;
-                    if (!string.Equals(loaded.Checksum, SnapshotChecksum.Compute(loaded), StringComparison.Ordinal))
-                    {
-                        error = "存档校验失败，内容可能已经损坏。";
-                        return false;
-                    }
-                    snapshot = loaded;
-                    return true;
-                }
-            }
-            catch (Exception exception) when (exception is SerializationException || exception is XmlException
-                || exception is ArgumentException || exception is FormatException || exception is OverflowException)
-            {
-                error = "无法解析存档：" + exception.Message;
-                return false;
-            }
+            SnapshotDecodeResult result = SnapshotMigration.Decode(json);
+            snapshot = result.Snapshot;
+            error = result.Error;
+            return result.Success;
+        }
+
+        public static SnapshotDecodeResult Decode(string json)
+        {
+            if (string.IsNullOrWhiteSpace(json) || Encoding.UTF8.GetByteCount(json) > MaximumFileBytes)
+                return SnapshotDecodeResult.Failed("存档为空或超出大小限制。");
+            return SnapshotMigration.Decode(json);
         }
     }
 }

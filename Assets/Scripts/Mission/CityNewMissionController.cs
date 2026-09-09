@@ -715,7 +715,9 @@ public sealed class CityNewMissionController : MonoBehaviour
 
         if (GUI.Button(
                 new Rect(buttonX, buttonY + buttonStep * 2f, 260f, 46f),
-                "读取战局",
+                snapshotMenu != null && snapshotMenu.RequiresRecoveryChoice
+                    ? "再次尝试读取"
+                    : "读取战局",
                 buttonStyle))
         {
             LoadRunSnapshot();
@@ -723,7 +725,9 @@ public sealed class CityNewMissionController : MonoBehaviour
 
         if (GUI.Button(
                 new Rect(buttonX, buttonY + buttonStep * 3f, 260f, 46f),
-                "开始新战局（保留存档）",
+                snapshotMenu != null && snapshotMenu.RequiresRecoveryChoice
+                    ? "开始新战局（保留损坏文件）"
+                    : "开始新战局（保留存档）",
                 buttonStyle))
         {
             StartNewRun();
