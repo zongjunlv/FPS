@@ -2,6 +2,7 @@
   "name": "FPS.Composition",
   "rootNamespace": "FPS",
   "references": [
+    "FPS.SaveGame",
     "FPS.Core",
     "FPS.Combat",
     "FPS.GameplayEffects",

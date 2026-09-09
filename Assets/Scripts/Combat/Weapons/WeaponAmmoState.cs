@@ -50,6 +50,20 @@ public sealed class WeaponAmmoState
         return true;
     }
 
+    public bool TryRestore(int magazine, int reserve)
+    {
+        if (magazine < 0 || magazine > MagazineCapacity ||
+            reserve < 0 || reserve > MaximumReserveAmmo)
+        {
+            return false;
+        }
+
+        CancelReload();
+        CurrentAmmo = magazine;
+        ReserveAmmo = reserve;
+        return true;
+    }
+
     public bool SetMagazineCapacity(int magazineCapacity)
     {
         int nextCapacity = Math.Max(1, magazineCapacity);

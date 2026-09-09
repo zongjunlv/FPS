@@ -117,6 +117,21 @@ public class WeaponLoadoutController : MonoBehaviour
         return TrySelect(targetIndex);
     }
 
+    public bool RestoreEquippedWeapon(int index)
+    {
+        if (index < 0 || index >= weapons.Length) return false;
+        switchState = new WeaponSwitchState(weapons.Length, index);
+        displayedWeaponIndex = index;
+        for (int i = 0; i < weapons.Length; i++)
+        {
+            weapons[i].CancelReload();
+            weapons[i].gameObject.SetActive(i == index);
+        }
+        WeaponPresentationChanged?.Invoke(CurrentWeapon);
+        EquippedWeaponChanged?.Invoke(CurrentWeapon);
+        return true;
+    }
+
     public bool Interrupt()
     {
         int currentIndex = switchState.CurrentIndex;

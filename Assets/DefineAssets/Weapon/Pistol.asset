@@ -13,6 +13,7 @@ MonoBehaviour:
   m_Name: Pistol
   m_EditorClassIdentifier: Assembly-CSharp::WeaponDefinition
   WeaponName: Pistol
+  stableId: weapon.pistol
   MagazineCapacity: 12
   InitialReserveAmmo: 60
   MaximumReserveAmmo: 120

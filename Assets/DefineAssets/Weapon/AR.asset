@@ -13,6 +13,7 @@ MonoBehaviour:
   m_Name: AR
   m_EditorClassIdentifier: Assembly-CSharp::WeaponDefinition
   WeaponName: AR
+  stableId: weapon.rifle
   MagazineCapacity: 50
   InitialReserveAmmo: 150
   MaximumReserveAmmo: 300

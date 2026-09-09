@@ -9,6 +9,7 @@
     "FPS.Inventory",
     "FPS.UI",
     "FPS.Composition",
+    "FPS.SaveGame",
     "Unity.InputSystem",
     "Unity.InputSystem.TestFramework"
   ],

@@ -113,8 +113,13 @@ public sealed class CityNewWaveBootstrap : MonoBehaviour
             factory,
             resolver,
             playerObject.transform);
-        ConfigureLootRewards(playerObject, director);
         ConfigureUpgrades(playerObject);
+        if (!RunSnapshotSession.InitializePlayer(playerObject, out string restoreError))
+        {
+            FailConfiguration(restoreError);
+            yield break;
+        }
+        ConfigureLootRewards(playerObject, director);
 
         if (!director.StartRun())
         {

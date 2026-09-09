@@ -9,7 +9,7 @@ public sealed class PlayerUpgradeController : MonoBehaviour
     [SerializeField] private int runSeed = 18018;
     [SerializeField] private List<UpgradeDefinition> definitions = new();
 
-    private readonly RunUpgradeState state = new();
+    private RunUpgradeState state = new();
     private PlayerRunProgression progression;
     private PlayerRuntimeCombatStats combatStats;
     private Health health;
@@ -188,6 +188,72 @@ public sealed class PlayerUpgradeController : MonoBehaviour
     public int GetUpgradeLevel(string stableId)
     {
         return state.GetLevel(stableId);
+    }
+
+    public bool TryPreviewSnapshotUpgrades(IReadOnlyList<string> history,
+        out RunUpgradeState restoredState, out float maximumHealth,
+        out float maximumArmor, out string error)
+    {
+        restoredState = new RunUpgradeState();
+        maximumHealth = gameplayEffectBaselineCaptured ? baseMaximumHealth : health.MaxHealth;
+        maximumArmor = survivalBaselineCaptured ? baseMaximumArmor : health.MaxArmor;
+        var effects = new GameplayEffectRuntime(gameObject, "Snapshot Validation");
+        var lookup = new Dictionary<string, UpgradeDefinition>(StringComparer.Ordinal);
+        foreach (UpgradeDefinition definition in definitions)
+        {
+            if (definition != null && !string.IsNullOrEmpty(definition.StableId))
+                lookup.TryAdd(definition.StableId, definition);
+        }
+        foreach (string id in history)
+        {
+            if (id == null || !lookup.TryGetValue(id, out UpgradeDefinition definition) ||
+                !restoredState.TryApply(definition))
+            {
+                error = "升级 ID 不存在或等级超过上限：" + id;
+                effects.Clear();
+                return false;
+            }
+            if (definition.GameplayEffect != null &&
+                definition.GameplayEffect.DurationPolicy == GameplayEffectDurationPolicy.Persistent)
+                effects.Apply(definition.GameplayEffect,
+                    new GameplayEffectContext(id, definition, gameObject));
+        }
+        maximumHealth = effects.Evaluate(GameplayAttributeId.MaximumHealth, maximumHealth);
+        maximumArmor *= restoredState.SurvivalModifiers.MaximumArmorMultiplier;
+        effects.Clear();
+        error = string.Empty;
+        return true;
+    }
+
+    public void RestoreSnapshotUpgrades(int seed, IReadOnlyList<string> history)
+    {
+        // Call only after the entire snapshot was validated, before wave startup.
+        CaptureSurvivalBaseline();
+        CaptureGameplayEffectBaseline();
+        float baselineHealth = baseMaximumHealth;
+        float baselineArmor = baseMaximumArmor;
+        StopAllCoroutines();
+        pendingChoices = 0;
+        waitingForHud = false;
+        CloseChoice();
+        ClearGameplayEffects();
+        health.Initialize(baselineHealth, baselineArmor);
+        state = new RunUpgradeState();
+        runSeed = seed;
+        generator = new UpgradeCandidateGenerator(seed);
+        runEnded = false;
+        foreach (string id in history)
+        {
+            UpgradeDefinition definition = definitions.Find(value => value != null && value.StableId == id);
+            state.TryApply(definition);
+            if (definition.GameplayEffect != null &&
+                definition.GameplayEffect.DurationPolicy == GameplayEffectDurationPolicy.Persistent)
+                ApplyGameplayEffect(definition);
+        }
+        combatStats?.SetWeaponModifiers(state.WeaponModifiers);
+        combatStats?.SetSurvivalModifiers(state.SurvivalModifiers);
+        health.SetMaximumArmor(baselineArmor * state.SurvivalModifiers.MaximumArmorMultiplier);
+        // Instant healing/armor cards are historical selections, not new rewards.
     }
 
     private void HandleLevelsGained(int count)

@@ -3,6 +3,7 @@
   "rootNamespace": "FPS.Tests.Architecture",
   "references": [
     "FPS.Core",
+    "FPS.SaveGame",
     "FPS.Combat",
     "FPS.GameplayEffects",
     "FPS.AI",

@@ -45,6 +45,7 @@ namespace FPS.Tests.Architecture
                         "FPS.AI",
                         "FPS.Inventory"
                     },
+                    ["FPS.SaveGame"] = Array.Empty<string>(),
                     ["FPS.Composition"] = new[]
                     {
                         "FPS.Core",
@@ -52,6 +53,7 @@ namespace FPS.Tests.Architecture
                         "FPS.GameplayEffects",
                         "FPS.AI",
                         "FPS.Inventory",
+                        "FPS.SaveGame",
                         "FPS.UI"
                     }
                 };
@@ -107,6 +109,7 @@ namespace FPS.Tests.Architecture
             AssertAssembly<Health>("FPS.Combat");
             AssertAssembly<EnemyAwarenessStateMachine>("FPS.AI");
             AssertAssembly<InventoryState>("FPS.Inventory");
+            AssertAssembly<FPS.SaveGame.RunSnapshot>("FPS.SaveGame");
             AssertAssembly<SafeAreaFitter>("FPS.UI");
             AssertAssembly(
                 typeof(GameplayEffectsModule),

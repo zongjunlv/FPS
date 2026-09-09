@@ -11,6 +11,8 @@ public enum WeaponAmmoType
 [CreateAssetMenu(fileName = "Weapon", menuName = "Scriptable Objects/Weapon")]
 public class WeaponDefinition : ScriptableObject
 {
+    [SerializeField] private string stableId;
+    public string StableId => stableId;
     public String WeaponName;
     [FormerlySerializedAs("MagazineCapcity")]
     [Min(1)] public int MagazineCapacity = 30;

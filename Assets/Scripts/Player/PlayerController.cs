@@ -225,7 +225,9 @@ public class PlayerController : MonoBehaviour
 
     private void HandlePauseInput()
     {
-        if (input.PausePressed)
+        if (input.PausePressed &&
+            (gameplayLocks == null ||
+             gameplayLocks.LastModalTransitionFrame != Time.frameCount))
         {
             SetPaused(!IsPaused);
         }

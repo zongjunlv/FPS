@@ -98,6 +98,19 @@ public sealed class Health : MonoBehaviour, IDamageable,
             value => CurrentHealth = value);
     }
 
+    public bool TryRestoreSnapshotVitals(float health, float armor)
+    {
+        if (!IsFinite(health) || !IsFinite(armor) || health <= 0f ||
+            health > MaxHealth || armor < 0f || armor > MaxArmor) return false;
+        CurrentHealth = health;
+        CurrentArmor = armor;
+        IsDead = false;
+        HasLastAppliedDamage = false;
+        LastAppliedDamage = default;
+        VitalsChanged?.Invoke();
+        return true;
+    }
+
     public float RestoreArmor(float amount)
     {
         return RestoreValue(

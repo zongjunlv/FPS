@@ -1,0 +1,7 @@
+{
+  "name": "FPS.SaveGame",
+  "rootNamespace": "FPS.SaveGame",
+  "references": [],
+  "autoReferenced": true,
+  "noEngineReferences": true
+}

@@ -23,6 +23,9 @@ public class WeaponController : MonoBehaviour
     public event Action<ShotResult> ShotResolved;
 
     public bool IsAutomatic => weapon.IsAutomatic;
+    public string StableId => weapon != null ? weapon.StableId : null;
+    public int BaseMagazineCapacity => weapon.MagazineCapacity;
+    public int BaseMaximumReserveAmmo => Mathf.Max(weapon.InitialReserveAmmo, weapon.MaximumReserveAmmo);
     public string WeaponName => weapon.WeaponName;
     public string FireModeName => weapon.IsAutomatic ? "AUTO" : "SEMI";
     public float VerticalRecoil => weapon.VerticalRecoil;
@@ -91,7 +94,7 @@ public class WeaponController : MonoBehaviour
 
     private void Awake()
     {
-        ammoState = new WeaponAmmoState(
+        ammoState ??= new WeaponAmmoState(
             weapon.MagazineCapacity,
             weapon.InitialReserveAmmo,
             Mathf.Max(
@@ -144,6 +147,7 @@ public class WeaponController : MonoBehaviour
             weaponAnimator.cullingMode =
                 AnimatorCullingMode.AlwaysAnimate;
         }
+        RefreshRuntimeWeaponState();
     }
 
     // Update is called once per frame
@@ -289,6 +293,23 @@ public class WeaponController : MonoBehaviour
         }
 
         return accepted;
+    }
+
+    public void PrepareSnapshotState(PlayerRuntimeCombatStats stats)
+    {
+        // Inactive, never-equipped weapons have not necessarily received Awake.
+        ammoState ??= new WeaponAmmoState(weapon.MagazineCapacity,
+            weapon.InitialReserveAmmo, weapon.MaximumReserveAmmo);
+        SetRuntimeCombatStats(stats);
+    }
+
+    public bool TryRestoreAmmo(int magazine, int reserve)
+    {
+        CancelReload();
+        if (!ammoState.TryRestore(magazine, reserve)) return false;
+        nextFireTime = 0f;
+        AmmoChanged?.Invoke();
+        return true;
     }
 
     public int AddMagazineAmmo(int amount)

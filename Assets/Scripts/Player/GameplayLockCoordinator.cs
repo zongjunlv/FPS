@@ -26,6 +26,7 @@ public sealed class GameplayLockCoordinator : MonoBehaviour
     public GameplayLockState State => state;
     public bool IsLocked => state.IsLocked;
     public GameplayLockReason? TopReason => state.TopReason;
+    public int LastModalTransitionFrame { get; private set; } = -1;
 
     public bool IsTopmost(GameplayLockReason reason)
     {
@@ -116,7 +117,7 @@ public sealed class GameplayLockCoordinator : MonoBehaviour
                     combat.SuspendGameplayInput(preserveWeaponState);
                 }
 
-                ModalStateChanged?.Invoke(state.TopReason);
+                NotifyModalStateChanged();
                 return;
             }
 
@@ -133,18 +134,24 @@ public sealed class GameplayLockCoordinator : MonoBehaviour
             Cursor.lockState = CursorLockMode.None;
             Cursor.visible = true;
             LockStateChanged?.Invoke(true);
-            ModalStateChanged?.Invoke(state.TopReason);
+            NotifyModalStateChanged();
             return;
         }
 
         if (!lockApplied)
         {
-            ModalStateChanged?.Invoke(state.TopReason);
+            NotifyModalStateChanged();
             return;
         }
 
         RestoreRuntimeState();
         LockStateChanged?.Invoke(false);
+        NotifyModalStateChanged();
+    }
+
+    private void NotifyModalStateChanged()
+    {
+        LastModalTransitionFrame = Time.frameCount;
         ModalStateChanged?.Invoke(state.TopReason);
     }
 

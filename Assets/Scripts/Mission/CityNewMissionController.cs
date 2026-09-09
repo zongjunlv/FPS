@@ -31,6 +31,7 @@ public sealed class CityNewMissionController : MonoBehaviour
     private PlayerLootRewardController lootRewards;
     private UnifiedGameHud hud;
     private MissionOutcomeView outcomeView;
+    private RunSnapshotMenu snapshotMenu;
 
     public TerminalInteractable Terminal { get; private set; }
     public Health TargetHealth { get; private set; }
@@ -53,6 +54,7 @@ public sealed class CityNewMissionController : MonoBehaviour
         progression = GetComponent<PlayerRunProgression>();
         upgrades = GetComponent<PlayerUpgradeController>();
         lootRewards = GetComponent<PlayerLootRewardController>();
+        snapshotMenu = GetComponent<RunSnapshotMenu>();
         profile = Resources.Load<PlayerHudVisualProfile>(
             "PlayerHudVisualProfile");
     }
@@ -201,6 +203,26 @@ public sealed class CityNewMissionController : MonoBehaviour
 
         player.SetPaused(false);
         return true;
+    }
+
+    public bool SaveRunSnapshot()
+    {
+        snapshotMenu ??= GetComponent<RunSnapshotMenu>();
+        return snapshotMenu != null &&
+               snapshotMenu.SaveTo(RunSnapshotSession.DefaultPath);
+    }
+
+    public bool LoadRunSnapshot()
+    {
+        snapshotMenu ??= GetComponent<RunSnapshotMenu>();
+        return snapshotMenu != null &&
+               snapshotMenu.LoadFrom(RunSnapshotSession.DefaultPath);
+    }
+
+    public bool StartNewRun()
+    {
+        snapshotMenu ??= GetComponent<RunSnapshotMenu>();
+        return snapshotMenu != null && snapshotMenu.StartNewGame();
     }
 
     public bool RestartLevel()
@@ -624,16 +646,18 @@ public sealed class CityNewMissionController : MonoBehaviour
     {
         GUI.depth = -90;
         DrawScreenDim();
-        Rect panel = CenterPanel(440f, 360f);
+        Rect panel = CenterPanel(480f, 560f);
         DrawPanel(panel);
         GUI.Label(
-            new Rect(panel.x, panel.y + 35f, panel.width, 58f),
-            "PAUSED",
+            new Rect(panel.x, panel.y + 24f, panel.width, 58f),
+            "暂停菜单",
             resultTitleStyle);
         float buttonX = panel.center.x - 130f;
+        float buttonY = panel.y + 96f;
+        const float buttonStep = 62f;
 
         if (GUI.Button(
-                new Rect(buttonX, panel.y + 125f, 260f, 48f),
+                new Rect(buttonX, buttonY, 260f, 46f),
                 "继续游戏",
                 buttonStyle))
         {
@@ -641,20 +665,49 @@ public sealed class CityNewMissionController : MonoBehaviour
         }
 
         if (GUI.Button(
-                new Rect(buttonX, panel.y + 190f, 260f, 48f),
-                "重新开始",
+                new Rect(buttonX, buttonY + buttonStep, 260f, 46f),
+                "保存当前战局",
                 buttonStyle))
         {
-            RestartLevel();
+            SaveRunSnapshot();
         }
 
         if (GUI.Button(
-                new Rect(buttonX, panel.y + 255f, 260f, 48f),
+                new Rect(buttonX, buttonY + buttonStep * 2f, 260f, 46f),
+                "读取战局",
+                buttonStyle))
+        {
+            LoadRunSnapshot();
+        }
+
+        if (GUI.Button(
+                new Rect(buttonX, buttonY + buttonStep * 3f, 260f, 46f),
+                "开始新战局（保留存档）",
+                buttonStyle))
+        {
+            StartNewRun();
+        }
+
+        if (GUI.Button(
+                new Rect(buttonX, buttonY + buttonStep * 4f, 260f, 46f),
                 "退出游戏",
                 buttonStyle))
         {
             RequestQuit();
         }
+
+        snapshotMenu ??= GetComponent<RunSnapshotMenu>();
+        string status = snapshotMenu != null
+            ? snapshotMenu.StatusMessage
+            : "存档系统尚未就绪。";
+        GUI.Label(
+            new Rect(panel.x + 35f, panel.y + 416f, panel.width - 70f, 76f),
+            status,
+            objectiveStyle);
+        GUI.Label(
+            new Rect(panel.x + 35f, panel.y + 515f, panel.width - 70f, 24f),
+            "ESC  返回游戏",
+            headerStyle);
     }
 
     private static void DrawScreenDim()
