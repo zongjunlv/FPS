@@ -104,6 +104,107 @@ namespace FPS.GameplayEffects
         public UnityEngine.Object Target { get; }
     }
 
+    public sealed class GameplayEffectContextSnapshot
+    {
+        public GameplayEffectContextSnapshot(
+            string sourceId,
+            string sourceKey)
+        {
+            SourceId = sourceId ?? string.Empty;
+            SourceKey = sourceKey ?? string.Empty;
+        }
+
+        public string SourceId { get; }
+        public string SourceKey { get; }
+    }
+
+    public sealed class GameplayEffectTimedStackSnapshot
+    {
+        public GameplayEffectTimedStackSnapshot(
+            GameplayEffectContextSnapshot context,
+            float remainingDuration,
+            long order)
+        {
+            Context = context;
+            RemainingDuration = remainingDuration;
+            Order = order;
+        }
+
+        public GameplayEffectContextSnapshot Context { get; }
+        public float RemainingDuration { get; }
+        public long Order { get; }
+    }
+
+    public sealed class GameplayEffectInstanceSnapshot
+    {
+        private readonly IReadOnlyList<GameplayEffectTimedStackSnapshot>
+            timedStacks;
+
+        public GameplayEffectInstanceSnapshot(
+            string definitionId,
+            GameplayEffectContextSnapshot context,
+            float tickRemaining,
+            IReadOnlyList<GameplayEffectTimedStackSnapshot> timedStacks)
+        {
+            DefinitionId = definitionId;
+            Context = context;
+            TickRemaining = tickRemaining;
+            this.timedStacks = Copy(timedStacks);
+        }
+
+        public string DefinitionId { get; }
+        public GameplayEffectContextSnapshot Context { get; }
+        public float TickRemaining { get; }
+        public IReadOnlyList<GameplayEffectTimedStackSnapshot> TimedStacks =>
+            timedStacks;
+
+        private static IReadOnlyList<GameplayEffectTimedStackSnapshot> Copy(
+            IReadOnlyList<GameplayEffectTimedStackSnapshot> source)
+        {
+            if (source == null || source.Count == 0)
+            {
+                return Array.Empty<GameplayEffectTimedStackSnapshot>();
+            }
+
+            var copy = new GameplayEffectTimedStackSnapshot[source.Count];
+
+            for (int index = 0; index < source.Count; index++)
+            {
+                copy[index] = source[index];
+            }
+
+            return Array.AsReadOnly(copy);
+        }
+    }
+
+    public sealed class GameplayEffectRuntimeSnapshot
+    {
+        private readonly IReadOnlyList<GameplayEffectInstanceSnapshot>
+            instances;
+
+        public GameplayEffectRuntimeSnapshot(
+            IReadOnlyList<GameplayEffectInstanceSnapshot> instances)
+        {
+            if (instances == null || instances.Count == 0)
+            {
+                this.instances = Array.Empty<GameplayEffectInstanceSnapshot>();
+                return;
+            }
+
+            var copy = new GameplayEffectInstanceSnapshot[instances.Count];
+
+            for (int index = 0; index < instances.Count; index++)
+            {
+                copy[index] = instances[index];
+            }
+
+            this.instances = Array.AsReadOnly(copy);
+        }
+
+        public IReadOnlyList<GameplayEffectInstanceSnapshot> Instances =>
+            instances;
+    }
+
     public sealed class GameplayEffectInstance
     {
         private sealed class TimedStack
@@ -184,6 +285,36 @@ namespace FPS.GameplayEffects
                 context,
                 Definition.Duration,
                 order));
+        }
+
+        internal void RestoreTimedStack(
+            GameplayEffectContext context,
+            float remainingDuration,
+            long order)
+        {
+            timedStacks.Add(new TimedStack(
+                context,
+                remainingDuration,
+                order));
+        }
+
+        internal GameplayEffectTimedStackSnapshot[] CaptureTimedStacks(
+            Func<GameplayEffectContext, GameplayEffectContextSnapshot>
+                contextEncoder)
+        {
+            var snapshots =
+                new GameplayEffectTimedStackSnapshot[timedStacks.Count];
+
+            for (int index = 0; index < timedStacks.Count; index++)
+            {
+                TimedStack stack = timedStacks[index];
+                snapshots[index] = new GameplayEffectTimedStackSnapshot(
+                    contextEncoder(stack.Context),
+                    stack.RemainingDuration,
+                    stack.Order);
+            }
+
+            return snapshots;
         }
 
         internal bool RefreshAllTimedStacks()
@@ -297,6 +428,271 @@ namespace FPS.GameplayEffects
         public string DebugChannel { get; }
         public IReadOnlyDictionary<GameplayAttributeId, float>
             DebugBaseValues => debugBaseValues;
+
+        public bool TryCaptureSnapshot(
+            Func<UnityEngine.Object, string> sourceEncoder,
+            out GameplayEffectRuntimeSnapshot snapshot,
+            out string error)
+        {
+            snapshot = null;
+            error = string.Empty;
+
+            try
+            {
+                var instances =
+                    new GameplayEffectInstanceSnapshot[active.Count];
+
+                for (int index = 0; index < active.Count; index++)
+                {
+                    GameplayEffectInstance instance = active[index];
+                    GameplayEffectDefinition definition = instance?.Definition;
+
+                    if (definition == null ||
+                        string.IsNullOrWhiteSpace(definition.StableId))
+                    {
+                        error = $"Active gameplay effect {index} has no stable definition ID.";
+                        return false;
+                    }
+
+                    GameplayEffectContextSnapshot context = EncodeContext(
+                        instance.Context,
+                        sourceEncoder);
+                    GameplayEffectTimedStackSnapshot[] stacks =
+                        instance.CaptureTimedStacks(value => EncodeContext(
+                            value,
+                            sourceEncoder));
+                    instances[index] = new GameplayEffectInstanceSnapshot(
+                        definition.StableId,
+                        context,
+                        definition.DurationPolicy ==
+                            GameplayEffectDurationPolicy.Timed
+                            ? instance.TickRemaining
+                            : 0f,
+                        stacks);
+                }
+
+                snapshot = new GameplayEffectRuntimeSnapshot(instances);
+                return true;
+            }
+            catch (Exception exception)
+            {
+                error = $"Gameplay effect snapshot capture failed: {exception.Message}";
+                snapshot = null;
+                return false;
+            }
+        }
+
+        public bool TryRestoreSnapshot(
+            GameplayEffectRuntimeSnapshot snapshot,
+            Func<string, GameplayEffectDefinition> definitionResolver,
+            Func<string, UnityEngine.Object> sourceResolver,
+            out string error)
+        {
+            error = string.Empty;
+
+            if (snapshot == null)
+            {
+                error = "Gameplay effect snapshot is null.";
+                return false;
+            }
+
+            if (definitionResolver == null)
+            {
+                error = "A gameplay effect definition resolver is required.";
+                return false;
+            }
+
+            IReadOnlyList<GameplayEffectInstanceSnapshot> savedInstances =
+                snapshot.Instances;
+            var prepared = new PreparedInstance[savedInstances.Count];
+            var definitions =
+                new Dictionary<string, GameplayEffectDefinition>(
+                    StringComparer.Ordinal);
+            var sources = new Dictionary<string, UnityEngine.Object>(
+                StringComparer.Ordinal);
+            var timedDefinitions = new HashSet<string>(StringComparer.Ordinal);
+            var stackOrders = new HashSet<long>();
+            long maximumOrder = 0;
+
+            try
+            {
+                for (int index = 0; index < savedInstances.Count; index++)
+                {
+                    GameplayEffectInstanceSnapshot saved = savedInstances[index];
+
+                    if (saved == null ||
+                        string.IsNullOrWhiteSpace(saved.DefinitionId))
+                    {
+                        error = $"Gameplay effect snapshot entry {index} is invalid.";
+                        return false;
+                    }
+
+                    string definitionId = saved.DefinitionId.Trim();
+
+                    if (!definitions.TryGetValue(
+                            definitionId,
+                            out GameplayEffectDefinition definition))
+                    {
+                        definition = definitionResolver(definitionId);
+
+                        if (definition == null ||
+                            !string.Equals(
+                                definition.StableId,
+                                definitionId,
+                                StringComparison.Ordinal))
+                        {
+                            error = $"Gameplay effect definition '{definitionId}' could not be resolved.";
+                            return false;
+                        }
+
+                        definitions.Add(definitionId, definition);
+                    }
+
+                    if (definition.DurationPolicy !=
+                            GameplayEffectDurationPolicy.Persistent &&
+                        definition.DurationPolicy !=
+                            GameplayEffectDurationPolicy.Timed)
+                    {
+                        error = $"Gameplay effect '{definitionId}' does not have a restorable duration policy.";
+                        return false;
+                    }
+
+                    if (!TryResolveContext(
+                            saved.Context,
+                            sourceResolver,
+                            sources,
+                            out GameplayEffectContext context,
+                            out error))
+                    {
+                        return false;
+                    }
+
+                    IReadOnlyList<GameplayEffectTimedStackSnapshot> savedStacks =
+                        saved.TimedStacks;
+
+                    if (definition.DurationPolicy ==
+                        GameplayEffectDurationPolicy.Persistent)
+                    {
+                        if (savedStacks.Count != 0 ||
+                            !IsFinite(saved.TickRemaining) ||
+                            Mathf.Abs(saved.TickRemaining) > Mathf.Epsilon)
+                        {
+                            error = $"Persistent gameplay effect '{definitionId}' has timed state.";
+                            return false;
+                        }
+
+                        prepared[index] = new PreparedInstance(
+                            definition,
+                            context,
+                            0f,
+                            Array.Empty<PreparedTimedStack>());
+                        continue;
+                    }
+
+                    if (!timedDefinitions.Add(definitionId))
+                    {
+                        error = $"Timed gameplay effect '{definitionId}' appears more than once.";
+                        return false;
+                    }
+
+                    if (savedStacks.Count == 0 ||
+                        savedStacks.Count > definition.MaximumStacks ||
+                        !IsFinite(saved.TickRemaining) ||
+                        saved.TickRemaining <= Mathf.Epsilon ||
+                        saved.TickRemaining >
+                            definition.TickInterval + Mathf.Epsilon)
+                    {
+                        error = $"Timed gameplay effect '{definitionId}' has invalid tick or stack state.";
+                        return false;
+                    }
+
+                    var preparedStacks =
+                        new PreparedTimedStack[savedStacks.Count];
+
+                    for (int stackIndex = 0;
+                         stackIndex < savedStacks.Count;
+                         stackIndex++)
+                    {
+                        GameplayEffectTimedStackSnapshot savedStack =
+                            savedStacks[stackIndex];
+
+                        if (savedStack == null ||
+                            !IsFinite(savedStack.RemainingDuration) ||
+                            savedStack.RemainingDuration <= Mathf.Epsilon ||
+                            savedStack.RemainingDuration >
+                                definition.Duration + Mathf.Epsilon ||
+                            savedStack.Order <= 0 ||
+                            !stackOrders.Add(savedStack.Order) ||
+                            !TryResolveContext(
+                                savedStack.Context,
+                                sourceResolver,
+                                sources,
+                                out GameplayEffectContext stackContext,
+                                out error))
+                        {
+                            if (string.IsNullOrEmpty(error))
+                            {
+                                error = $"Timed gameplay effect '{definitionId}' stack {stackIndex} is invalid.";
+                            }
+
+                            return false;
+                        }
+
+                        preparedStacks[stackIndex] = new PreparedTimedStack(
+                            stackContext,
+                            savedStack.RemainingDuration,
+                            savedStack.Order);
+                        maximumOrder = Math.Max(maximumOrder, savedStack.Order);
+                    }
+
+                    prepared[index] = new PreparedInstance(
+                        definition,
+                        context,
+                        saved.TickRemaining,
+                        preparedStacks);
+                }
+            }
+            catch (Exception exception)
+            {
+                error = $"Gameplay effect snapshot validation failed: {exception.Message}";
+                return false;
+            }
+
+            var restored = new GameplayEffectInstance[prepared.Length];
+
+            for (int index = 0; index < prepared.Length; index++)
+            {
+                PreparedInstance value = prepared[index];
+                var instance = new GameplayEffectInstance(
+                    Interlocked.Increment(ref nextInstanceId),
+                    value.Definition,
+                    value.Context);
+
+                for (int stackIndex = 0;
+                     stackIndex < value.Stacks.Length;
+                     stackIndex++)
+                {
+                    PreparedTimedStack stack = value.Stacks[stackIndex];
+                    instance.RestoreTimedStack(
+                        stack.Context,
+                        stack.RemainingDuration,
+                        stack.Order);
+                }
+
+                if (value.Definition.DurationPolicy ==
+                    GameplayEffectDurationPolicy.Timed)
+                {
+                    instance.TickRemaining = value.TickRemaining;
+                }
+
+                restored[index] = instance;
+            }
+
+            ObserveStackOrder(maximumOrder);
+            active.Clear();
+            active.AddRange(restored);
+            return true;
+        }
 
         public GameplayEffectInstance Apply(
             GameplayEffectDefinition definition,
@@ -593,6 +989,107 @@ namespace FPS.GameplayEffects
             return null;
         }
 
+        private static GameplayEffectContextSnapshot EncodeContext(
+            GameplayEffectContext context,
+            Func<UnityEngine.Object, string> sourceEncoder)
+        {
+            if (context.Source == null)
+            {
+                return new GameplayEffectContextSnapshot(
+                    context.SourceId,
+                    string.Empty);
+            }
+
+            if (sourceEncoder == null)
+            {
+                throw new InvalidOperationException(
+                    $"Source '{context.SourceId}' requires a stable source encoder.");
+            }
+
+            string sourceKey = sourceEncoder(context.Source)?.Trim();
+
+            if (string.IsNullOrEmpty(sourceKey))
+            {
+                throw new InvalidOperationException(
+                    $"Source '{context.SourceId}' could not be encoded to a stable key.");
+            }
+
+            return new GameplayEffectContextSnapshot(
+                context.SourceId,
+                sourceKey);
+        }
+
+        private bool TryResolveContext(
+            GameplayEffectContextSnapshot saved,
+            Func<string, UnityEngine.Object> sourceResolver,
+            IDictionary<string, UnityEngine.Object> sourceCache,
+            out GameplayEffectContext context,
+            out string error)
+        {
+            context = default;
+            error = string.Empty;
+
+            if (saved == null)
+            {
+                error = "Gameplay effect context snapshot is null.";
+                return false;
+            }
+
+            UnityEngine.Object source = null;
+            string sourceKey = saved.SourceKey?.Trim() ?? string.Empty;
+
+            if (!string.IsNullOrEmpty(sourceKey))
+            {
+                if (sourceResolver == null)
+                {
+                    error = $"Source '{sourceKey}' requires a source resolver.";
+                    return false;
+                }
+
+                if (!sourceCache.TryGetValue(sourceKey, out source))
+                {
+                    source = sourceResolver(sourceKey);
+
+                    if (source == null)
+                    {
+                        error = $"Gameplay effect source '{sourceKey}' could not be resolved.";
+                        return false;
+                    }
+
+                    sourceCache.Add(sourceKey, source);
+                }
+            }
+
+            context = new GameplayEffectContext(
+                saved.SourceId,
+                source,
+                target);
+            return true;
+        }
+
+        private static void ObserveStackOrder(long observedOrder)
+        {
+            long current = Interlocked.Read(ref nextStackOrder);
+
+            while (current < observedOrder)
+            {
+                long previous = Interlocked.CompareExchange(
+                    ref nextStackOrder,
+                    observedOrder,
+                    current);
+
+                if (previous == current)
+                {
+                    return;
+                }
+
+                current = previous;
+            }
+        }
+
+        private static bool IsFinite(float value) =>
+            !float.IsNaN(value) && !float.IsInfinity(value);
+
         private void AdvanceTimedInstance(
             GameplayEffectInstance instance,
             float deltaTime,
@@ -776,6 +1273,43 @@ namespace FPS.GameplayEffects
                 value,
                 MinimumValue,
                 MaximumValue);
+        }
+
+        private readonly struct PreparedTimedStack
+        {
+            public PreparedTimedStack(
+                GameplayEffectContext context,
+                float remainingDuration,
+                long order)
+            {
+                Context = context;
+                RemainingDuration = remainingDuration;
+                Order = order;
+            }
+
+            public GameplayEffectContext Context { get; }
+            public float RemainingDuration { get; }
+            public long Order { get; }
+        }
+
+        private readonly struct PreparedInstance
+        {
+            public PreparedInstance(
+                GameplayEffectDefinition definition,
+                GameplayEffectContext context,
+                float tickRemaining,
+                PreparedTimedStack[] stacks)
+            {
+                Definition = definition;
+                Context = context;
+                TickRemaining = tickRemaining;
+                Stacks = stacks;
+            }
+
+            public GameplayEffectDefinition Definition { get; }
+            public GameplayEffectContext Context { get; }
+            public float TickRemaining { get; }
+            public PreparedTimedStack[] Stacks { get; }
         }
     }
 

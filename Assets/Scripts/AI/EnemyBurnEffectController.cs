@@ -65,6 +65,39 @@ public sealed class EnemyBurnEffectController : MonoBehaviour
             : 0f;
     public GameplayEffectDefinition Definition => EnsureDefinition();
 
+    public bool TryCaptureGameplayEffectSnapshot(
+        System.Func<Object, string> sourceEncoder,
+        out GameplayEffectRuntimeSnapshot snapshot,
+        out string error)
+    {
+        return runtime.TryCaptureSnapshot(
+            sourceEncoder,
+            out snapshot,
+            out error);
+    }
+
+    public bool TryRestoreGameplayEffectSnapshot(
+        GameplayEffectRuntimeSnapshot snapshot,
+        System.Func<string, Object> sourceResolver,
+        out string error)
+    {
+        bool restored = runtime.TryRestoreSnapshot(
+            snapshot,
+            stableId => string.Equals(
+                stableId,
+                Definition.StableId,
+                System.StringComparison.Ordinal)
+                ? Definition
+                : null,
+            sourceResolver,
+            out error);
+        if (restored)
+        {
+            SyncPresentation();
+        }
+        return restored;
+    }
+
     private void Awake()
     {
         health = GetComponent<Health>();

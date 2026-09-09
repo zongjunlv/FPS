@@ -121,7 +121,37 @@ public sealed class CityNewWaveBootstrap : MonoBehaviour
         }
         ConfigureLootRewards(playerObject, director);
 
-        if (!director.StartRun())
+        string waveRestoreError = string.Empty;
+        bool restoredWave = RunSnapshotSession.HasPendingWorldRestore &&
+                            RunSnapshotSession.TryRestoreWave(
+                                director,
+                                playerObject,
+                                out waveRestoreError);
+        if (RunSnapshotSession.HasPendingWorldRestore && !restoredWave)
+        {
+            FailConfiguration(waveRestoreError);
+            yield break;
+        }
+
+        // The mission bootstrap may have configured itself one frame before the
+        // player snapshot created the pending world restore. Finish that half of
+        // the restore here when it is already ready; otherwise its own coroutine
+        // will consume the pending mission state later.
+        if (restoredWave && RunSnapshotSession.HasPendingWorldRestore)
+        {
+            CityNewMissionController mission =
+                playerObject.GetComponent<CityNewMissionController>();
+            if (mission != null && mission.Terminal != null &&
+                !RunSnapshotSession.TryRestoreMission(
+                    mission,
+                    out string missionRestoreError))
+            {
+                FailConfiguration(missionRestoreError);
+                yield break;
+            }
+        }
+
+        if (!restoredWave && !director.StartRun())
         {
             FailConfiguration(
                 "WaveDirector rejected the configured content assets.");

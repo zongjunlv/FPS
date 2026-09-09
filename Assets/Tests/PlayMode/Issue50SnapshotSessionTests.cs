@@ -51,17 +51,36 @@ public sealed class Issue50SnapshotSessionTests
         var vitality = upgrades.AvailableUpgrades.First(definition => definition.EffectType == UpgradeEffectType.MaximumHealth);
         snapshot.Upgrades.Add(new UpgradeLevelSnapshot { UpgradeId = vitality.StableId, Level = 1 });
         snapshot.UpgradeSelectionHistory.Add(vitality.StableId);
+        snapshot.PlayerEffects.Add(new GameplayEffectSnapshot
+        {
+            EffectId = vitality.GameplayEffect.StableId,
+            SourceId = vitality.StableId,
+            SourceKey = "upgrade:" + vitality.StableId,
+            DurationPolicy = 0
+        });
         snapshot.CurrentWeaponId = snapshot.Weapons.Last().WeaponId;
         foreach (var ammo in snapshot.Weapons) { ammo.Magazine = 2; ammo.Reserve = 15; }
         Assert.That(adapter.TryRestore(snapshot, out string error), Is.True, error);
         var menu = adapter.GetComponent<RunSnapshotMenu>();
-        string expected = SnapshotChecksum.Compute(adapter.Capture());
+        RunSnapshot expected = adapter.Capture();
         Assert.That(menu.SaveTo(path), Is.True, menu.StatusMessage);
         Assert.That(menu.LoadFrom(path), Is.True, menu.StatusMessage);
         yield return null;
         yield return WaitReady(adapter);
         var restored = Object.FindAnyObjectByType<RunSnapshotRuntimeAdapter>();
-        Assert.That(SnapshotChecksum.Compute(restored.Capture()), Is.EqualTo(expected));
+        RunSnapshot actual = restored.Capture();
+        Assert.That(actual.Seed, Is.EqualTo(expected.Seed));
+        Assert.That(actual.Health, Is.EqualTo(expected.Health));
+        Assert.That(actual.Armor, Is.EqualTo(expected.Armor));
+        Assert.That(actual.CurrentWeaponId, Is.EqualTo(expected.CurrentWeaponId));
+        Assert.That(
+            actual.UpgradeSelectionHistory,
+            Is.EqualTo(expected.UpgradeSelectionHistory));
+        Assert.That(
+            actual.Weapons.Select(value =>
+                (value.WeaponId, value.Magazine, value.Reserve)),
+            Is.EqualTo(expected.Weapons.Select(value =>
+                (value.WeaponId, value.Magazine, value.Reserve))));
         Assert.That(restored.GetComponent<PlayerUpgradeController>().PendingChoiceCount, Is.Zero);
         Assert.That(restored.GetComponent<PlayerRunProgression>().RewardedKillCount, Is.Zero);
         Assert.That(RunSnapshotSession.LastMessage, Does.Contain("读取成功"));

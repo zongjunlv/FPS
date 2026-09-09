@@ -68,6 +68,7 @@ public class PlayerController : MonoBehaviour
         set => aimInputMode = value;
     }
     public bool IsGrounded => characterController.isGrounded;
+    public float CameraPitch => yRotation;
 
     private float capsuleBottom;
     private readonly Collider[] stanceOverlaps = new Collider[8];
@@ -221,6 +222,73 @@ public class PlayerController : MonoBehaviour
         }
 
         ApplyCursorState();
+    }
+
+    public bool TryRestoreSnapshotPose(
+        Vector3 position,
+        Quaternion rotation,
+        float cameraPitch,
+        bool crouching,
+        out string error)
+    {
+        if (!Finite(position) || !Finite(rotation) ||
+            Quaternion.Dot(rotation, rotation) < 0.000001f ||
+            float.IsNaN(cameraPitch) || float.IsInfinity(cameraPitch) ||
+            cameraPitch < -80f || cameraPitch > 80f)
+        {
+            error = "玩家位置、朝向或视角数据无效。";
+            return false;
+        }
+
+        bool controllerWasEnabled = characterController.enabled;
+        if (controllerWasEnabled)
+        {
+            characterController.enabled = false;
+        }
+
+        transform.SetPositionAndRotation(position, rotation.normalized);
+        VerticalVelocity = 0f;
+        MoveDirection = 0f;
+        xRotation = 0f;
+        yRotation = cameraPitch;
+        IsCrouching = crouching;
+
+        float restoredHeight = crouching
+            ? crouchingHeight
+            : standingHeight;
+        characterController.height = restoredHeight;
+        Vector3 center = characterController.center;
+        center.y = capsuleBottom + restoredHeight * 0.5f;
+        characterController.center = center;
+        Vector3 cameraPosition = CameraPivot.localPosition;
+        cameraPosition.y = crouching
+            ? crouchingCameraHeight
+            : standingCameraHeight;
+        CameraPivot.localPosition = cameraPosition;
+        CameraPivot.localRotation = Quaternion.Euler(cameraPitch, 0f, 0f);
+
+        if (controllerWasEnabled)
+        {
+            characterController.enabled = true;
+        }
+        Physics.SyncTransforms();
+        error = string.Empty;
+        return true;
+    }
+
+    private static bool Finite(Vector3 value)
+    {
+        return !float.IsNaN(value.x) && !float.IsInfinity(value.x) &&
+               !float.IsNaN(value.y) && !float.IsInfinity(value.y) &&
+               !float.IsNaN(value.z) && !float.IsInfinity(value.z);
+    }
+
+    private static bool Finite(Quaternion value)
+    {
+        return !float.IsNaN(value.x) && !float.IsInfinity(value.x) &&
+               !float.IsNaN(value.y) && !float.IsInfinity(value.y) &&
+               !float.IsNaN(value.z) && !float.IsInfinity(value.z) &&
+               !float.IsNaN(value.w) && !float.IsInfinity(value.w);
     }
 
     private void HandlePauseInput()

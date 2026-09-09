@@ -78,4 +78,26 @@ public sealed class TerminalInteractionStateMachine
 
         return true;
     }
+
+    public bool TryRestoreSilently(
+        bool completed,
+        float progressNormalized)
+    {
+        if (float.IsNaN(progressNormalized) ||
+            float.IsInfinity(progressNormalized) ||
+            progressNormalized < 0f ||
+            progressNormalized > 1f ||
+            completed && progressNormalized < 1f)
+        {
+            return false;
+        }
+
+        elapsed = completed
+            ? holdDuration
+            : holdDuration * progressNormalized;
+        State = completed
+            ? TerminalInteractionState.Completed
+            : TerminalInteractionState.Inactive;
+        return true;
+    }
 }

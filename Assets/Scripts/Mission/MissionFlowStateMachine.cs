@@ -9,6 +9,26 @@ public enum MissionFlowState
     Defeat
 }
 
+public readonly struct MissionFlowRestoreState
+{
+    public MissionFlowRestoreState(
+        MissionFlowState state,
+        int requiredTargets,
+        int eliminatedTargets,
+        bool terminalCompleted)
+    {
+        State = state;
+        RequiredTargets = requiredTargets;
+        EliminatedTargets = eliminatedTargets;
+        TerminalCompleted = terminalCompleted;
+    }
+
+    public MissionFlowState State { get; }
+    public int RequiredTargets { get; }
+    public int EliminatedTargets { get; }
+    public bool TerminalCompleted { get; }
+}
+
 public sealed class MissionFlowStateMachine
 {
     public event Action<MissionFlowState> StateChanged;
@@ -74,6 +94,48 @@ public sealed class MissionFlowStateMachine
         }
 
         SetState(MissionFlowState.Defeat);
+        return true;
+    }
+
+    public MissionFlowRestoreState CaptureState()
+    {
+        return new MissionFlowRestoreState(
+            State,
+            RequiredTargets,
+            EliminatedTargets,
+            TerminalCompleted);
+    }
+
+    public bool TryRestoreSilently(
+        MissionFlowRestoreState snapshot,
+        out string error)
+    {
+        if (snapshot.RequiredTargets < 1 ||
+            snapshot.EliminatedTargets < 0 ||
+            snapshot.EliminatedTargets > snapshot.RequiredTargets)
+        {
+            error = "任务目标计数无效。";
+            return false;
+        }
+
+        MissionFlowState expected = snapshot.EliminatedTargets <
+                                    snapshot.RequiredTargets
+            ? MissionFlowState.EliminateTargets
+            : !snapshot.TerminalCompleted
+                ? MissionFlowState.ActivateTerminal
+                : MissionFlowState.ExtractionAvailable;
+
+        if (snapshot.State != expected)
+        {
+            error = "任务阶段与目标完成状态不一致。";
+            return false;
+        }
+
+        RequiredTargets = snapshot.RequiredTargets;
+        EliminatedTargets = snapshot.EliminatedTargets;
+        TerminalCompleted = snapshot.TerminalCompleted;
+        State = snapshot.State;
+        error = string.Empty;
         return true;
     }
 

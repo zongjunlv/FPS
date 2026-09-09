@@ -31,6 +31,7 @@ namespace FPS.Tests.PlayMode
         {
             yield return SceneManager.LoadSceneAsync(
                 "Assets/ImportPackages/CSAssets2026/Scenes/CityNew.unity");
+            yield return WaitReady();
             var root = Object.FindAnyObjectByType<PlayerCombatCompositionRoot>();
             Assert.That(root, Is.Not.Null);
             Assert.That(root.TryInitialize(), Is.True);
@@ -57,6 +58,10 @@ namespace FPS.Tests.PlayMode
                 new() { UpgradeId = maxHealth.StableId, Level = 1 },
                 new() { UpgradeId = magazine.StableId, Level = 1 },
                 new() { UpgradeId = instantHeal.StableId, Level = 1 }
+            };
+            initial.PlayerEffects = new List<GameplayEffectSnapshot>
+            {
+                SavedPersistentEffect(maxHealth)
             };
             foreach (WeaponAmmoSnapshot ammo in initial.Weapons)
             {
@@ -98,6 +103,38 @@ namespace FPS.Tests.PlayMode
             invalid.UpgradeSelectionHistory[0] = "missing-upgrade";
             Assert.That(adapter.TryRestore(invalid, out error), Is.False);
             Assert.That(upgrades.SelectedUpgradeCount, Is.EqualTo(3));
+        }
+
+        private static GameplayEffectSnapshot SavedPersistentEffect(
+            UpgradeDefinition upgrade)
+        {
+            return new GameplayEffectSnapshot
+            {
+                EffectId = upgrade.GameplayEffect.StableId,
+                SourceId = upgrade.StableId,
+                SourceKey = "upgrade:" + upgrade.StableId,
+                DurationPolicy = 0
+            };
+        }
+
+        private static IEnumerator WaitReady()
+        {
+            float timeout = Time.realtimeSinceStartup + 35f;
+            while (Time.realtimeSinceStartup < timeout)
+            {
+                CityNewWaveBootstrap wave =
+                    Object.FindAnyObjectByType<CityNewWaveBootstrap>();
+                CityNewMissionController mission =
+                    Object.FindAnyObjectByType<CityNewMissionController>();
+                if (wave != null && wave.Director != null &&
+                    wave.Director.IsRunning && mission != null &&
+                    mission.Terminal != null)
+                {
+                    yield break;
+                }
+                yield return null;
+            }
+            Assert.Fail("波次或任务未在时限内准备完成。");
         }
     }
 }

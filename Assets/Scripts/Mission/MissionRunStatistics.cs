@@ -66,6 +66,59 @@ public sealed class MissionRunStatistics
     public float Accuracy =>
         ShotsFired <= 0 ? 0f : (float)Hits / ShotsFired;
 
+    public MissionRunStatisticsSnapshot CaptureSnapshot()
+    {
+        var spawnIds = new List<int>(rewardedSpawnIds);
+        spawnIds.Sort();
+        return new MissionRunStatisticsSnapshot
+        {
+            ShotsFired = ShotsFired,
+            Hits = Hits,
+            Kills = Kills,
+            CompletedWaves = CompletedWaves,
+            DamageTakenCount = DamageTakenCount,
+            DamageTakenAmount = DamageTakenAmount,
+            ElapsedSeconds = ElapsedSeconds,
+            AuthoritativeKillTracking = authoritativeKillTracking,
+            RewardedSpawnIds = spawnIds
+        };
+    }
+
+    public bool CanRestoreSnapshot(
+        MissionRunStatisticsSnapshot snapshot,
+        out string error)
+    {
+        return TryValidateSnapshot(snapshot, out _, out error);
+    }
+
+    public bool TryRestoreSnapshot(
+        MissionRunStatisticsSnapshot snapshot,
+        out string error)
+    {
+        if (!TryValidateSnapshot(snapshot, out HashSet<int> spawnIds, out error))
+        {
+            return false;
+        }
+
+        ShotsFired = snapshot.ShotsFired;
+        Hits = snapshot.Hits;
+        Kills = snapshot.Kills;
+        CompletedWaves = snapshot.CompletedWaves;
+        DamageTakenCount = snapshot.DamageTakenCount;
+        DamageTakenAmount = snapshot.DamageTakenAmount;
+        ElapsedSeconds = snapshot.ElapsedSeconds;
+        authoritativeKillTracking = snapshot.AuthoritativeKillTracking;
+        rewardedSpawnIds.Clear();
+
+        foreach (int spawnId in spawnIds)
+        {
+            rewardedSpawnIds.Add(spawnId);
+        }
+
+        error = string.Empty;
+        return true;
+    }
+
     public void RegisterShot(ShotResult result)
     {
         ShotsFired++;
@@ -151,4 +204,71 @@ public sealed class MissionRunStatistics
         authoritativeKillTracking = false;
         rewardedSpawnIds.Clear();
     }
+
+    private static bool TryValidateSnapshot(
+        MissionRunStatisticsSnapshot snapshot,
+        out HashSet<int> spawnIds,
+        out string error)
+    {
+        spawnIds = null;
+
+        if (snapshot == null || snapshot.RewardedSpawnIds == null)
+        {
+            error = "任务统计快照为空或击杀账本缺失。";
+            return false;
+        }
+
+        if (snapshot.ShotsFired < 0 || snapshot.Hits < 0 ||
+            snapshot.Hits > snapshot.ShotsFired || snapshot.Kills < 0 ||
+            snapshot.CompletedWaves < 0 || snapshot.DamageTakenCount < 0 ||
+            !IsFiniteNonNegative(snapshot.DamageTakenAmount) ||
+            !IsFiniteNonNegative(snapshot.ElapsedSeconds))
+        {
+            error = "任务统计快照包含非法数值。";
+            return false;
+        }
+
+        var validated = new HashSet<int>();
+
+        for (int index = 0; index < snapshot.RewardedSpawnIds.Count; index++)
+        {
+            int spawnId = snapshot.RewardedSpawnIds[index];
+
+            if (spawnId <= 0 || !validated.Add(spawnId))
+            {
+                error = "任务击杀账本包含非法或重复的 spawnId。";
+                return false;
+            }
+        }
+
+        if ((!snapshot.AuthoritativeKillTracking && validated.Count > 0) ||
+            (snapshot.AuthoritativeKillTracking &&
+             validated.Count != snapshot.Kills))
+        {
+            error = "任务击杀计数与权威 spawnId 账本不一致。";
+            return false;
+        }
+
+        spawnIds = validated;
+        error = string.Empty;
+        return true;
+    }
+
+    private static bool IsFiniteNonNegative(float value)
+    {
+        return !float.IsNaN(value) && !float.IsInfinity(value) && value >= 0f;
+    }
+}
+
+public sealed class MissionRunStatisticsSnapshot
+{
+    public int ShotsFired;
+    public int Hits;
+    public int Kills;
+    public int CompletedWaves;
+    public int DamageTakenCount;
+    public float DamageTakenAmount;
+    public float ElapsedSeconds;
+    public bool AuthoritativeKillTracking;
+    public List<int> RewardedSpawnIds = new();
 }

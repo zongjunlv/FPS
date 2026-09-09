@@ -4,6 +4,15 @@ using System.Collections.Generic;
 using FPS.GameplayEffects;
 using UnityEngine;
 
+[Serializable]
+public sealed class PlayerInventorySnapshot
+{
+    public InventorySnapshot Inventory { get; set; } = new();
+    public QuickSlotSnapshot QuickSlots { get; set; } = new();
+    public float CooldownRemainingSeconds { get; set; }
+    public int SelectedIndex { get; set; } = -1;
+}
+
 [DefaultExecutionOrder(-300)]
 public sealed class PlayerInventoryController : MonoBehaviour
 {
@@ -31,11 +40,97 @@ public sealed class PlayerInventoryController : MonoBehaviour
     public InventoryState Inventory { get; private set; }
     public QuickSlotState QuickSlots { get; private set; }
     public bool IsOpen => view != null && view.IsVisible;
-    public bool IsUseCoolingDown =>
-        itemUseCooldown > 0f && Time.unscaledTime < nextUseTime;
+    public bool IsUseCoolingDown => Time.unscaledTime < nextUseTime;
     public float UseCooldownRemaining => Mathf.Max(
         0f,
         nextUseTime - Time.unscaledTime);
+
+    public PlayerInventorySnapshot CaptureSnapshot()
+    {
+        return new PlayerInventorySnapshot
+        {
+            Inventory = Inventory.CaptureSnapshot(),
+            QuickSlots = QuickSlots.CaptureSnapshot(),
+            CooldownRemainingSeconds = UseCooldownRemaining,
+            SelectedIndex = -1
+        };
+    }
+
+    public bool TryRestoreSnapshot(PlayerInventorySnapshot snapshot)
+    {
+        if (!TryPrepareSnapshot(
+                snapshot,
+                out InventorySlot[] inventorySlots,
+                out string[] quickSlotBindings))
+        {
+            return false;
+        }
+
+        // Both commits are guaranteed after preparation, keeping the pair atomic.
+        Inventory.RestorePrepared(
+            inventorySlots,
+            false,
+            out bool inventoryChanged);
+        QuickSlots.RestorePrepared(
+            quickSlotBindings,
+            false,
+            out bool quickSlotsChanged);
+        nextUseTime = Time.unscaledTime + snapshot.CooldownRemainingSeconds;
+        cooldownWasActive = snapshot.CooldownRemainingSeconds > 0f;
+
+        if (inventoryChanged)
+        {
+            Inventory.PublishRestoreChanged();
+        }
+
+        if (quickSlotsChanged)
+        {
+            QuickSlots.PublishRestoreChanged();
+        }
+
+        HandleRuntimeStateChanged();
+        return true;
+    }
+
+    public bool CanRestoreSnapshot(PlayerInventorySnapshot snapshot)
+    {
+        return TryPrepareSnapshot(snapshot, out _, out _);
+    }
+
+    private bool TryPrepareSnapshot(
+        PlayerInventorySnapshot snapshot,
+        out InventorySlot[] inventorySlots,
+        out string[] quickSlotBindings)
+    {
+        inventorySlots = null;
+        quickSlotBindings = null;
+
+        if (snapshot == null || Inventory == null || QuickSlots == null ||
+            Inventory.IsTransactionActive ||
+            float.IsNaN(snapshot.CooldownRemainingSeconds) ||
+            float.IsInfinity(snapshot.CooldownRemainingSeconds) ||
+            snapshot.CooldownRemainingSeconds < 0f ||
+            !Inventory.TryPrepareRestore(
+                snapshot.Inventory,
+                ResolveItemSpec,
+                out inventorySlots) ||
+            !QuickSlots.TryPrepareRestore(
+                snapshot.QuickSlots,
+                stableId => TryGetDefinition(stableId, out _),
+                out quickSlotBindings))
+        {
+            return false;
+        }
+        return true;
+    }
+
+    private InventoryItemSpec? ResolveItemSpec(string stableId)
+    {
+        return catalog.TryGetValue(stableId, out ItemDefinition definition) &&
+               definition != null
+            ? definition.ToSpec()
+            : null;
+    }
 
     private void Awake()
     {
@@ -165,6 +260,7 @@ public sealed class PlayerInventoryController : MonoBehaviour
 
         capacity = Mathf.Max(1, configuredCapacity);
         Inventory = new InventoryState(capacity);
+        QuickSlots ??= new QuickSlotState(2);
     }
 
     public void ConfigureUseCooldown(float seconds)

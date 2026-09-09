@@ -25,6 +25,22 @@ public readonly struct LootRewardSettlement
     public int SpawnedStackCount { get; }
 }
 
+public sealed class LootRewardRestoreSnapshot
+{
+    public int RunSeed;
+    public int ConfiguredTotalWaves;
+    public List<int> ProcessedSpawnIds = new();
+    public List<int> RewardedWaves = new();
+    public int EnemySettlementCount;
+    public int WaveRewardCount;
+    public int FinalRewardCount;
+    public int SpawnedStackCount;
+    public bool FinalRewardRequested;
+    public bool AcceptingRewards;
+    public bool HasLastDeathPosition;
+    public Vector3 LastDeathPosition;
+}
+
 [DefaultExecutionOrder(-250)]
 public sealed class PlayerLootRewardController : MonoBehaviour
 {
@@ -88,6 +104,8 @@ public sealed class PlayerLootRewardController : MonoBehaviour
     public LootRewardSettlement LastSettlement { get; private set; }
     public int RunSeed { get; private set; }
     public bool AcceptingRewards => acceptingRewards;
+    public bool CanCaptureSnapshot => pendingRewards.Count == 0;
+    public bool FinalRewardRequested => finalRewardRequested;
 
     private void Awake()
     {
@@ -184,6 +202,98 @@ public sealed class PlayerLootRewardController : MonoBehaviour
             tier == LootRewardTier.Elite ? "精英奖励" : null,
             tier == LootRewardTier.Elite);
 
+        return true;
+    }
+
+    public bool TryCaptureSnapshot(
+        out LootRewardRestoreSnapshot snapshot,
+        out string error)
+    {
+        snapshot = null;
+
+        if (pendingRewards.Count > 0)
+        {
+            error = "仍有尚未落地的奖励，当前帧不能安全保存。";
+            return false;
+        }
+
+        var spawnIds = new List<int>(processedSpawnIds);
+        var waves = new List<int>(rewardedWaves);
+        spawnIds.Sort();
+        waves.Sort();
+        snapshot = new LootRewardRestoreSnapshot
+        {
+            RunSeed = RunSeed,
+            ConfiguredTotalWaves = configuredTotalWaves,
+            ProcessedSpawnIds = spawnIds,
+            RewardedWaves = waves,
+            EnemySettlementCount = EnemySettlementCount,
+            WaveRewardCount = WaveRewardCount,
+            FinalRewardCount = FinalRewardCount,
+            SpawnedStackCount = SpawnedStackCount,
+            FinalRewardRequested = finalRewardRequested,
+            AcceptingRewards = acceptingRewards,
+            HasLastDeathPosition = hasLastDeathPosition,
+            LastDeathPosition = lastDeathPosition
+        };
+        error = string.Empty;
+        return true;
+    }
+
+    public bool CanRestoreSnapshot(
+        LootRewardRestoreSnapshot snapshot,
+        out string error)
+    {
+        return TryValidateSnapshot(snapshot, out _, out _, out error);
+    }
+
+    public bool TryRestoreSnapshot(
+        LootRewardRestoreSnapshot snapshot,
+        out string error)
+    {
+        if (!TryValidateSnapshot(
+                snapshot,
+                out HashSet<int> spawnIds,
+                out HashSet<int> waves,
+                out error))
+        {
+            return false;
+        }
+
+        Unsubscribe();
+        processedSpawnIds.Clear();
+        rewardedWaves.Clear();
+
+        foreach (int spawnId in spawnIds)
+        {
+            processedSpawnIds.Add(spawnId);
+        }
+
+        foreach (int wave in waves)
+        {
+            rewardedWaves.Add(wave);
+        }
+
+        RunSeed = snapshot.RunSeed;
+        configuredTotalWaves = snapshot.ConfiguredTotalWaves;
+        resolver = new DeterministicLootResolver(RunSeed);
+        EnemySettlementCount = snapshot.EnemySettlementCount;
+        WaveRewardCount = snapshot.WaveRewardCount;
+        FinalRewardCount = snapshot.FinalRewardCount;
+        SpawnedStackCount = snapshot.SpawnedStackCount;
+        finalRewardRequested = snapshot.FinalRewardRequested;
+        acceptingRewards = snapshot.AcceptingRewards;
+        hasLastDeathPosition = snapshot.HasLastDeathPosition;
+        lastDeathPosition = snapshot.LastDeathPosition;
+        LastSettlement = default;
+        nextRetryTime = 0f;
+
+        if (acceptingRewards)
+        {
+            Subscribe();
+        }
+
+        error = string.Empty;
         return true;
     }
 
@@ -482,5 +592,88 @@ public sealed class PlayerLootRewardController : MonoBehaviour
     private void HandlePlayerDied()
     {
         EndRun();
+    }
+
+    private bool TryValidateSnapshot(
+        LootRewardRestoreSnapshot snapshot,
+        out HashSet<int> spawnIds,
+        out HashSet<int> waves,
+        out string error)
+    {
+        spawnIds = null;
+        waves = null;
+
+        if (snapshot == null || snapshot.ProcessedSpawnIds == null ||
+            snapshot.RewardedWaves == null)
+        {
+            error = "掉落奖励快照或奖励账本缺失。";
+            return false;
+        }
+
+        if (pendingRewards.Count > 0)
+        {
+            error = "当前控制器仍有待结算奖励，不能原子恢复。";
+            return false;
+        }
+
+        if (dropTable == null || snapshot.ConfiguredTotalWaves < 1 ||
+            (configuredTotalWaves > 0 &&
+             configuredTotalWaves != snapshot.ConfiguredTotalWaves) ||
+            snapshot.EnemySettlementCount < 0 ||
+            snapshot.WaveRewardCount < 0 ||
+            snapshot.FinalRewardCount < 0 || snapshot.FinalRewardCount > 1 ||
+            snapshot.SpawnedStackCount < 0 ||
+            !IsFinite(snapshot.LastDeathPosition))
+        {
+            error = "掉落奖励快照与当前配置不兼容或包含非法数值。";
+            return false;
+        }
+
+        var validatedSpawnIds = new HashSet<int>();
+
+        for (int index = 0; index < snapshot.ProcessedSpawnIds.Count; index++)
+        {
+            int spawnId = snapshot.ProcessedSpawnIds[index];
+
+            if (spawnId <= 0 || !validatedSpawnIds.Add(spawnId))
+            {
+                error = "敌人奖励账本包含非法或重复的 spawnId。";
+                return false;
+            }
+        }
+
+        var validatedWaves = new HashSet<int>();
+
+        for (int index = 0; index < snapshot.RewardedWaves.Count; index++)
+        {
+            int wave = snapshot.RewardedWaves[index];
+
+            if (wave <= 0 || wave >= snapshot.ConfiguredTotalWaves ||
+                !validatedWaves.Add(wave))
+            {
+                error = "波次奖励账本包含非法或重复的波次。";
+                return false;
+            }
+        }
+
+        if (snapshot.EnemySettlementCount != validatedSpawnIds.Count ||
+            snapshot.WaveRewardCount != validatedWaves.Count ||
+            snapshot.FinalRewardRequested != (snapshot.FinalRewardCount == 1))
+        {
+            error = "奖励计数与奖励账本不一致。";
+            return false;
+        }
+
+        spawnIds = validatedSpawnIds;
+        waves = validatedWaves;
+        error = string.Empty;
+        return true;
+    }
+
+    private static bool IsFinite(Vector3 value)
+    {
+        return !float.IsNaN(value.x) && !float.IsInfinity(value.x) &&
+               !float.IsNaN(value.y) && !float.IsInfinity(value.y) &&
+               !float.IsNaN(value.z) && !float.IsInfinity(value.z);
     }
 }

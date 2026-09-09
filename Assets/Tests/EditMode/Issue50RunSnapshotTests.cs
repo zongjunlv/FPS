@@ -26,7 +26,7 @@ namespace FPS.Tests.Architecture
             var original = Example();
             var json = RunSnapshotCodec.Serialize(original);
             Assert.That(RunSnapshotCodec.TryDeserialize(json, out var loaded, out var error), Is.True, error);
-            Assert.That(loaded.SchemaVersion, Is.EqualTo(1));
+            Assert.That(loaded.SchemaVersion, Is.EqualTo(RunSnapshot.CurrentSchemaVersion));
             Assert.That(loaded.Seed, Is.EqualTo(4101));
             Assert.That(loaded.Health, Is.EqualTo(73.5f));
             Assert.That(loaded.Armor, Is.EqualTo(12.25f));
@@ -72,7 +72,9 @@ namespace FPS.Tests.Architecture
         [Test]
         public void UnknownSchemaIsRejectedExplicitly()
         {
-            var json = RunSnapshotCodec.Serialize(Example()).Replace("\"SchemaVersion\":1", "\"SchemaVersion\":999");
+            var json = RunSnapshotCodec.Serialize(Example()).Replace(
+                "\"SchemaVersion\":" + RunSnapshot.CurrentSchemaVersion,
+                "\"SchemaVersion\":999");
             Assert.That(RunSnapshotCodec.TryDeserialize(json, out _, out var error), Is.False);
             Assert.That(error, Does.Contain("版本"));
         }

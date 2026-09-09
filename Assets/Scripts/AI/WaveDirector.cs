@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using FPS.GameplayEffects;
 using UnityEngine;
 
 public enum WaveStopReason
@@ -65,6 +66,226 @@ public sealed class WaveDirector : MonoBehaviour, IWaveProgressSource
     public IReadOnlyList<int> CompletedWaveSpawnCounts =>
         completedWaveSpawnCounts;
     public IReadOnlyList<int> PeakAliveByWave => peakAliveByWave;
+
+    public WaveRuntimeSnapshot CaptureRuntimeState()
+    {
+        if (!configured || flow == null ||
+            (!flow.IsRunning && !flow.IsCompleted))
+        {
+            throw new InvalidOperationException(
+                "Wave runtime is not in a saveable state.");
+        }
+
+        var enemies = new List<EnemyRuntimeSnapshot>(activeEnemies.Count);
+        foreach (EnemySpawnHandle handle in activeEnemies.Values)
+        {
+            Health health = handle.Controller != null
+                ? handle.Controller.GetComponent<Health>()
+                : null;
+            if (health == null || health.IsDead)
+            {
+                throw new InvalidOperationException(
+                    "An active enemy has no saveable health state.");
+            }
+
+            EnemyBurnEffectController burn =
+                handle.Controller.GetComponent<EnemyBurnEffectController>();
+            GameplayEffectRuntimeSnapshot effects = null;
+            if (burn != null && !burn.TryCaptureGameplayEffectSnapshot(
+                    EncodeEffectSource,
+                    out effects,
+                    out string effectError))
+            {
+                throw new InvalidOperationException(effectError);
+            }
+
+            enemies.Add(new EnemyRuntimeSnapshot(
+                handle.WaveNumber,
+                handle.SpawnId,
+                handle.EnemyTypeId,
+                handle.Controller.transform.position,
+                handle.Controller.transform.rotation,
+                health.CurrentHealth,
+                health.CurrentArmor,
+                effects));
+        }
+
+        enemies.Sort((left, right) => left.SpawnId.CompareTo(right.SpawnId));
+        return new WaveRuntimeSnapshot(
+            flow.CaptureState(),
+            Mathf.Max(0f, spawnCooldown),
+            nextSpawnId,
+            enemies);
+    }
+
+    public bool TryRestoreRuntimeState(
+        WaveRuntimeSnapshot snapshot,
+        out string error)
+    {
+        error = string.Empty;
+        if (!configured || flow == null || snapshot?.Flow == null ||
+            snapshot.Enemies == null || snapshot.NextSpawnId < 1 ||
+            float.IsNaN(snapshot.SpawnCooldownRemaining) ||
+            float.IsInfinity(snapshot.SpawnCooldownRemaining) ||
+            snapshot.SpawnCooldownRemaining < 0f || activeEnemies.Count > 0)
+        {
+            error = "Wave runtime restore state is invalid.";
+            return false;
+        }
+
+        var staged = new List<EnemySpawnHandle>(snapshot.Enemies.Count);
+        var stagedIds = new HashSet<int>();
+        var expectedActiveIds = new HashSet<int>(
+            snapshot.Flow.CurrentWaveState?.ActiveIds ?? Array.Empty<int>());
+        if (expectedActiveIds.Count != snapshot.Enemies.Count)
+        {
+            error = "Saved active enemies do not match wave state.";
+            return false;
+        }
+        int maximumSpawnId = 0;
+
+        for (int index = 0; index < snapshot.Enemies.Count; index++)
+        {
+            EnemyRuntimeSnapshot enemy = snapshot.Enemies[index];
+            maximumSpawnId = Mathf.Max(maximumSpawnId, enemy.SpawnId);
+            if (enemy.SpawnId < 1 || !stagedIds.Add(enemy.SpawnId) ||
+                !expectedActiveIds.Contains(enemy.SpawnId) ||
+                enemy.WaveNumber < 1 || enemy.WaveNumber > stages.Count ||
+                !TryResolveEnemyEntry(
+                    enemy.WaveNumber,
+                    enemy.EnemyTypeId,
+                    out WaveEnemyEntry entry))
+            {
+                error = "Saved enemy identity does not match wave content.";
+                ReleaseStaged(staged);
+                return false;
+            }
+
+            var request = new EnemySpawnRequest(
+                enemy.SpawnId,
+                enemy.WaveNumber,
+                entry,
+                enemy.Position,
+                enemy.Rotation,
+                player);
+            if (!enemyFactory.TrySpawn(
+                    request,
+                    HandleEnemyEnded,
+                    out EnemySpawnHandle handle))
+            {
+                error = "Enemy factory could not restore every saved enemy.";
+                ReleaseStaged(staged);
+                return false;
+            }
+
+            Health health = handle.Controller.GetComponent<Health>();
+            if (health == null ||
+                !health.TryRestoreSnapshotVitals(enemy.Health, enemy.Armor))
+            {
+                enemyFactory.Release(handle);
+                error = "Saved enemy vitals are outside current content limits.";
+                ReleaseStaged(staged);
+                return false;
+            }
+
+            EnemyBurnEffectController burn =
+                handle.Controller.GetComponent<EnemyBurnEffectController>();
+            if (burn != null &&
+                !burn.TryRestoreGameplayEffectSnapshot(
+                    enemy.Effects,
+                    ResolveEffectSource,
+                    out error))
+            {
+                enemyFactory.Release(handle);
+                ReleaseStaged(staged);
+                return false;
+            }
+
+            staged.Add(handle);
+        }
+
+        if (snapshot.NextSpawnId <= maximumSpawnId ||
+            !flow.TryRestore(snapshot.Flow, out error))
+        {
+            ReleaseStaged(staged);
+            return false;
+        }
+
+        for (int index = 0; index < staged.Count; index++)
+        {
+            EnemySpawnHandle handle = staged[index];
+            activeEnemies.Add(handle.SpawnId, handle);
+        }
+
+        nextSpawnId = snapshot.NextSpawnId;
+        spawnCooldown = snapshot.SpawnCooldownRemaining;
+        completedWaveSpawnCounts.Clear();
+        for (int wave = 1; wave < flow.CurrentWave; wave++)
+        {
+            completedWaveSpawnCounts.Add(stages[wave - 1].Wave.TotalEnemyCount);
+        }
+        StopReason = WaveStopReason.None;
+        PublishProgress();
+        return true;
+    }
+
+    private string EncodeEffectSource(UnityEngine.Object source)
+    {
+        GameObject sourceObject = source switch
+        {
+            GameObject value => value,
+            Component value => value.gameObject,
+            _ => null
+        };
+        if (sourceObject != null && player != null &&
+            (sourceObject == player.gameObject ||
+             sourceObject.transform.IsChildOf(player)))
+        {
+            return "player";
+        }
+        return string.Empty;
+    }
+
+    private UnityEngine.Object ResolveEffectSource(string sourceKey)
+    {
+        return string.Equals(sourceKey, "player", StringComparison.Ordinal) &&
+               player != null
+            ? player.gameObject
+            : null;
+    }
+
+    private bool TryResolveEnemyEntry(
+        int waveNumber,
+        string enemyTypeId,
+        out WaveEnemyEntry entry)
+    {
+        entry = null;
+        if (waveNumber < 1 || waveNumber > stages.Count ||
+            string.IsNullOrWhiteSpace(enemyTypeId)) return false;
+        IReadOnlyList<WaveEnemyEntry> entries =
+            stages[waveNumber - 1].Wave.ResolvedEntries;
+        for (int index = 0; index < entries.Count; index++)
+        {
+            if (entries[index] != null && string.Equals(
+                    entries[index].EnemyTypeId,
+                    enemyTypeId,
+                    StringComparison.Ordinal))
+            {
+                entry = entries[index];
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private void ReleaseStaged(IReadOnlyList<EnemySpawnHandle> staged)
+    {
+        for (int index = 0; index < staged.Count; index++)
+        {
+            staged[index].Lifecycle?.Disarm();
+            enemyFactory.Release(staged[index]);
+        }
+    }
 
     private WaveDefinition CurrentDefinition =>
         flow != null && flow.CurrentWave > 0 && flow.CurrentWave <= stages.Count

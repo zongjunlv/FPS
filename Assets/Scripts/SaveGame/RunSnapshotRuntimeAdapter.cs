@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using FPS.GameplayEffects;
 using FPS.SaveGame;
 using UnityEngine;
 
@@ -10,6 +11,8 @@ public sealed class RunSnapshotRuntimeAdapter : MonoBehaviour
     private PlayerUpgradeController upgrades;
     private PlayerRuntimeCombatStats stats;
     private WeaponLoadoutController loadout;
+    private PlayerInventoryController inventory;
+    private PlayerController player;
 
     private bool Resolve(out string error)
     {
@@ -17,7 +20,10 @@ public sealed class RunSnapshotRuntimeAdapter : MonoBehaviour
         upgrades = GetComponent<PlayerUpgradeController>();
         stats = GetComponent<PlayerRuntimeCombatStats>();
         loadout = GetComponent<WeaponLoadoutController>();
-        error = health == null || upgrades == null || stats == null || loadout == null
+        inventory = GetComponent<PlayerInventoryController>();
+        player = GetComponent<PlayerController>();
+        error = health == null || upgrades == null || stats == null ||
+                loadout == null || inventory == null || player == null
             ? "玩家存档依赖尚未就绪。" : string.Empty;
         return error.Length == 0;
     }
@@ -33,8 +39,21 @@ public sealed class RunSnapshotRuntimeAdapter : MonoBehaviour
             Health = health.CurrentHealth,
             Armor = health.CurrentArmor,
             CurrentWeaponId = loadout.CurrentWeapon.StableId,
-            UpgradeSelectionHistory = new List<string>(upgrades.SelectionHistory)
+            UpgradeSelectionHistory = new List<string>(upgrades.SelectionHistory),
+            PlayerPosition = new Float3Snapshot(
+                transform.position.x,
+                transform.position.y,
+                transform.position.z),
+            PlayerRotation = new Float4Snapshot(
+                transform.rotation.x,
+                transform.rotation.y,
+                transform.rotation.z,
+                transform.rotation.w),
+            CameraPitch = player.CameraPitch,
+            PlayerCrouching = player.IsCrouching
         };
+        CaptureInventory(snapshot);
+        CaptureWorld(snapshot);
         for (int i = 0; i < loadout.WeaponCount; i++)
         {
             WeaponController weapon = loadout.GetWeapon(i);
@@ -50,6 +69,13 @@ public sealed class RunSnapshotRuntimeAdapter : MonoBehaviour
         foreach (string id in upgrades.SelectionHistory)
             if (seen.Add(id)) snapshot.Upgrades.Add(new UpgradeLevelSnapshot
                 { UpgradeId = id, Level = upgrades.GetUpgradeLevel(id) });
+        if (!upgrades.TryCaptureGameplayEffectSnapshot(
+                out GameplayEffectRuntimeSnapshot playerEffects,
+                out error))
+        {
+            throw new InvalidOperationException(error);
+        }
+        snapshot.PlayerEffects = ToSaveEffects(playerEffects);
         if (!ValidateSnapshot(snapshot, out error)) throw new InvalidOperationException(error);
         return snapshot;
     }
@@ -57,6 +83,10 @@ public sealed class RunSnapshotRuntimeAdapter : MonoBehaviour
     public bool ValidateSnapshot(RunSnapshot snapshot, out string error)
     {
         if (!Resolve(out error)) return false;
+        if (!SnapshotValidation.TryValidate(snapshot, out error))
+        {
+            return false;
+        }
         if (snapshot == null || snapshot.SchemaVersion != RunSnapshot.CurrentSchemaVersion ||
             snapshot.Weapons == null || snapshot.Upgrades == null ||
             snapshot.UpgradeSelectionHistory == null ||
@@ -93,6 +123,13 @@ public sealed class RunSnapshotRuntimeAdapter : MonoBehaviour
             }
         if (!upgrades.TryPreviewSnapshotUpgrades(snapshot.UpgradeSelectionHistory,
                 out RunUpgradeState restored, out float maxHealth, out float maxArmor, out error)) return false;
+        if (!upgrades.CanRestoreGameplayEffectSnapshot(
+                snapshot.UpgradeSelectionHistory,
+                ToRuntimeEffects(snapshot.PlayerEffects),
+                out error))
+        {
+            return false;
+        }
         if (!Finite(snapshot.Health) || !Finite(snapshot.Armor) || snapshot.Health <= 0f ||
             snapshot.Health > maxHealth || snapshot.Armor < 0f || snapshot.Armor > maxArmor)
         {
@@ -125,6 +162,11 @@ public sealed class RunSnapshotRuntimeAdapter : MonoBehaviour
                 return false;
             }
         }
+        if (!inventory.CanRestoreSnapshot(ToRuntimeInventory(snapshot)))
+        {
+            error = "背包、快捷栏或物品冷却状态无法恢复。";
+            return false;
+        }
         error = string.Empty;
         return true;
     }
@@ -132,7 +174,29 @@ public sealed class RunSnapshotRuntimeAdapter : MonoBehaviour
     public bool TryRestore(RunSnapshot snapshot, out string error)
     {
         if (!ValidateSnapshot(snapshot, out error)) return false;
+        if (!player.TryRestoreSnapshotPose(
+                new Vector3(
+                    snapshot.PlayerPosition.X,
+                    snapshot.PlayerPosition.Y,
+                    snapshot.PlayerPosition.Z),
+                new Quaternion(
+                    snapshot.PlayerRotation.X,
+                    snapshot.PlayerRotation.Y,
+                    snapshot.PlayerRotation.Z,
+                    snapshot.PlayerRotation.W),
+                snapshot.CameraPitch,
+                snapshot.PlayerCrouching,
+                out error))
+        {
+            return false;
+        }
         upgrades.RestoreSnapshotUpgrades(snapshot.Seed, snapshot.UpgradeSelectionHistory);
+        if (!upgrades.TryRestoreGameplayEffectSnapshot(
+                ToRuntimeEffects(snapshot.PlayerEffects),
+                out error))
+        {
+            return false;
+        }
         int equippedIndex = 0;
         for (int i = 0; i < loadout.WeaponCount; i++)
         {
@@ -144,7 +208,253 @@ public sealed class RunSnapshotRuntimeAdapter : MonoBehaviour
         }
         loadout.RestoreEquippedWeapon(equippedIndex);
         health.TryRestoreSnapshotVitals(snapshot.Health, snapshot.Armor);
+        inventory.TryRestoreSnapshot(ToRuntimeInventory(snapshot));
         return true;
+    }
+
+    private void CaptureInventory(RunSnapshot snapshot)
+    {
+        PlayerInventorySnapshot runtime = inventory.CaptureSnapshot();
+        snapshot.InventoryCooldownRemainingSeconds =
+            runtime.CooldownRemainingSeconds;
+        snapshot.SelectedQuickSlotIndex = runtime.SelectedIndex;
+        snapshot.InventorySlots.Clear();
+        for (int index = 0; index < runtime.Inventory.Slots.Count; index++)
+        {
+            global::InventorySlotSnapshot slot = runtime.Inventory.Slots[index];
+            snapshot.InventorySlots.Add(new FPS.SaveGame.InventorySlotSnapshot
+            {
+                SlotIndex = index,
+                ItemId = slot.StableId,
+                Quantity = slot.Quantity
+            });
+        }
+        snapshot.QuickSlots.Clear();
+        for (int index = 0; index < runtime.QuickSlots.Bindings.Count; index++)
+        {
+            snapshot.QuickSlots.Add(new FPS.SaveGame.QuickSlotSnapshot
+            {
+                SlotIndex = index,
+                ItemId = runtime.QuickSlots.Bindings[index]
+            });
+        }
+    }
+
+    private static PlayerInventorySnapshot ToRuntimeInventory(
+        RunSnapshot snapshot)
+    {
+        var runtime = new PlayerInventorySnapshot
+        {
+            CooldownRemainingSeconds = snapshot.InventoryCooldownRemainingSeconds,
+            SelectedIndex = snapshot.SelectedQuickSlotIndex,
+            Inventory = new InventorySnapshot(),
+            QuickSlots = new global::QuickSlotSnapshot()
+        };
+        var inventorySlots = new global::InventorySlotSnapshot[
+            snapshot.InventorySlots.Count];
+        foreach (FPS.SaveGame.InventorySlotSnapshot slot in
+                 snapshot.InventorySlots)
+        {
+            inventorySlots[slot.SlotIndex] = new global::InventorySlotSnapshot
+            {
+                StableId = slot.ItemId,
+                Quantity = slot.Quantity
+            };
+        }
+        runtime.Inventory.Slots.AddRange(inventorySlots);
+        var quickSlots = new string[snapshot.QuickSlots.Count];
+        foreach (FPS.SaveGame.QuickSlotSnapshot slot in snapshot.QuickSlots)
+        {
+            quickSlots[slot.SlotIndex] = slot.ItemId;
+        }
+        runtime.QuickSlots.Bindings.AddRange(quickSlots);
+        return runtime;
+    }
+
+    private void CaptureWorld(RunSnapshot snapshot)
+    {
+        WaveDirector director = WaveDirector.Active;
+        CityNewMissionController mission =
+            GetComponent<CityNewMissionController>();
+        if (director == null || mission == null)
+        {
+            throw new InvalidOperationException("波次或任务尚未准备完成。");
+        }
+
+        WaveRuntimeSnapshot runtime = director.CaptureRuntimeState();
+        SingleWaveStateSnapshot wave = runtime.Flow.CurrentWaveState;
+        snapshot.Wave = new WaveSnapshot
+        {
+            CurrentWave = runtime.Flow.CurrentWave,
+            Phase = (int)runtime.Flow.Phase,
+            TotalEnemyCount = wave.TotalCount,
+            MaximumAliveCount = wave.MaximumAliveCount,
+            SpawnedIds = new List<int>(wave.SpawnedIds),
+            ActiveIds = new List<int>(wave.ActiveIds),
+            SettledIds = new List<int>(wave.SettledIds),
+            IntermissionRemaining = runtime.Flow.IntermissionRemaining,
+            SpawnCooldownRemaining = runtime.SpawnCooldownRemaining,
+            NextSpawnId = runtime.NextSpawnId,
+            RemainingThreatBudget = 0
+        };
+        snapshot.Enemies.Clear();
+        foreach (EnemyRuntimeSnapshot enemy in runtime.Enemies)
+        {
+            Quaternion rotation = enemy.Rotation;
+            snapshot.Enemies.Add(new EnemySnapshot
+            {
+                WaveNumber = enemy.WaveNumber,
+                SpawnId = enemy.SpawnId,
+                EnemyTypeId = enemy.EnemyTypeId,
+                Position = new Float3Snapshot(
+                    enemy.Position.x, enemy.Position.y, enemy.Position.z),
+                Rotation = new Float4Snapshot(
+                    rotation.x, rotation.y, rotation.z, rotation.w),
+                Health = enemy.Health,
+                Armor = enemy.Armor,
+                AwarenessState = 0,
+                AttackState = 0,
+                Effects = ToSaveEffects(enemy.Effects)
+            });
+        }
+
+        MissionFlowRestoreState missionState = mission.CaptureMissionState();
+        PlayerRunProgression progression =
+            GetComponent<PlayerRunProgression>();
+        RunProgressionRestoreSnapshot progressionState =
+            progression.CaptureRestoreSnapshot();
+        RunExperienceSnapshot experience = progressionState.Progress;
+        PlayerLootRewardController loot =
+            GetComponent<PlayerLootRewardController>();
+        string lootError = string.Empty;
+        if (loot == null || !loot.TryCaptureSnapshot(
+                out LootRewardRestoreSnapshot lootState,
+                out lootError))
+        {
+            throw new InvalidOperationException(
+                lootError ?? "掉落奖励状态尚未准备完成。");
+        }
+        MissionRunStatisticsSnapshot statistics =
+            mission.Statistics.CaptureSnapshot();
+        snapshot.Mission = new MissionSnapshot
+        {
+            Phase = (int)missionState.State,
+            TerminalCompleted = missionState.TerminalCompleted,
+            TerminalProgressNormalized = mission.CaptureTerminalProgress(),
+            EliminatedTargets = missionState.EliminatedTargets,
+            RequiredTargets = missionState.RequiredTargets,
+            ExperienceLevel = experience.Level,
+            ExperienceToNextLevel = experience.ExperienceToNextLevel,
+            CurrentExperience = experience.CurrentExperience,
+            TotalExperience = experience.TotalExperience,
+            LevelUpCount = experience.LevelUpCount,
+            RewardedKillCount = progressionState.RewardedKillCount,
+            ProgressionRewardedSpawnIds = new List<int>(
+                progressionState.RewardedSpawnIds),
+            ProgressionRunEnded = progressionState.RunEnded,
+            WaveRewardCount = lootState.WaveRewardCount,
+            FinalRewardCount = lootState.FinalRewardCount,
+            FinalRewardRequested = lootState.FinalRewardRequested,
+            LootProcessedSpawnIds = new List<int>(
+                lootState.ProcessedSpawnIds),
+            LootRewardedWaves = new List<int>(lootState.RewardedWaves),
+            EnemyRewardCount = lootState.EnemySettlementCount,
+            SpawnedRewardStackCount = lootState.SpawnedStackCount,
+            LootAcceptingRewards = lootState.AcceptingRewards,
+            HasLastDeathPosition = lootState.HasLastDeathPosition,
+            LastDeathPosition = new Float3Snapshot(
+                lootState.LastDeathPosition.x,
+                lootState.LastDeathPosition.y,
+                lootState.LastDeathPosition.z),
+            StatisticsKills = statistics.Kills,
+            StatisticsShotsFired = statistics.ShotsFired,
+            StatisticsHits = statistics.Hits,
+            StatisticsCompletedWaves = statistics.CompletedWaves,
+            StatisticsDamageTakenCount = statistics.DamageTakenCount,
+            StatisticsDamage = statistics.DamageTakenAmount,
+            ElapsedSeconds = statistics.ElapsedSeconds,
+            StatisticsAuthoritativeKillTracking =
+                statistics.AuthoritativeKillTracking,
+            StatisticsRewardedSpawnIds = new List<int>(
+                statistics.RewardedSpawnIds)
+        };
+    }
+
+    internal static List<GameplayEffectSnapshot> ToSaveEffects(
+        GameplayEffectRuntimeSnapshot runtime)
+    {
+        var result = new List<GameplayEffectSnapshot>();
+        if (runtime == null)
+        {
+            return result;
+        }
+
+        foreach (GameplayEffectInstanceSnapshot instance in runtime.Instances)
+        {
+            var saved = new GameplayEffectSnapshot
+            {
+                EffectId = instance.DefinitionId,
+                SourceId = instance.Context.SourceId,
+                SourceKey = instance.Context.SourceKey,
+                DurationPolicy = instance.TimedStacks.Count > 0
+                    ? (int)GameplayEffectDurationPolicy.Timed
+                    : (int)GameplayEffectDurationPolicy.Persistent,
+                TickRemaining = instance.TickRemaining
+            };
+            foreach (GameplayEffectTimedStackSnapshot stack in
+                     instance.TimedStacks)
+            {
+                saved.Stacks.Add(new GameplayEffectStackSnapshot
+                {
+                    SourceId = stack.Context.SourceId,
+                    SourceKey = stack.Context.SourceKey,
+                    RemainingDuration = stack.RemainingDuration,
+                    Order = stack.Order
+                });
+            }
+            result.Add(saved);
+        }
+        return result;
+    }
+
+    internal static GameplayEffectRuntimeSnapshot ToRuntimeEffects(
+        IReadOnlyList<GameplayEffectSnapshot> saved)
+    {
+        if (saved == null || saved.Count == 0)
+        {
+            return new GameplayEffectRuntimeSnapshot(
+                Array.Empty<GameplayEffectInstanceSnapshot>());
+        }
+
+        var instances = new GameplayEffectInstanceSnapshot[saved.Count];
+        for (int index = 0; index < saved.Count; index++)
+        {
+            GameplayEffectSnapshot effect = saved[index];
+            var stacks = new GameplayEffectTimedStackSnapshot[
+                effect.Stacks.Count];
+            for (int stackIndex = 0;
+                 stackIndex < stacks.Length;
+                 stackIndex++)
+            {
+                GameplayEffectStackSnapshot stack =
+                    effect.Stacks[stackIndex];
+                stacks[stackIndex] =
+                    new GameplayEffectTimedStackSnapshot(
+                        new GameplayEffectContextSnapshot(
+                            stack.SourceId,
+                            stack.SourceKey),
+                        stack.RemainingDuration,
+                        stack.Order);
+            }
+            instances[index] = new GameplayEffectInstanceSnapshot(
+                effect.EffectId,
+                new GameplayEffectContextSnapshot(
+                    effect.SourceId,
+                    effect.SourceKey),
+                effect.TickRemaining,
+                stacks);
+        }
+        return new GameplayEffectRuntimeSnapshot(instances);
     }
 
     private static bool Finite(float value) => !float.IsNaN(value) && !float.IsInfinity(value);

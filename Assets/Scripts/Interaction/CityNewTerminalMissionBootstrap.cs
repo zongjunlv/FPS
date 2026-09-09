@@ -96,6 +96,15 @@ public sealed class CityNewTerminalMissionBootstrap : MonoBehaviour
                 Terminal,
                 WaveDirector.Active,
                 extractionPosition);
+            if (RunSnapshotSession.HasPendingWorldRestore &&
+                !RunSnapshotSession.TryRestoreMission(
+                    mission,
+                    out string restoreError))
+            {
+                Debug.LogError(
+                    "CityNew mission restore failed: " + restoreError,
+                    this);
+            }
             yield break;
         }
 

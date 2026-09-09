@@ -225,6 +225,47 @@ public sealed class CityNewMissionController : MonoBehaviour
         return snapshotMenu != null && snapshotMenu.StartNewGame();
     }
 
+    public MissionFlowRestoreState CaptureMissionState()
+    {
+        return flow.CaptureState();
+    }
+
+    public float CaptureTerminalProgress()
+    {
+        return Terminal != null ? Terminal.ProgressNormalized : 0f;
+    }
+
+    public bool TryRestoreMissionSilently(
+        MissionFlowRestoreState snapshot,
+        float terminalProgressNormalized,
+        out string error)
+    {
+        if (Terminal == null ||
+            float.IsNaN(terminalProgressNormalized) ||
+            float.IsInfinity(terminalProgressNormalized) ||
+            terminalProgressNormalized < 0f ||
+            terminalProgressNormalized > 1f ||
+            snapshot.TerminalCompleted &&
+            terminalProgressNormalized < 1f)
+        {
+            error = "终端存档状态无效。";
+            return false;
+        }
+
+        if (!flow.TryRestoreSilently(snapshot, out error))
+        {
+            return false;
+        }
+
+        // Inputs were validated before the flow commit, so this cannot fail.
+        Terminal.TryRestoreSilently(
+            snapshot.TerminalCompleted,
+            terminalProgressNormalized);
+        HandleStateChanged(flow.State);
+        error = string.Empty;
+        return true;
+    }
+
     public bool RestartLevel()
     {
         if (IsRestarting || (!flow.IsOutcome && !player.IsPaused))

@@ -160,6 +160,24 @@ public sealed class TerminalInteractable :
         }
     }
 
+    public bool TryRestoreSilently(
+        bool completed,
+        float progressNormalized)
+    {
+        activeActor = null;
+
+        if (!stateMachine.TryRestoreSilently(
+                completed,
+                progressNormalized))
+        {
+            return false;
+        }
+
+        CompletionCount = completed ? 1 : 0;
+        UpdateStatusLight();
+        return true;
+    }
+
     public bool Cancel(
         GameObject actor,
         InteractionCancelReason reason)

@@ -7,6 +7,7 @@ using UnityEngine.SceneManagement;
 public static class RunSnapshotSession
 {
     private static RunSnapshot pending;
+    private static RunSnapshot pendingWorld;
     private static int? newSeed;
     public static string LastMessage { get; private set; } = "新战局已开始；按 ESC 打开暂停与存档菜单。";
     public static string DefaultPath => Path.Combine(Application.persistentDataPath, "run-snapshot.json");
@@ -15,6 +16,7 @@ public static class RunSnapshotSession
     private static void ResetSession()
     {
         pending = null;
+        pendingWorld = null;
         newSeed = null;
         LastMessage = "新战局已开始；按 ESC 打开暂停与存档菜单。";
     }
@@ -45,13 +47,181 @@ public static class RunSnapshotSession
             return true;
         }
         bool restored = adapter.TryRestore(snapshot, out error);
-        LastMessage = restored ? "读取成功：已恢复玩家状态，波次与任务重新开始。" : "读取失败：" + error;
+        pendingWorld = restored ? snapshot : null;
+        LastMessage = restored ? "正在恢复保存时的波次与任务……" : "读取失败：" + error;
         return restored;
     }
+
+    public static bool TryRestoreWave(
+        WaveDirector director,
+        GameObject player,
+        out string error)
+    {
+        if (pendingWorld == null)
+        {
+            error = string.Empty;
+            return false;
+        }
+        error = string.Empty;
+
+        WaveSnapshot saved = pendingWorld.Wave;
+        MissionSnapshot mission = pendingWorld.Mission;
+        PlayerRunProgression progression =
+            player != null ? player.GetComponent<PlayerRunProgression>() : null;
+        PlayerLootRewardController loot = player != null
+            ? player.GetComponent<PlayerLootRewardController>()
+            : null;
+        var progressionState = new RunProgressionRestoreSnapshot
+        {
+            Progress = new RunExperienceSnapshot(
+                mission.ExperienceLevel,
+                mission.CurrentExperience,
+                mission.ExperienceToNextLevel,
+                mission.TotalExperience,
+                mission.LevelUpCount),
+            RewardedSpawnIds = new System.Collections.Generic.List<int>(
+                mission.ProgressionRewardedSpawnIds),
+            RewardedKillCount = mission.RewardedKillCount,
+            RunEnded = mission.ProgressionRunEnded
+        };
+        var lootState = new LootRewardRestoreSnapshot
+        {
+            RunSeed = pendingWorld.Seed,
+            ConfiguredTotalWaves = director.CurrentProgress.TotalWaves,
+            ProcessedSpawnIds = new System.Collections.Generic.List<int>(
+                mission.LootProcessedSpawnIds),
+            RewardedWaves = new System.Collections.Generic.List<int>(
+                mission.LootRewardedWaves),
+            EnemySettlementCount = mission.EnemyRewardCount,
+            WaveRewardCount = mission.WaveRewardCount,
+            FinalRewardCount = mission.FinalRewardCount,
+            SpawnedStackCount = mission.SpawnedRewardStackCount,
+            FinalRewardRequested = mission.FinalRewardRequested,
+            AcceptingRewards = mission.LootAcceptingRewards,
+            HasLastDeathPosition = mission.HasLastDeathPosition,
+            LastDeathPosition = new Vector3(
+                mission.LastDeathPosition.X,
+                mission.LastDeathPosition.Y,
+                mission.LastDeathPosition.Z)
+        };
+        if (progression == null || loot == null ||
+            !progression.CanRestoreSnapshot(progressionState, out error) ||
+            !loot.CanRestoreSnapshot(lootState, out error))
+        {
+            if (string.IsNullOrEmpty(error))
+            {
+                error = "经验或奖励恢复依赖尚未准备完成。";
+            }
+            return false;
+        }
+        var single = new SingleWaveStateSnapshot(
+            saved.TotalEnemyCount,
+            saved.MaximumAliveCount,
+            saved.SpawnedIds,
+            saved.ActiveIds,
+            saved.SettledIds);
+        var flow = new MultiWaveFlowStateSnapshot(
+            saved.CurrentWave,
+            (WaveRunPhase)saved.Phase,
+            single,
+            saved.IntermissionRemaining);
+        var enemies = new EnemyRuntimeSnapshot[pendingWorld.Enemies.Count];
+        for (int index = 0; index < enemies.Length; index++)
+        {
+            EnemySnapshot enemy = pendingWorld.Enemies[index];
+            enemies[index] = new EnemyRuntimeSnapshot(
+                enemy.WaveNumber,
+                enemy.SpawnId,
+                enemy.EnemyTypeId,
+                new Vector3(
+                    enemy.Position.X,
+                    enemy.Position.Y,
+                    enemy.Position.Z),
+                new Quaternion(
+                    enemy.Rotation.X,
+                    enemy.Rotation.Y,
+                    enemy.Rotation.Z,
+                    enemy.Rotation.W),
+                enemy.Health,
+                enemy.Armor,
+                RunSnapshotRuntimeAdapter.ToRuntimeEffects(
+                    enemy.Effects));
+        }
+        if (!director.TryRestoreRuntimeState(
+            new WaveRuntimeSnapshot(
+                flow,
+                saved.SpawnCooldownRemaining,
+                saved.NextSpawnId,
+                enemies),
+            out error))
+        {
+            return false;
+        }
+        return progression.TryRestoreSnapshot(progressionState, out error) &&
+               loot.TryRestoreSnapshot(lootState, out error);
+    }
+
+    public static bool TryRestoreMission(
+        CityNewMissionController mission,
+        out string error)
+    {
+        if (pendingWorld == null)
+        {
+            error = string.Empty;
+            return false;
+        }
+
+        MissionSnapshot saved = pendingWorld.Mission;
+        var statistics = new MissionRunStatisticsSnapshot
+        {
+            ShotsFired = saved.StatisticsShotsFired,
+            Hits = saved.StatisticsHits,
+            Kills = saved.StatisticsKills,
+            CompletedWaves = saved.StatisticsCompletedWaves,
+            DamageTakenCount = saved.StatisticsDamageTakenCount,
+            DamageTakenAmount = saved.StatisticsDamage,
+            ElapsedSeconds = saved.ElapsedSeconds,
+            AuthoritativeKillTracking =
+                saved.StatisticsAuthoritativeKillTracking,
+            RewardedSpawnIds = new System.Collections.Generic.List<int>(
+                saved.StatisticsRewardedSpawnIds)
+        };
+        if (!mission.Statistics.CanRestoreSnapshot(statistics, out error))
+        {
+            return false;
+        }
+        bool restored = mission.TryRestoreMissionSilently(
+            new MissionFlowRestoreState(
+                (MissionFlowState)saved.Phase,
+                saved.RequiredTargets,
+                saved.EliminatedTargets,
+                saved.TerminalCompleted),
+            saved.TerminalProgressNormalized,
+            out error);
+        if (restored)
+        {
+            restored = mission.Statistics.TryRestoreSnapshot(
+                statistics,
+                out error);
+        }
+        if (restored)
+        {
+            pendingWorld = null;
+            LastMessage = "读取成功：已恢复保存时的玩家、背包、波次、敌人与任务状态。";
+        }
+        else
+        {
+            LastMessage = "读取失败：" + error;
+        }
+        return restored;
+    }
+
+    public static bool HasPendingWorldRestore => pendingWorld != null;
 
     public static void ReloadSnapshot(RunSnapshot snapshot)
     {
         pending = snapshot ?? throw new ArgumentNullException(nameof(snapshot));
+        pendingWorld = null;
         newSeed = null;
         Time.timeScale = 1f;
         SceneManager.LoadSceneAsync(SceneManager.GetActiveScene().path, LoadSceneMode.Single);
@@ -60,6 +230,7 @@ public static class RunSnapshotSession
     public static void NewGame()
     {
         pending = null;
+        pendingWorld = null;
         newSeed = Guid.NewGuid().GetHashCode();
         LastMessage = "新战局已开始，原存档未删除。";
         Time.timeScale = 1f;

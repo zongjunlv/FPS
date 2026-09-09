@@ -43,6 +43,144 @@ public sealed class PlayerUpgradeController : MonoBehaviour
         Array.Empty<GameplayEffectInstance>();
     public int ActiveGameplayEffectCount => ActiveGameplayEffects.Count;
 
+    public bool TryCaptureGameplayEffectSnapshot(
+        out GameplayEffectRuntimeSnapshot snapshot,
+        out string error)
+    {
+        return gameplayEffects.TryCaptureSnapshot(
+            EncodeUpgradeEffectSource,
+            out snapshot,
+            out error);
+    }
+
+    public bool CanRestoreGameplayEffectSnapshot(
+        IReadOnlyList<string> history,
+        GameplayEffectRuntimeSnapshot snapshot,
+        out string error)
+    {
+        if (!TryBuildGameplayEffectSnapshot(
+                history,
+                out GameplayEffectRuntimeSnapshot expected,
+                out error) ||
+            !GameplayEffectSnapshotsEqual(expected, snapshot))
+        {
+            if (string.IsNullOrEmpty(error))
+            {
+                error = "玩家效果与升级历史不一致。";
+            }
+            return false;
+        }
+
+        var validation = new GameplayEffectRuntime(
+            gameObject,
+            "Player Upgrade Snapshot Validation");
+        bool valid = validation.TryRestoreSnapshot(
+            snapshot,
+            ResolveUpgradeEffectDefinition,
+            ResolveUpgradeEffectSource,
+            out error);
+        validation.Clear();
+        return valid;
+    }
+
+    private bool TryBuildGameplayEffectSnapshot(
+        IReadOnlyList<string> history,
+        out GameplayEffectRuntimeSnapshot snapshot,
+        out string error)
+    {
+        snapshot = null;
+        error = string.Empty;
+        if (history == null)
+        {
+            error = "升级历史为空。";
+            return false;
+        }
+
+        var runtime = new GameplayEffectRuntime(
+            gameObject,
+            "Expected Player Upgrade Effects");
+        for (int index = 0; index < history.Count; index++)
+        {
+            string stableId = history[index];
+            UpgradeDefinition definition = definitions.Find(value =>
+                value != null && string.Equals(
+                    value.StableId,
+                    stableId,
+                    StringComparison.Ordinal));
+            if (definition == null)
+            {
+                error = "升级 ID 不存在：" + stableId;
+                runtime.Clear();
+                return false;
+            }
+            if (definition.GameplayEffect != null &&
+                definition.GameplayEffect.DurationPolicy ==
+                    GameplayEffectDurationPolicy.Persistent)
+            {
+                runtime.Apply(
+                    definition.GameplayEffect,
+                    new GameplayEffectContext(
+                        definition.StableId,
+                        definition,
+                        gameObject));
+            }
+        }
+
+        bool captured = runtime.TryCaptureSnapshot(
+            EncodeUpgradeEffectSource,
+            out snapshot,
+            out error);
+        runtime.Clear();
+        return captured;
+    }
+
+    private static bool GameplayEffectSnapshotsEqual(
+        GameplayEffectRuntimeSnapshot left,
+        GameplayEffectRuntimeSnapshot right)
+    {
+        if (left == null || right == null ||
+            left.Instances.Count != right.Instances.Count)
+        {
+            return false;
+        }
+        for (int index = 0; index < left.Instances.Count; index++)
+        {
+            GameplayEffectInstanceSnapshot a = left.Instances[index];
+            GameplayEffectInstanceSnapshot b = right.Instances[index];
+            if (a == null || b == null ||
+                !string.Equals(a.DefinitionId, b.DefinitionId,
+                    StringComparison.Ordinal) ||
+                !string.Equals(a.Context.SourceId, b.Context.SourceId,
+                    StringComparison.Ordinal) ||
+                !string.Equals(a.Context.SourceKey, b.Context.SourceKey,
+                    StringComparison.Ordinal) ||
+                a.TimedStacks.Count != b.TimedStacks.Count ||
+                Mathf.Abs(a.TickRemaining - b.TickRemaining) > 0.0001f)
+            {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    public bool TryRestoreGameplayEffectSnapshot(
+        GameplayEffectRuntimeSnapshot snapshot,
+        out string error)
+    {
+        if (!gameplayEffects.TryRestoreSnapshot(
+                snapshot,
+                ResolveUpgradeEffectDefinition,
+                ResolveUpgradeEffectSource,
+                out error))
+        {
+            return false;
+        }
+
+        CaptureGameplayEffectBaseline();
+        RefreshGameplayEffectAttributes();
+        return true;
+    }
+
     private void Awake()
     {
         progression = GetComponent<PlayerRunProgression>();
@@ -452,6 +590,53 @@ public sealed class PlayerUpgradeController : MonoBehaviour
                 selected,
                 gameObject));
         RefreshGameplayEffectAttributes();
+    }
+
+    private string EncodeUpgradeEffectSource(UnityEngine.Object source)
+    {
+        for (int index = 0; index < definitions.Count; index++)
+        {
+            UpgradeDefinition definition = definitions[index];
+            if (definition != null && ReferenceEquals(definition, source))
+            {
+                return "upgrade:" + definition.StableId;
+            }
+        }
+
+        return string.Empty;
+    }
+
+    private GameplayEffectDefinition ResolveUpgradeEffectDefinition(
+        string stableId)
+    {
+        for (int index = 0; index < definitions.Count; index++)
+        {
+            UpgradeDefinition definition = definitions[index];
+            if (definition?.GameplayEffect != null &&
+                string.Equals(
+                    definition.GameplayEffect.StableId,
+                    stableId,
+                    StringComparison.Ordinal))
+            {
+                return definition.GameplayEffect;
+            }
+        }
+
+        return null;
+    }
+
+    private UnityEngine.Object ResolveUpgradeEffectSource(string sourceKey)
+    {
+        const string prefix = "upgrade:";
+        if (string.IsNullOrWhiteSpace(sourceKey) ||
+            !sourceKey.StartsWith(prefix, StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        string stableId = sourceKey.Substring(prefix.Length);
+        return definitions.Find(value => value != null &&
+            string.Equals(value.StableId, stableId, StringComparison.Ordinal));
     }
 
     private void CaptureGameplayEffectBaseline()

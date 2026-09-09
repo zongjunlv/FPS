@@ -35,6 +35,19 @@ public readonly struct InventorySlot
     public bool IsEmpty => string.IsNullOrEmpty(StableId) || Quantity <= 0;
 }
 
+[Serializable]
+public sealed class InventorySlotSnapshot
+{
+    public string StableId { get; set; } = string.Empty;
+    public int Quantity { get; set; }
+}
+
+[Serializable]
+public sealed class InventorySnapshot
+{
+    public List<InventorySlotSnapshot> Slots { get; set; } = new();
+}
+
 public readonly struct InventoryAddResult
 {
     public InventoryAddResult(int requested, int accepted)
@@ -138,6 +151,7 @@ public sealed class InventoryState
 
     public int Capacity { get; }
     public IReadOnlyList<InventorySlot> Slots => readOnlySlots;
+    public bool IsTransactionActive => transactionActive;
     public int OccupiedSlotCount
     {
         get
@@ -161,6 +175,152 @@ public sealed class InventoryState
         return index >= 0 && index < slots.Count
             ? slots[index]
             : default;
+    }
+
+    public InventorySnapshot CaptureSnapshot()
+    {
+        var snapshot = new InventorySnapshot
+        {
+            Slots = new List<InventorySlotSnapshot>(slots.Count)
+        };
+
+        for (int index = 0; index < slots.Count; index++)
+        {
+            InventorySlot slot = slots[index];
+            snapshot.Slots.Add(new InventorySlotSnapshot
+            {
+                StableId = slot.IsEmpty ? string.Empty : slot.StableId,
+                Quantity = slot.IsEmpty ? 0 : slot.Quantity
+            });
+        }
+
+        return snapshot;
+    }
+
+    public bool TryPrepareRestore(
+        InventorySnapshot snapshot,
+        Func<string, InventoryItemSpec?> resolveItem,
+        out InventorySlot[] preparedSlots)
+    {
+        preparedSlots = null;
+
+        if (transactionActive || snapshot?.Slots == null ||
+            snapshot.Slots.Count != Capacity || resolveItem == null)
+        {
+            return false;
+        }
+
+        var candidate = new InventorySlot[Capacity];
+
+        for (int index = 0; index < Capacity; index++)
+        {
+            InventorySlotSnapshot savedSlot = snapshot.Slots[index];
+
+            if (savedSlot == null)
+            {
+                return false;
+            }
+
+            string stableId = savedSlot.StableId?.Trim() ?? string.Empty;
+
+            if (stableId.Length == 0)
+            {
+                if (savedSlot.Quantity != 0)
+                {
+                    return false;
+                }
+
+                candidate[index] = default;
+                continue;
+            }
+
+            InventoryItemSpec? resolved = resolveItem(stableId);
+
+            if (!resolved.HasValue || savedSlot.Quantity <= 0 ||
+                savedSlot.Quantity > resolved.Value.MaximumStack ||
+                !string.Equals(
+                    resolved.Value.StableId,
+                    stableId,
+                    StringComparison.Ordinal))
+            {
+                return false;
+            }
+
+            candidate[index] = new InventorySlot(
+                stableId,
+                resolved.Value.MaximumStack,
+                savedSlot.Quantity);
+        }
+
+        preparedSlots = candidate;
+        return true;
+    }
+
+    public bool RestorePrepared(IReadOnlyList<InventorySlot> preparedSlots)
+    {
+        return RestorePrepared(preparedSlots, true, out _);
+    }
+
+    public bool RestorePrepared(
+        IReadOnlyList<InventorySlot> preparedSlots,
+        bool publishChanged,
+        out bool changed)
+    {
+        changed = false;
+
+        if (transactionActive || preparedSlots == null ||
+            preparedSlots.Count != Capacity)
+        {
+            return false;
+        }
+
+        for (int index = 0; index < Capacity; index++)
+        {
+            InventorySlot slot = preparedSlots[index];
+
+            if ((!slot.IsEmpty &&
+                 (string.IsNullOrWhiteSpace(slot.StableId) ||
+                  slot.Quantity <= 0 ||
+                  slot.Quantity > slot.MaximumStack)) ||
+                (slot.IsEmpty && slot.Quantity != 0))
+            {
+                return false;
+            }
+        }
+
+        for (int index = 0; index < Capacity; index++)
+        {
+            if (!SlotsEqual(slots[index], preparedSlots[index]))
+            {
+                changed = true;
+                break;
+            }
+        }
+
+        for (int index = 0; index < Capacity; index++)
+        {
+            slots[index] = preparedSlots[index];
+        }
+
+        if (changed && publishChanged)
+        {
+            Changed?.Invoke();
+        }
+
+        return true;
+    }
+
+    public void PublishRestoreChanged()
+    {
+        Changed?.Invoke();
+    }
+
+    public bool TryRestore(
+        InventorySnapshot snapshot,
+        Func<string, InventoryItemSpec?> resolveItem)
+    {
+        return TryPrepareRestore(snapshot, resolveItem, out var preparedSlots) &&
+               RestorePrepared(preparedSlots);
     }
 
     public int GetQuantity(string stableId)
