@@ -28,6 +28,8 @@ public sealed class PlayerUpgradeController : MonoBehaviour
     private GameplayEffectRuntime gameplayEffects;
     private bool gameplayEffectBaselineCaptured;
 
+    public event Action<PlayerUpgradeSelectionEvent> UpgradeSelected;
+
     public int RunSeed => runSeed;
     public int PendingChoiceCount => pendingChoices;
     public bool IsChoiceOpen => view != null && view.IsVisible;
@@ -283,6 +285,16 @@ public sealed class PlayerUpgradeController : MonoBehaviour
         combatStats?.SetWeaponModifiers(state.WeaponModifiers);
         ApplyGameplayEffect(selected);
         ApplySurvivalEffect(selected);
+        var candidateIds = new string[currentCandidates.Count];
+        for (int index = 0; index < currentCandidates.Count; index++)
+        {
+            candidateIds[index] = currentCandidates[index]?.StableId ?? string.Empty;
+        }
+        UpgradeSelected?.Invoke(new PlayerUpgradeSelectionEvent(
+            candidateIndex,
+            selected.StableId,
+            state.GetLevel(selected.StableId),
+            candidateIds));
         pendingChoices = Mathf.Max(0, pendingChoices - 1);
 
         if (pendingChoices > 0)
@@ -681,4 +693,24 @@ public sealed class PlayerUpgradeController : MonoBehaviour
 
         gameplayEffectBaselineCaptured = false;
     }
+}
+
+public readonly struct PlayerUpgradeSelectionEvent
+{
+    public PlayerUpgradeSelectionEvent(
+        int candidateIndex,
+        string stableId,
+        int resultingLevel,
+        IReadOnlyList<string> candidateIds)
+    {
+        CandidateIndex = candidateIndex;
+        StableId = stableId ?? string.Empty;
+        ResultingLevel = resultingLevel;
+        CandidateIds = candidateIds ?? Array.Empty<string>();
+    }
+
+    public int CandidateIndex { get; }
+    public string StableId { get; }
+    public int ResultingLevel { get; }
+    public IReadOnlyList<string> CandidateIds { get; }
 }

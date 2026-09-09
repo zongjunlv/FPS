@@ -15,6 +15,7 @@ namespace FPS.Tests.Architecture
             AllowedProjectReferences =
                 new Dictionary<string, string[]>
                 {
+                    ["FPS.Determinism"] = Array.Empty<string>(),
                     ["FPS.Core"] = Array.Empty<string>(),
                     ["FPS.Combat"] = new[]
                     {
@@ -35,7 +36,8 @@ namespace FPS.Tests.Architecture
                     {
                         "FPS.Core",
                         "FPS.Combat",
-                        "FPS.GameplayEffects"
+                        "FPS.GameplayEffects",
+                        "FPS.Determinism"
                     },
                     ["FPS.UI"] = new[]
                     {
@@ -54,7 +56,8 @@ namespace FPS.Tests.Architecture
                         "FPS.AI",
                         "FPS.Inventory",
                         "FPS.SaveGame",
-                        "FPS.UI"
+                        "FPS.UI",
+                        "FPS.Determinism"
                     }
                 };
 
@@ -110,6 +113,8 @@ namespace FPS.Tests.Architecture
             AssertAssembly<EnemyAwarenessStateMachine>("FPS.AI");
             AssertAssembly<InventoryState>("FPS.Inventory");
             AssertAssembly<FPS.SaveGame.RunSnapshot>("FPS.SaveGame");
+            AssertAssembly<FPS.Determinism.DeterministicRun>(
+                "FPS.Determinism");
             AssertAssembly<SafeAreaFitter>("FPS.UI");
             AssertAssembly(
                 typeof(GameplayEffectsModule),

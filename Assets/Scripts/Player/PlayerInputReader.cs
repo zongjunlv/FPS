@@ -1,7 +1,9 @@
+using System;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.InputSystem;
 
+[DefaultExecutionOrder(-1000)]
 public class PlayerInputReader : MonoBehaviour
 {
     private const double ScrollGestureGap = 0.12d;
@@ -40,6 +42,8 @@ public class PlayerInputReader : MonoBehaviour
     private float pendingScrollImpulseMagnitude;
     private int quickUseSelection = -1;
 
+    public event Action<PlayerInputSample> InputSampled;
+
     // 其他脚本只能读取输入结果，不需要直接管理 Input Action。
     public Vector2 Move => moveAction.action.ReadValue<Vector2>();
     public bool JumpPressed => jumpAction.action.WasPressedThisFrame();
@@ -71,6 +75,31 @@ public class PlayerInputReader : MonoBehaviour
     public InputActionAsset ActionsAsset => moveAction?.asset;
     public bool LookUsesPointerDelta =>
         lookAction.action.activeControl?.device is Pointer;
+
+    public PlayerInputSample CaptureSample()
+    {
+        return new PlayerInputSample(
+            Move,
+            Look,
+            LookUsesPointerDelta,
+            JumpPressed,
+            SprintHeld,
+            InteractPressed,
+            InteractHeld,
+            InteractReleased,
+            AttackPressed,
+            AttackHeld,
+            aimingPressed,
+            AimingHeld,
+            CrouchPressed,
+            PausePressed,
+            InventoryPressed,
+            PickupPressed,
+            reloadPressed,
+            weaponSelection,
+            WeaponCycleDirection,
+            quickUseSelection);
+    }
 
     public void SetGameplayActionsEnabled(bool enabled)
     {
@@ -163,6 +192,11 @@ public class PlayerInputReader : MonoBehaviour
         quickUse2Action = moveAction.action.actionMap.FindAction(
             "QuickUse2",
             true);
+    }
+
+    private void Update()
+    {
+        InputSampled?.Invoke(CaptureSample());
     }
 
     private void OnEnable()
@@ -352,4 +386,72 @@ public class PlayerInputReader : MonoBehaviour
     {
         quickUseSelection = 1;
     }
+}
+
+public readonly struct PlayerInputSample
+{
+    public PlayerInputSample(
+        Vector2 move,
+        Vector2 look,
+        bool lookUsesPointerDelta,
+        bool jumpPressed,
+        bool sprintHeld,
+        bool interactPressed,
+        bool interactHeld,
+        bool interactReleased,
+        bool attackPressed,
+        bool attackHeld,
+        bool aimingPressed,
+        bool aimingHeld,
+        bool crouchPressed,
+        bool pausePressed,
+        bool inventoryPressed,
+        bool pickupPressed,
+        bool reloadPressed,
+        int weaponSelection,
+        int weaponCycleDirection,
+        int quickUseSelection)
+    {
+        Move = move;
+        Look = look;
+        LookUsesPointerDelta = lookUsesPointerDelta;
+        JumpPressed = jumpPressed;
+        SprintHeld = sprintHeld;
+        InteractPressed = interactPressed;
+        InteractHeld = interactHeld;
+        InteractReleased = interactReleased;
+        AttackPressed = attackPressed;
+        AttackHeld = attackHeld;
+        AimingPressed = aimingPressed;
+        AimingHeld = aimingHeld;
+        CrouchPressed = crouchPressed;
+        PausePressed = pausePressed;
+        InventoryPressed = inventoryPressed;
+        PickupPressed = pickupPressed;
+        ReloadPressed = reloadPressed;
+        WeaponSelection = weaponSelection;
+        WeaponCycleDirection = weaponCycleDirection;
+        QuickUseSelection = quickUseSelection;
+    }
+
+    public Vector2 Move { get; }
+    public Vector2 Look { get; }
+    public bool LookUsesPointerDelta { get; }
+    public bool JumpPressed { get; }
+    public bool SprintHeld { get; }
+    public bool InteractPressed { get; }
+    public bool InteractHeld { get; }
+    public bool InteractReleased { get; }
+    public bool AttackPressed { get; }
+    public bool AttackHeld { get; }
+    public bool AimingPressed { get; }
+    public bool AimingHeld { get; }
+    public bool CrouchPressed { get; }
+    public bool PausePressed { get; }
+    public bool InventoryPressed { get; }
+    public bool PickupPressed { get; }
+    public bool ReloadPressed { get; }
+    public int WeaponSelection { get; }
+    public int WeaponCycleDirection { get; }
+    public int QuickUseSelection { get; }
 }

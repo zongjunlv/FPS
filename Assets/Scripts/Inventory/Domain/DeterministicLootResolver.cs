@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
+using FPS.Determinism;
 
 public readonly struct LootRewardContext
 {
@@ -43,8 +45,6 @@ public readonly struct LootDropStack
 
 public sealed class DeterministicLootResolver
 {
-    private const uint FnvOffset = 2166136261;
-    private const uint FnvPrime = 16777619;
     private readonly int runSeed;
 
     public DeterministicLootResolver(int seed)
@@ -66,8 +66,10 @@ public sealed class DeterministicLootResolver
             return Array.Empty<LootDropStack>();
         }
 
-        var random = new LootRandom(CreateSeed(context));
-        int rollCount = random.NextInclusive(
+        DeterministicRandom random = new NamedRandomStreams(runSeed).Fork(
+            RunRandomStream.Loot,
+            CreateContextKey(context));
+        int rollCount = NextInclusive(random,
             rule.MinimumRolls,
             rule.MaximumRolls);
         var quantities = new Dictionary<string, int>(StringComparer.Ordinal);
@@ -75,14 +77,14 @@ public sealed class DeterministicLootResolver
 
         for (int roll = 0; roll < rollCount; roll++)
         {
-            LootDropEntry selected = SelectWeighted(rule.Entries, ref random);
+            LootDropEntry selected = SelectWeighted(rule.Entries, random);
 
-            if (selected == null || random.NextFloat() > selected.DropChance)
+            if (selected == null || NextFloat(random) > selected.DropChance)
             {
                 continue;
             }
 
-            int quantity = random.NextInclusive(
+            int quantity = NextInclusive(random,
                 selected.MinimumQuantity,
                 selected.MaximumQuantity);
 
@@ -112,7 +114,7 @@ public sealed class DeterministicLootResolver
 
     private static LootDropEntry SelectWeighted(
         IReadOnlyList<LootDropEntry> entries,
-        ref LootRandom random)
+        DeterministicRandom random)
     {
         int totalWeight = 0;
 
@@ -129,7 +131,7 @@ public sealed class DeterministicLootResolver
             return null;
         }
 
-        int selection = random.NextExclusive(totalWeight);
+        int selection = random.NextInt(totalWeight);
 
         for (int index = 0; index < entries.Count; index++)
         {
@@ -151,71 +153,28 @@ public sealed class DeterministicLootResolver
         return null;
     }
 
-    private uint CreateSeed(LootRewardContext context)
+    private static string CreateContextKey(LootRewardContext context)
     {
-        uint hash = FnvOffset;
-        Mix(ref hash, "FPS_LOOT_STREAM_V1");
-        Mix(ref hash, runSeed.ToString());
-        Mix(ref hash, context.EnemyTypeId);
-        Mix(ref hash, context.WaveNumber.ToString());
-        Mix(ref hash, ((int)context.RewardTier).ToString());
-        Mix(ref hash, context.UniqueId.ToString());
-        return hash == 0 ? 0x9E3779B9u : hash;
+        return string.Join("|",
+            context.EnemyTypeId,
+            context.WaveNumber.ToString(CultureInfo.InvariantCulture),
+            ((int)context.RewardTier).ToString(CultureInfo.InvariantCulture),
+            context.UniqueId.ToString(CultureInfo.InvariantCulture));
     }
 
-    private static void Mix(ref uint hash, string value)
+    private static int NextInclusive(
+        DeterministicRandom random,
+        int minimum,
+        int maximum)
     {
-        string source = value ?? string.Empty;
-
-        for (int index = 0; index < source.Length; index++)
-        {
-            hash ^= source[index];
-            hash *= FnvPrime;
-        }
-
-        hash ^= 0xFF;
-        hash *= FnvPrime;
+        int low = Math.Min(minimum, maximum);
+        int high = Math.Max(minimum, maximum);
+        long range = (long)high - low + 1L;
+        return range <= 1L ? low : low + random.NextInt((int)range);
     }
 
-    private struct LootRandom
+    private static float NextFloat(DeterministicRandom random)
     {
-        private uint state;
-
-        public LootRandom(uint seed)
-        {
-            state = seed == 0 ? 0x9E3779B9u : seed;
-        }
-
-        public int NextExclusive(int maximum)
-        {
-            return maximum <= 1
-                ? 0
-                : (int)(NextUInt() % (uint)maximum);
-        }
-
-        public int NextInclusive(int minimum, int maximum)
-        {
-            int low = Math.Min(minimum, maximum);
-            int high = Math.Max(minimum, maximum);
-            long range = (long)high - low + 1L;
-            return range <= 1L
-                ? low
-                : low + (int)(NextUInt() % (uint)range);
-        }
-
-        public float NextFloat()
-        {
-            return (NextUInt() & 0x00FFFFFFu) / 16777215f;
-        }
-
-        private uint NextUInt()
-        {
-            uint value = state;
-            value ^= value << 13;
-            value ^= value >> 17;
-            value ^= value << 5;
-            state = value;
-            return value;
-        }
+        return (random.NextUInt32() & 0x00FFFFFFu) / 16777215f;
     }
 }

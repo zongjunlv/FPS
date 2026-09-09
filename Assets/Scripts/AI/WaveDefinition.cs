@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using FPS.Determinism;
 using UnityEngine;
 
 [Serializable]
@@ -243,10 +244,28 @@ public sealed class WaveDefinition : ScriptableObject
 
     private void RebuildThreatBudgetPlan()
     {
+        RebuildThreatBudgetPlan(compositionSeed);
+    }
+
+    public void PrepareForRun(int runSeed)
+    {
+        if (compositionMode == WaveCompositionMode.ThreatBudget)
+        {
+            RebuildThreatBudgetPlan(runSeed);
+        }
+    }
+
+    private void RebuildThreatBudgetPlan(int runSeed)
+    {
+        string context = string.IsNullOrWhiteSpace(stableId)
+            ? "wave:anonymous|asset:" + compositionSeed
+            : "wave:" + stableId + "|asset:" + compositionSeed;
+        var streams = new NamedRandomStreams(runSeed);
         ThreatBudgetWavePlan plan = ThreatBudgetWaveComposer.Compose(
             enemyEntries ?? new List<WaveEnemyEntry>(),
             Mathf.Max(1, threatBudget),
-            compositionSeed,
+            streams.Fork(RunRandomStream.Wave, context),
+            streams.Fork(RunRandomStream.Elite, context),
             roleConstraints ?? new List<ThreatRoleConstraint>(),
             maximumEliteThreatRatio);
         resolvedBudgetEntries = new List<WaveEnemyEntry>(plan.Entries);

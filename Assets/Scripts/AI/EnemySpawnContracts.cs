@@ -123,6 +123,20 @@ public readonly struct EnemySpawnHandle
     public bool IsValid => Controller != null && Lifecycle != null;
 }
 
+public readonly struct EnemySpawnedEvent
+{
+    public EnemySpawnedEvent(
+        EnemySpawnRequest request,
+        EnemySpawnHandle handle)
+    {
+        Request = request;
+        Handle = handle;
+    }
+
+    public EnemySpawnRequest Request { get; }
+    public EnemySpawnHandle Handle { get; }
+}
+
 public interface IEnemyFactory
 {
     bool TrySpawn(

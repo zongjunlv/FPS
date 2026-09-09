@@ -43,6 +43,7 @@ public sealed class WaveDirector : MonoBehaviour, IWaveProgressSource
     public event Action<int> WaveEnded;
     public event Action WaveCompleted;
     public event Action<EnemyDeathEvent> EnemyDied;
+    public event Action<EnemySpawnedEvent> EnemySpawned;
 
     public WaveProgressSnapshot CurrentProgress => CreateProgress();
     public WaveRunPhase Phase => flow != null
@@ -605,6 +606,7 @@ public sealed class WaveDirector : MonoBehaviour, IWaveProgressSource
         }
 
         activeEnemies.Add(spawnId, handle);
+        EnemySpawned?.Invoke(new EnemySpawnedEvent(request, handle));
         RecordSpawnClearances(spawnPoint);
         nextSpawnId++;
         PeakAliveCount = Mathf.Max(PeakAliveCount, flow.AliveCount);

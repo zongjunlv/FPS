@@ -2,6 +2,7 @@
   "name": "FPS.ArchitectureTests",
   "rootNamespace": "FPS.Tests.Architecture",
   "references": [
+    "FPS.Determinism",
     "FPS.Core",
     "FPS.SaveGame",
     "FPS.Combat",

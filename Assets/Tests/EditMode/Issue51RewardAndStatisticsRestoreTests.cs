@@ -7,7 +7,7 @@ namespace FPS.Tests.Architecture
     public sealed class Issue51RewardAndStatisticsRestoreTests
     {
         [Test]
-        public void ProgressionRestoreIsSilentAndPreservesRewardedSpawnLedger()
+        public void ProgressionRestorePublishesCurrentProgressWithoutLevelReward()
         {
             var player = new GameObject("Issue51 Progression");
 
@@ -18,7 +18,12 @@ namespace FPS.Tests.Architecture
                 progression.ConfigureThresholds(new[] { 100, 200 });
                 int progressEvents = 0;
                 int levelEvents = 0;
-                progression.ProgressChanged += _ => progressEvents++;
+                RunExperienceSnapshot published = default;
+                progression.ProgressChanged += value =>
+                {
+                    progressEvents++;
+                    published = value;
+                };
                 progression.LevelsGained += _ => levelEvents++;
                 var snapshot = new RunProgressionRestoreSnapshot
                 {
@@ -37,7 +42,9 @@ namespace FPS.Tests.Architecture
                 Assert.That(progression.RewardedKillCount, Is.EqualTo(2));
                 Assert.That(progression.CaptureRestoreSnapshot().RewardedSpawnIds,
                     Is.EqualTo(new[] { 4, 9 }));
-                Assert.That(progressEvents, Is.Zero);
+                Assert.That(progressEvents, Is.EqualTo(1));
+                Assert.That(published.Level, Is.EqualTo(2));
+                Assert.That(published.CurrentExperience, Is.EqualTo(50));
                 Assert.That(levelEvents, Is.Zero);
             }
             finally

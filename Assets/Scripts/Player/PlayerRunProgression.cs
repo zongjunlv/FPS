@@ -162,6 +162,10 @@ public sealed class PlayerRunProgression : MonoBehaviour, IRunProgressionSource
             Subscribe();
         }
 
+        // Restoring replaces the state object, so no RunExperienceState.Changed
+        // event is raised automatically. Presentation subscribers still need
+        // the authoritative restored snapshot immediately.
+        PublishCurrent();
         error = string.Empty;
         return true;
     }

@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.Text;
+using FPS.Determinism;
 
 public enum UpgradeCandidateStatus
 {
@@ -65,11 +67,13 @@ public sealed class UpgradeCandidateGenerator
         eligible.Sort((left, right) => string.CompareOrdinal(
             left.StableId,
             right.StableId));
-        var random = new Random(CreateChoiceSeed(state.SelectionHistory));
+        DeterministicRandom random = new NamedRandomStreams(runSeed).Fork(
+            RunRandomStream.Upgrade,
+            CreateChoiceContext(state.SelectionHistory));
 
         for (int index = eligible.Count - 1; index > 0; index--)
         {
-            int swapIndex = random.Next(index + 1);
+            int swapIndex = random.NextInt(index + 1);
             (eligible[index], eligible[swapIndex]) =
                 (eligible[swapIndex], eligible[index]);
         }
@@ -84,30 +88,14 @@ public sealed class UpgradeCandidateGenerator
         return new UpgradeCandidateResult(candidates, status);
     }
 
-    private int CreateChoiceSeed(IReadOnlyList<string> history)
+    private static string CreateChoiceContext(IReadOnlyList<string> history)
     {
-        unchecked
+        var context = new StringBuilder("selection:");
+        for (int index = 0; index < history.Count; index++)
         {
-            uint hash = 2166136261u;
-            Mix(ref hash, runSeed.ToString());
-
-            for (int index = 0; index < history.Count; index++)
-            {
-                Mix(ref hash, history[index] ?? string.Empty);
-                hash ^= 255u;
-                hash *= 16777619u;
-            }
-
-            return (int)hash;
+            if (index > 0) context.Append('|');
+            context.Append(history[index] ?? string.Empty);
         }
-    }
-
-    private static void Mix(ref uint hash, string value)
-    {
-        for (int index = 0; index < value.Length; index++)
-        {
-            hash ^= value[index];
-            hash *= 16777619u;
-        }
+        return context.ToString();
     }
 }

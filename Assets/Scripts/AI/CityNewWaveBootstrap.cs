@@ -108,18 +108,23 @@ public sealed class CityNewWaveBootstrap : MonoBehaviour
                 yield break;
             }
         }
-        director.Configure(
-            contentCatalog.WaveSequence,
-            factory,
-            resolver,
-            playerObject.transform);
         ConfigureUpgrades(playerObject);
         if (!RunSnapshotSession.InitializePlayer(playerObject, out string restoreError))
         {
             FailConfiguration(restoreError);
             yield break;
         }
+        PlayerUpgradeController upgrades =
+            playerObject.GetComponent<PlayerUpgradeController>();
+        int runSeed = upgrades != null ? upgrades.RunSeed : 18018;
+        PrepareWavesForRun(runSeed);
+        director.Configure(
+            contentCatalog.WaveSequence,
+            factory,
+            resolver,
+            playerObject.transform);
         ConfigureLootRewards(playerObject, director);
+        ConfigureRunRecording(playerObject, director, runSeed);
 
         string waveRestoreError = string.Empty;
         bool restoredWave = RunSnapshotSession.HasPendingWorldRestore &&
@@ -278,6 +283,32 @@ public sealed class CityNewWaveBootstrap : MonoBehaviour
         {
             upgrades.ConfigureRun(upgrades.RunSeed, contentCatalog.Upgrades);
         }
+    }
+
+    private void PrepareWavesForRun(int runSeed)
+    {
+        WaveSequenceDefinition sequence = contentCatalog.WaveSequence;
+        for (int index = 0; index < sequence.WaveCount; index++)
+        {
+            sequence.GetStage(index).Wave.PrepareForRun(runSeed);
+        }
+    }
+
+    private void ConfigureRunRecording(
+        GameObject playerObject,
+        WaveDirector configuredDirector,
+        int runSeed)
+    {
+        RunDeterminismRecorder recorder =
+            playerObject.GetComponent<RunDeterminismRecorder>();
+        recorder ??= playerObject.AddComponent<RunDeterminismRecorder>();
+        recorder.Configure(
+            runSeed,
+            playerObject.GetComponent<PlayerInputReader>(),
+            playerObject.GetComponent<PlayerUpgradeController>(),
+            configuredDirector,
+            playerObject.GetComponent<PlayerLootRewardController>(),
+            contentCatalog.WaveSequence);
     }
 
     private bool FailConfiguration(string reason)

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using FPS.Determinism;
 using UnityEngine;
 
 public enum WaveCompositionMode
@@ -84,6 +85,24 @@ public static class ThreatBudgetWaveComposer
         IReadOnlyList<ThreatRoleConstraint> roleConstraints,
         float maximumEliteThreatRatio)
     {
+        var streams = new NamedRandomStreams(seed);
+        return Compose(
+            candidates,
+            threatBudget,
+            streams.Fork(RunRandomStream.Wave, "default"),
+            streams.Fork(RunRandomStream.Elite, "default"),
+            roleConstraints,
+            maximumEliteThreatRatio);
+    }
+
+    public static ThreatBudgetWavePlan Compose(
+        IReadOnlyList<WaveEnemyEntry> candidates,
+        int threatBudget,
+        DeterministicRandom waveRandom,
+        DeterministicRandom eliteRandom,
+        IReadOnlyList<ThreatRoleConstraint> roleConstraints,
+        float maximumEliteThreatRatio)
+    {
         if (candidates == null || candidates.Count == 0)
         {
             throw new ArgumentException(
@@ -114,7 +133,8 @@ public static class ThreatBudgetWaveComposer
         var selected = new List<WaveEnemyEntry>();
         var roleCounts = new Dictionary<string, int>(
             StringComparer.Ordinal);
-        var random = new System.Random(seed);
+        if (waveRandom == null) throw new ArgumentNullException(nameof(waveRandom));
+        if (eliteRandom == null) throw new ArgumentNullException(nameof(eliteRandom));
         int spent = 0;
         int eliteSpent = 0;
         bool usedFallback = false;
@@ -138,7 +158,8 @@ public static class ThreatBudgetWaveComposer
                 {
                     WaveEnemyEntry required = SelectWeighted(
                         valid,
-                        random,
+                        waveRandom,
+                        eliteRandom,
                         entry => string.Equals(
                                 entry.RoleTag,
                                 constraint.RoleTag,
@@ -171,7 +192,8 @@ public static class ThreatBudgetWaveComposer
         {
             WaveEnemyEntry next = SelectWeighted(
                 valid,
-                random,
+                waveRandom,
+                eliteRandom,
                 entry => CanAdd(
                     entry,
                     spent,
@@ -253,31 +275,49 @@ public static class ThreatBudgetWaveComposer
 
     private static WaveEnemyEntry SelectWeighted(
         IReadOnlyList<WaveEnemyEntry> candidates,
-        System.Random random,
+        DeterministicRandom waveRandom,
+        DeterministicRandom eliteRandom,
         Predicate<WaveEnemyEntry> predicate)
     {
-        int totalWeight = 0;
+        int normalWeight = 0;
+        int eliteWeight = 0;
 
         for (int index = 0; index < candidates.Count; index++)
         {
             if (predicate(candidates[index]))
             {
-                totalWeight += candidates[index].Weight;
+                if (candidates[index].IsElite)
+                {
+                    eliteWeight += candidates[index].Weight;
+                }
+                else
+                {
+                    normalWeight += candidates[index].Weight;
+                }
             }
         }
 
+        int totalWeight = normalWeight + eliteWeight;
         if (totalWeight <= 0)
         {
             return null;
         }
 
-        int selection = random.Next(totalWeight);
+        // Wave stream decides whether this slot is normal or elite. The elite
+        // stream only decides which eligible elite is used, so adding an elite
+        // affix roll cannot advance or perturb the wave composition stream.
+        bool selectElite = waveRandom.NextInt(totalWeight) >= normalWeight;
+        int bucketWeight = selectElite ? eliteWeight : normalWeight;
+        DeterministicRandom candidateRandom = selectElite
+            ? eliteRandom
+            : waveRandom;
+        int selection = candidateRandom.NextInt(bucketWeight);
 
         for (int index = 0; index < candidates.Count; index++)
         {
             WaveEnemyEntry candidate = candidates[index];
 
-            if (!predicate(candidate))
+            if (!predicate(candidate) || candidate.IsElite != selectElite)
             {
                 continue;
             }
