@@ -4,6 +4,7 @@ using System.IO;
 using FPS.Determinism;
 using UnityEngine;
 
+[DefaultExecutionOrder(1100)]
 public sealed class RunDeterminismRecorder : MonoBehaviour
 {
     private DeterministicRun run;
@@ -14,10 +15,13 @@ public sealed class RunDeterminismRecorder : MonoBehaviour
     private PlayerInputSample pendingInput;
     private bool hasPendingInput;
     private string lastRecordedInputPayload;
+    private RunReplayRuntimeAdapter stateCapture;
+    private int checkpointIntervalTicks = 50;
 
     public static RunDeterminismRecorder Active { get; private set; }
     public RunRecord Record => run?.Record;
     public int EventCount => run?.Record.Events.Count ?? 0;
+    public string LastCheckpointError { get; private set; }
 
     private void Awake()
     {
@@ -53,6 +57,7 @@ public sealed class RunDeterminismRecorder : MonoBehaviour
         run = new DeterministicRun(runSeed);
         hasPendingInput = false;
         lastRecordedInputPayload = null;
+        LastCheckpointError = string.Empty;
         input = inputSource;
         upgrades = upgradeSource;
         waves = waveSource;
@@ -98,6 +103,7 @@ public sealed class RunDeterminismRecorder : MonoBehaviour
         upgrades = null;
         waves = null;
         loot = null;
+        stateCapture = null;
     }
 
     private void HandleInputSampled(PlayerInputSample sample)
@@ -112,14 +118,40 @@ public sealed class RunDeterminismRecorder : MonoBehaviour
 
         run.AdvanceTick();
         string payload = CreateInputPayload(pendingInput);
-        if (string.Equals(payload, lastRecordedInputPayload,
+        if (!string.Equals(payload, lastRecordedInputPayload,
                 StringComparison.Ordinal))
         {
-            return;
+            run.RecordEvent(RunEventType.InputSampled, payload);
+            lastRecordedInputPayload = payload;
         }
 
-        run.RecordEvent(RunEventType.InputSampled, payload);
-        lastRecordedInputPayload = payload;
+        if (stateCapture != null && run.Tick % checkpointIntervalTicks == 0)
+        {
+            try
+            {
+                run.RecordCheckpoint(stateCapture.CaptureState());
+                LastCheckpointError = string.Empty;
+            }
+            catch (Exception exception)
+            {
+                // Determinism diagnostics must never interrupt the live run.
+                LastCheckpointError = exception.Message;
+            }
+        }
+    }
+
+    public void ConfigureStateCapture(
+        RunReplayRuntimeAdapter capture,
+        int intervalTicks = 50)
+    {
+        stateCapture = capture;
+        checkpointIntervalTicks = Mathf.Max(1, intervalTicks);
+    }
+
+    public void RecordCheckpoint(ReplayStateSnapshot state)
+    {
+        EnsureConfigured();
+        run.RecordCheckpoint(state);
     }
 
     public void RecordInput(PlayerInputSample sample)

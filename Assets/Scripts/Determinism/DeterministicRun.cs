@@ -93,6 +93,22 @@ namespace FPS.Determinism
             return true;
         }
 
+        public static IReadOnlyDictionary<string, string> Parse(string payload)
+        {
+            if (!IsCanonical(payload))
+                throw new FormatException("事件 payload 不是稳定格式。");
+            var result = new Dictionary<string, string>(StringComparer.Ordinal);
+            if (payload.Length == 0) return result;
+            foreach (string pair in payload.Split('&'))
+            {
+                int separator = pair.IndexOf('=');
+                result.Add(
+                    Unescape(pair.Substring(0, separator)),
+                    Unescape(pair.Substring(separator + 1)));
+            }
+            return result;
+        }
+
         private static string Escape(string value) => Uri.EscapeDataString(value);
         private static string Unescape(string value) => Uri.UnescapeDataString(value);
     }
@@ -213,18 +229,22 @@ namespace FPS.Determinism
         [DataMember(Order = 2)] private long runSeed;
         [DataMember(Order = 3)] private long currentTick;
         [DataMember(Order = 4)] private List<RunEvent> events;
+        [DataMember(Order = 5, EmitDefaultValue = false)] private List<RunStateCheckpoint> checkpoints;
 
         public RunRecord(long runSeed)
         {
             schemaVersion = CurrentSchemaVersion;
             this.runSeed = runSeed;
             events = new List<RunEvent>();
+            checkpoints = new List<RunStateCheckpoint>();
         }
 
         public int SchemaVersion => schemaVersion;
         public long RunSeed => runSeed;
         public long CurrentTick => currentTick;
         public IReadOnlyList<RunEvent> Events => events;
+        public IReadOnlyList<RunStateCheckpoint> Checkpoints =>
+            checkpoints ?? (IReadOnlyList<RunStateCheckpoint>)Array.Empty<RunStateCheckpoint>();
 
         internal void Advance(long ticks)
         {
@@ -239,7 +259,16 @@ namespace FPS.Determinism
             events.Add(new RunEvent(currentTick, events.Count, type, payload));
         }
 
+        internal void AppendCheckpoint(ReplayStateSnapshot state)
+        {
+            checkpoints ??= new List<RunStateCheckpoint>();
+            if (checkpoints.Count > 0 && checkpoints[checkpoints.Count - 1].Tick >= currentTick)
+                throw new InvalidOperationException("同一逻辑 Tick 只能记录一个状态 Checkpoint。");
+            checkpoints.Add(new RunStateCheckpoint(currentTick, state));
+        }
+
         internal IList<RunEvent> MutableEvents => events;
+        internal IList<RunStateCheckpoint> MutableCheckpoints => checkpoints;
     }
 
     public sealed class DeterministicRun
@@ -258,6 +287,7 @@ namespace FPS.Determinism
 
         public void AdvanceTick(long ticks = 1) => record.Advance(ticks);
         public void RecordEvent(RunEventType type, string payload) => record.Append(type, payload);
+        public void RecordCheckpoint(ReplayStateSnapshot state) => record.AppendCheckpoint(state);
     }
 
     public sealed class RunRecordValidationResult
@@ -337,6 +367,20 @@ namespace FPS.Determinism
                 previousTick = current.Tick;
             }
 
+            long previousCheckpointTick = -1;
+            IReadOnlyList<RunStateCheckpoint> checkpoints = record.Checkpoints;
+            for (int index = 0; index < checkpoints.Count; index++)
+            {
+                RunStateCheckpoint checkpoint = checkpoints[index];
+                if (checkpoint == null || checkpoint.Tick <= previousCheckpointTick ||
+                    checkpoint.Tick > record.CurrentTick ||
+                    !ReplayStateSnapshot.IsValid(checkpoint.State) ||
+                    !string.Equals(checkpoint.Checksum,
+                        ReplayStateChecksum.Compute(checkpoint.State), StringComparison.Ordinal))
+                    return RunRecordValidationResult.Failed("状态 Checkpoint 结构无效。", index);
+                previousCheckpointTick = checkpoint.Tick;
+            }
+
             return RunRecordValidationResult.Passed();
         }
 
@@ -366,6 +410,16 @@ namespace FPS.Determinism
                 return RunRecordValidationResult.Failed("确定性事件数量不一致。", sharedCount);
             if (expected.CurrentTick != actual.CurrentTick)
                 return RunRecordValidationResult.Failed("最终逻辑 Tick 不一致。", sharedCount);
+            if (expected.Checkpoints.Count != actual.Checkpoints.Count)
+                return RunRecordValidationResult.Failed("状态 Checkpoint 数量不一致。", sharedCount);
+            for (int index = 0; index < expected.Checkpoints.Count; index++)
+            {
+                RunStateCheckpoint left = expected.Checkpoints[index];
+                RunStateCheckpoint right = actual.Checkpoints[index];
+                if (left.Tick != right.Tick ||
+                    !string.Equals(left.Checksum, right.Checksum, StringComparison.Ordinal))
+                    return RunRecordValidationResult.Failed("状态 Checkpoint 不一致。", index);
+            }
             return RunRecordValidationResult.Passed();
         }
     }

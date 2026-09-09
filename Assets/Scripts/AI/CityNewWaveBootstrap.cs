@@ -309,6 +309,18 @@ public sealed class CityNewWaveBootstrap : MonoBehaviour
             configuredDirector,
             playerObject.GetComponent<PlayerLootRewardController>(),
             contentCatalog.WaveSequence);
+        RunReplayRuntimeAdapter replayAdapter =
+            playerObject.GetComponent<RunReplayRuntimeAdapter>();
+        replayAdapter ??= playerObject.AddComponent<RunReplayRuntimeAdapter>();
+        replayAdapter.Configure(
+            playerObject.GetComponent<PlayerInputReader>(),
+            configuredDirector,
+            contentCatalog.WaveSequence);
+        recorder.ConfigureStateCapture(replayAdapter, 50);
+        RunReplayController replayController =
+            playerObject.GetComponent<RunReplayController>();
+        replayController ??= playerObject.AddComponent<RunReplayController>();
+        replayController.enabled = false;
     }
 
     private bool FailConfiguration(string reason)

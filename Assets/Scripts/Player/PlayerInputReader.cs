@@ -41,40 +41,48 @@ public class PlayerInputReader : MonoBehaviour
     private int pendingScrollImpulseDirection;
     private float pendingScrollImpulseMagnitude;
     private int quickUseSelection = -1;
+    private bool replayActive;
+    private PlayerInputSample replaySample;
+    private bool replayAimingConsumed;
+    private bool replayReloadConsumed;
+    private bool replayWeaponSelectionConsumed;
+    private bool replayWeaponCycleConsumed;
+    private bool replayQuickUseConsumed;
 
     public event Action<PlayerInputSample> InputSampled;
 
     // 其他脚本只能读取输入结果，不需要直接管理 Input Action。
-    public Vector2 Move => moveAction.action.ReadValue<Vector2>();
-    public bool JumpPressed => jumpAction.action.WasPressedThisFrame();
-    public Vector2 Look => lookAction.action.ReadValue<Vector2>();
-    public bool SprintHeld => sprintAction.action.IsPressed();
-    public bool InteractPressed => interactAction.action.WasPressedThisFrame();
-    public bool InteractHeld => interactAction.action.IsPressed();
+    public Vector2 Move => replayActive ? replaySample.Move : moveAction.action.ReadValue<Vector2>();
+    public bool JumpPressed => replayActive ? replaySample.JumpPressed : jumpAction.action.WasPressedThisFrame();
+    public Vector2 Look => replayActive ? replaySample.Look : lookAction.action.ReadValue<Vector2>();
+    public bool SprintHeld => replayActive ? replaySample.SprintHeld : sprintAction.action.IsPressed();
+    public bool InteractPressed => replayActive ? replaySample.InteractPressed : interactAction.action.WasPressedThisFrame();
+    public bool InteractHeld => replayActive ? replaySample.InteractHeld : interactAction.action.IsPressed();
     public bool InteractReleased =>
-        interactAction.action.WasReleasedThisFrame();
-    public bool AttackPressed => attackAction.action.WasPressedThisFrame();
-    public bool AttackHeld => attackAction.action.IsPressed();
-    public bool AimingPressed => aimingPressed;
-    public bool AimingHeld => aimingAction.action.IsPressed();
+        replayActive ? replaySample.InteractReleased : interactAction.action.WasReleasedThisFrame();
+    public bool AttackPressed => replayActive ? replaySample.AttackPressed : attackAction.action.WasPressedThisFrame();
+    public bool AttackHeld => replayActive ? replaySample.AttackHeld : attackAction.action.IsPressed();
+    public bool AimingPressed => replayActive ? replaySample.AimingPressed : aimingPressed;
+    public bool AimingHeld => replayActive ? replaySample.AimingHeld : aimingAction.action.IsPressed();
     public bool CrouchPressed =>
-        crouchAction != null && crouchAction.WasPressedThisFrame();
+        replayActive ? replaySample.CrouchPressed : crouchAction != null && crouchAction.WasPressedThisFrame();
     public bool PausePressed =>
-        pauseAction != null && pauseAction.WasPressedThisFrame();
+        replayActive ? replaySample.PausePressed : pauseAction != null && pauseAction.WasPressedThisFrame();
     public bool InventoryPressed =>
-        inventoryAction != null && inventoryAction.WasPressedThisFrame();
+        replayActive ? replaySample.InventoryPressed : inventoryAction != null && inventoryAction.WasPressedThisFrame();
     public bool InventoryActionEnabled =>
         inventoryAction != null && inventoryAction.enabled;
     public bool PickupPressed =>
-        pickupAction != null && pickupAction.WasPressedThisFrame();
-    public bool ReloadPressed => reloadPressed;
-    public int WeaponSelection => weaponSelection;
-    public int WeaponCycleDirection => weaponCycleDirections.Count > 0
+        replayActive ? replaySample.PickupPressed : pickupAction != null && pickupAction.WasPressedThisFrame();
+    public bool ReloadPressed => replayActive ? replaySample.ReloadPressed : reloadPressed;
+    public int WeaponSelection => replayActive ? replaySample.WeaponSelection : weaponSelection;
+    public int WeaponCycleDirection => replayActive ? replaySample.WeaponCycleDirection : weaponCycleDirections.Count > 0
         ? weaponCycleDirections.Peek()
         : 0;
     public InputActionAsset ActionsAsset => moveAction?.asset;
     public bool LookUsesPointerDelta =>
-        lookAction.action.activeControl?.device is Pointer;
+        replayActive ? replaySample.LookUsesPointerDelta : lookAction.action.activeControl?.device is Pointer;
+    public bool IsReplayActive => replayActive;
 
     public PlayerInputSample CaptureSample()
     {
@@ -89,16 +97,16 @@ public class PlayerInputReader : MonoBehaviour
             InteractReleased,
             AttackPressed,
             AttackHeld,
-            aimingPressed,
+            AimingPressed,
             AimingHeld,
             CrouchPressed,
             PausePressed,
             InventoryPressed,
             PickupPressed,
-            reloadPressed,
-            weaponSelection,
+            ReloadPressed,
+            WeaponSelection,
             WeaponCycleDirection,
-            quickUseSelection);
+            replayActive ? replaySample.QuickUseSelection : quickUseSelection);
     }
 
     public void SetGameplayActionsEnabled(bool enabled)
@@ -127,6 +135,12 @@ public class PlayerInputReader : MonoBehaviour
 
     public bool ConsumeAimingPressed()
     {
+        if (replayActive)
+        {
+            bool value = !replayAimingConsumed && replaySample.AimingPressed;
+            replayAimingConsumed = true;
+            return value;
+        }
         bool wasPressed = aimingPressed;
         aimingPressed = false;
         return wasPressed;
@@ -134,6 +148,12 @@ public class PlayerInputReader : MonoBehaviour
 
     public bool ConsumeReloadPressed()
     {
+        if (replayActive)
+        {
+            bool value = !replayReloadConsumed && replaySample.ReloadPressed;
+            replayReloadConsumed = true;
+            return value;
+        }
         bool wasPressed = reloadPressed;
         reloadPressed = false;
         return wasPressed;
@@ -141,6 +161,12 @@ public class PlayerInputReader : MonoBehaviour
 
     public int ConsumeWeaponSelection()
     {
+        if (replayActive)
+        {
+            int value = replayWeaponSelectionConsumed ? -1 : replaySample.WeaponSelection;
+            replayWeaponSelectionConsumed = true;
+            return value;
+        }
         int requestedSlot = weaponSelection;
         weaponSelection = -1;
         return requestedSlot;
@@ -148,6 +174,12 @@ public class PlayerInputReader : MonoBehaviour
 
     public int ConsumeWeaponCycleDirection()
     {
+        if (replayActive)
+        {
+            int value = replayWeaponCycleConsumed ? 0 : replaySample.WeaponCycleDirection;
+            replayWeaponCycleConsumed = true;
+            return value;
+        }
         return weaponCycleDirections.Count > 0
             ? weaponCycleDirections.Dequeue()
             : 0;
@@ -155,9 +187,38 @@ public class PlayerInputReader : MonoBehaviour
 
     public int ConsumeQuickUse()
     {
+        if (replayActive)
+        {
+            int value = replayQuickUseConsumed ? -1 : replaySample.QuickUseSelection;
+            replayQuickUseConsumed = true;
+            return value;
+        }
         int requestedSlot = quickUseSelection;
         quickUseSelection = -1;
         return requestedSlot;
+    }
+
+    public void ApplyReplaySample(PlayerInputSample sample)
+    {
+        replayActive = true;
+        replaySample = sample;
+        replayAimingConsumed = false;
+        replayReloadConsumed = false;
+        replayWeaponSelectionConsumed = false;
+        replayWeaponCycleConsumed = false;
+        replayQuickUseConsumed = false;
+        ClearBufferedGameplayInput();
+    }
+
+    public void StopReplay()
+    {
+        replayActive = false;
+        replaySample = default;
+        replayAimingConsumed = false;
+        replayReloadConsumed = false;
+        replayWeaponSelectionConsumed = false;
+        replayWeaponCycleConsumed = false;
+        replayQuickUseConsumed = false;
     }
 
     private void Awake()
@@ -196,7 +257,7 @@ public class PlayerInputReader : MonoBehaviour
 
     private void Update()
     {
-        InputSampled?.Invoke(CaptureSample());
+        if (!replayActive) InputSampled?.Invoke(CaptureSample());
     }
 
     private void OnEnable()
