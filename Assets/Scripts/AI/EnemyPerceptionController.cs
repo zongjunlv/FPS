@@ -61,6 +61,13 @@ public sealed class EnemyPerceptionController : MonoBehaviour
     public int SightCheckCount { get; private set; }
     public int SaturatedSightQueryCount { get; private set; }
     public int MaximumSightCheckLatencyFrames { get; private set; }
+    public long TotalSightCheckLatencyFrames { get; private set; }
+    public int SightCheckLatencySampleCount { get; private set; }
+    public float AverageSightCheckLatencyFrames =>
+        SightCheckLatencySampleCount > 0
+            ? (float)TotalSightCheckLatencyFrames /
+              SightCheckLatencySampleCount
+            : 0f;
     public int MaximumNearSightCheckLatencyFrames { get; private set; }
     public int MaximumSightResultDelayFrames { get; private set; }
     public int MaximumNearSightResultDelayFrames { get; private set; }
@@ -278,6 +285,8 @@ public sealed class EnemyPerceptionController : MonoBehaviour
         SightCheckCount = 0;
         SaturatedSightQueryCount = 0;
         MaximumSightCheckLatencyFrames = 0;
+        TotalSightCheckLatencyFrames = 0;
+        SightCheckLatencySampleCount = 0;
         MaximumNearSightCheckLatencyFrames = 0;
         lastSightCheckLodTier = EnemyAiLodTier.Far;
         MaximumSightResultDelayFrames = 0;
@@ -463,9 +472,12 @@ public sealed class EnemyPerceptionController : MonoBehaviour
     {
         if (lastSightCheckFrame >= 0)
         {
+            int latencyFrames = Time.frameCount - lastSightCheckFrame;
             MaximumSightCheckLatencyFrames = Mathf.Max(
                 MaximumSightCheckLatencyFrames,
-                Time.frameCount - lastSightCheckFrame);
+                latencyFrames);
+            TotalSightCheckLatencyFrames += latencyFrames;
+            SightCheckLatencySampleCount++;
             if (submittedLodTier == EnemyAiLodTier.Near &&
                 lastSightCheckLodTier == EnemyAiLodTier.Near)
             {

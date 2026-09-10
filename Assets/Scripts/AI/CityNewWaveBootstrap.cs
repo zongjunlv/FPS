@@ -326,6 +326,11 @@ public sealed class CityNewWaveBootstrap : MonoBehaviour
             playerObject.GetComponent<RunReplayDebugTimeline>();
         debugTimeline ??= playerObject.AddComponent<RunReplayDebugTimeline>();
         debugTimeline.Configure(recorder, replayController);
+        CombatRuntimeDiagnosticsPanel diagnosticsPanel =
+            playerObject.GetComponent<CombatRuntimeDiagnosticsPanel>();
+        diagnosticsPanel ??=
+            playerObject.AddComponent<CombatRuntimeDiagnosticsPanel>();
+        diagnosticsPanel.Configure(configuredDirector);
 #endif
     }
 

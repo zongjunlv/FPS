@@ -32,6 +32,37 @@ public sealed class EnemyPerceptionScheduler : MonoBehaviour
     public int PeakBatchSize => batchProcessor?.PeakBatchSize ?? 0;
     public int PendingBatchCount => batchProcessor?.PendingCount ?? 0;
 
+    public PerceptionRuntimeDiagnostics CaptureDiagnostics()
+    {
+        int activeCount = 0;
+        int maximumLatency = 0;
+        long totalLatency = 0;
+        int latencySampleCount = 0;
+        for (int index = 0; index < members.Count; index++)
+        {
+            EnemyPerceptionController member = members[index];
+            if (member == null || !member.isActiveAndEnabled) continue;
+            int latency = Mathf.Max(
+                member.MaximumSightCheckLatencyFrames,
+                member.MaximumSightResultDelayFrames);
+            activeCount++;
+            maximumLatency = Mathf.Max(maximumLatency, latency);
+            totalLatency += member.TotalSightCheckLatencyFrames;
+            latencySampleCount += member.SightCheckLatencySampleCount;
+        }
+
+        return new PerceptionRuntimeDiagnostics(
+            maxChecksPerFrame,
+            activeCount,
+            LastFrameCheckCount,
+            Mathf.Max(0, activeCount - LastFrameCheckCount),
+            PendingBatchCount,
+            maximumLatency,
+            latencySampleCount > 0
+                ? (float)totalLatency / latencySampleCount
+                : 0f);
+    }
+
     public static EnemyPerceptionScheduler EnsureForActiveScene()
     {
         if (Instance != null)

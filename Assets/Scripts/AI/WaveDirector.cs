@@ -68,6 +68,63 @@ public sealed class WaveDirector : MonoBehaviour, IWaveProgressSource
         completedWaveSpawnCounts;
     public IReadOnlyList<int> PeakAliveByWave => peakAliveByWave;
 
+    public WaveRuntimeDiagnostics CaptureDiagnostics()
+    {
+        WaveDefinition definition = CurrentDefinition;
+        if (flow == null || definition == null)
+        {
+            return new WaveRuntimeDiagnostics(
+                0, stages.Count, "Idle", 0, 0, null, null);
+        }
+
+        return new WaveRuntimeDiagnostics(
+            flow.CurrentWave,
+            flow.TotalWaves,
+            flow.Phase.ToString(),
+            definition.CompositionMode == WaveCompositionMode.ThreatBudget
+                ? definition.ThreatBudget
+                : 0,
+            definition.ResolvedThreatCost,
+            CountEntries(definition.EnemyEntries, 0),
+            BuildSpawnQueue(definition, flow.SpawnedCount));
+    }
+
+    public RuntimeCombatDiagnosticsSnapshot CaptureCombatDiagnostics()
+    {
+        var awareness = new Dictionary<string, int>(StringComparer.Ordinal);
+        var roles = new Dictionary<string, int>(StringComparer.Ordinal);
+        var lod = new Dictionary<string, int>(StringComparer.Ordinal);
+        WaveDefinition definition = CurrentDefinition;
+
+        foreach (EnemySpawnHandle handle in activeEnemies.Values)
+        {
+            EnemyPerceptionController perception = handle.Controller != null
+                ? handle.Controller.GetComponent<EnemyPerceptionController>()
+                : null;
+            Increment(
+                awareness,
+                (perception?.State ?? EnemyAwarenessState.Patrol).ToString());
+            Increment(
+                lod,
+                (perception?.LodTier ?? EnemyAiLodTier.Near).ToString());
+            Increment(roles, ResolveRole(definition, handle.EnemyTypeId));
+        }
+
+        PooledEnemyFactory pool = enemyFactory switch
+        {
+            PooledEnemyFactory directPool => directPool,
+            AddressableEnemyFactory addressable => addressable.Pool,
+            _ => null
+        };
+        return new RuntimeCombatDiagnosticsSnapshot(
+            ToSortedCounts(awareness),
+            ToSortedCounts(roles),
+            ToSortedCounts(lod),
+            EnemyPerceptionScheduler.Instance?.CaptureDiagnostics(),
+            CaptureDiagnostics(),
+            pool?.CaptureDiagnostics());
+    }
+
     public WaveRuntimeSnapshot CaptureRuntimeState()
     {
         if (!configured || flow == null ||
@@ -800,6 +857,94 @@ public sealed class WaveDirector : MonoBehaviour, IWaveProgressSource
             flow.IntermissionRemaining,
             presentationCue,
             presentationWave);
+    }
+
+    private static IReadOnlyList<RuntimeDiagnosticCount> CountEntries(
+        IReadOnlyList<WaveEnemyEntry> entries,
+        int startIndex)
+    {
+        var counts = new Dictionary<string, int>(StringComparer.Ordinal);
+        if (entries != null)
+        {
+            for (int index = Mathf.Clamp(startIndex, 0, entries.Count);
+                 index < entries.Count;
+                 index++)
+            {
+                WaveEnemyEntry entry = entries[index];
+                if (entry != null)
+                {
+                    Increment(
+                        counts,
+                        $"{entry.EnemyTypeId} / {entry.RoleTag} / 威胁 {entry.ThreatCost}");
+                }
+            }
+        }
+        return ToSortedCounts(counts);
+    }
+
+    private static IReadOnlyList<RuntimeDiagnosticCount> BuildSpawnQueue(
+        WaveDefinition definition,
+        int spawnedCount)
+    {
+        var counts = new Dictionary<string, int>(StringComparer.Ordinal);
+        for (int index = Mathf.Clamp(
+                 spawnedCount,
+                 0,
+                 definition.TotalEnemyCount);
+             index < definition.TotalEnemyCount;
+             index++)
+        {
+            WaveEnemyEntry entry = definition.GetEntry(index);
+            if (entry != null)
+            {
+                Increment(
+                    counts,
+                    $"{entry.EnemyTypeId} / {entry.RoleTag} / 威胁 {entry.ThreatCost}");
+            }
+        }
+        return ToSortedCounts(counts);
+    }
+
+    private static string ResolveRole(
+        WaveDefinition definition,
+        string enemyTypeId)
+    {
+        if (definition != null)
+        {
+            IReadOnlyList<WaveEnemyEntry> entries = definition.ResolvedEntries;
+            for (int index = 0; index < entries.Count; index++)
+            {
+                WaveEnemyEntry entry = entries[index];
+                if (entry != null && string.Equals(
+                        entry.EnemyTypeId,
+                        enemyTypeId,
+                        StringComparison.Ordinal))
+                {
+                    return entry.RoleTag;
+                }
+            }
+        }
+        return "unknown";
+    }
+
+    private static void Increment(IDictionary<string, int> counts, string key)
+    {
+        key = string.IsNullOrWhiteSpace(key) ? "未分类" : key;
+        counts.TryGetValue(key, out int count);
+        counts[key] = count + 1;
+    }
+
+    private static IReadOnlyList<RuntimeDiagnosticCount> ToSortedCounts(
+        IReadOnlyDictionary<string, int> counts)
+    {
+        var result = new List<RuntimeDiagnosticCount>(counts.Count);
+        foreach (KeyValuePair<string, int> pair in counts)
+        {
+            result.Add(new RuntimeDiagnosticCount(pair.Key, pair.Value));
+        }
+        result.Sort((left, right) =>
+            string.CompareOrdinal(left.Label, right.Label));
+        return result;
     }
 
     private void PublishProgress()

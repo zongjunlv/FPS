@@ -10,6 +10,8 @@ public sealed class PooledEnemyFactory : MonoBehaviour, IEnemyFactory
         public EnemyController Template;
         public readonly Stack<EnemyController> Available = new();
         public readonly HashSet<EnemyController> All = new();
+        public int ReuseCount;
+        public int ExpansionCount;
     }
 
     private readonly struct Lease
@@ -42,6 +44,29 @@ public sealed class PooledEnemyFactory : MonoBehaviour, IEnemyFactory
     public int ExpansionCount { get; private set; }
     public int ReleaseCount { get; private set; }
     public int SuccessfulSpawnCount { get; private set; }
+
+    public IReadOnlyList<EnemyPoolRuntimeDiagnostics> CaptureDiagnostics()
+    {
+        var snapshots = new List<EnemyPoolRuntimeDiagnostics>(buckets.Count);
+        foreach (Bucket bucket in buckets.Values)
+        {
+            int activeCount = 0;
+            foreach (Lease lease in active.Values)
+            {
+                if (ReferenceEquals(lease.Bucket, bucket)) activeCount++;
+            }
+            snapshots.Add(new EnemyPoolRuntimeDiagnostics(
+                bucket.Template != null ? bucket.Template.name : "未命名模板",
+                bucket.All.Count,
+                activeCount,
+                bucket.Available.Count,
+                bucket.ReuseCount,
+                bucket.ExpansionCount));
+        }
+        snapshots.Sort((left, right) =>
+            string.CompareOrdinal(left.Template, right.Template));
+        return snapshots;
+    }
 
     public void Configure(
         EnemyController template,
@@ -291,6 +316,7 @@ public sealed class PooledEnemyFactory : MonoBehaviour, IEnemyFactory
         if (instance != null)
         {
             ReuseCount++;
+            bucket.ReuseCount++;
             return instance;
         }
 
@@ -300,6 +326,7 @@ public sealed class PooledEnemyFactory : MonoBehaviour, IEnemyFactory
         }
 
         ExpansionCount++;
+        bucket.ExpansionCount++;
         return CreateInstance(bucket.Template, bucket, true);
     }
 
