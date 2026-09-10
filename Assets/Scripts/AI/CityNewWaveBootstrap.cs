@@ -321,6 +321,12 @@ public sealed class CityNewWaveBootstrap : MonoBehaviour
             playerObject.GetComponent<RunReplayController>();
         replayController ??= playerObject.AddComponent<RunReplayController>();
         replayController.enabled = false;
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+        RunReplayDebugTimeline debugTimeline =
+            playerObject.GetComponent<RunReplayDebugTimeline>();
+        debugTimeline ??= playerObject.AddComponent<RunReplayDebugTimeline>();
+        debugTimeline.Configure(recorder, replayController);
+#endif
     }
 
     private bool FailConfiguration(string reason)

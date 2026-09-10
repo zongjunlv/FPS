@@ -12,6 +12,7 @@ public sealed class RunDeterminismRecorder : MonoBehaviour
     private PlayerUpgradeController upgrades;
     private WaveDirector waves;
     private PlayerLootRewardController loot;
+    private PlayerCombatController combat;
     private PlayerInputSample pendingInput;
     private bool hasPendingInput;
     private string lastRecordedInputPayload;
@@ -62,11 +63,17 @@ public sealed class RunDeterminismRecorder : MonoBehaviour
         upgrades = upgradeSource;
         waves = waveSource;
         loot = lootSource;
+        combat = GetComponent<PlayerCombatController>();
 
         if (input != null) input.InputSampled += HandleInputSampled;
         if (upgrades != null) upgrades.UpgradeSelected += HandleUpgradeSelected;
         if (waves != null) waves.EnemySpawned += HandleEnemySpawned;
+        if (waves != null) waves.EnemyDied += HandleEnemyDied;
+        if (waves != null) waves.WaveStarted += HandleWaveStarted;
+        if (waves != null) waves.WaveEnded += HandleWaveEnded;
+        if (waves != null) waves.WaveCompleted += HandleWavesCompleted;
         if (loot != null) loot.RewardSettled += HandleLootSettled;
+        if (combat != null) combat.ShotResolved += HandleShotResolved;
 
         RecordPreparedWaves(sequence);
     }
@@ -98,11 +105,17 @@ public sealed class RunDeterminismRecorder : MonoBehaviour
         if (input != null) input.InputSampled -= HandleInputSampled;
         if (upgrades != null) upgrades.UpgradeSelected -= HandleUpgradeSelected;
         if (waves != null) waves.EnemySpawned -= HandleEnemySpawned;
+        if (waves != null) waves.EnemyDied -= HandleEnemyDied;
+        if (waves != null) waves.WaveStarted -= HandleWaveStarted;
+        if (waves != null) waves.WaveEnded -= HandleWaveEnded;
+        if (waves != null) waves.WaveCompleted -= HandleWavesCompleted;
         if (loot != null) loot.RewardSettled -= HandleLootSettled;
+        if (combat != null) combat.ShotResolved -= HandleShotResolved;
         input = null;
         upgrades = null;
         waves = null;
         loot = null;
+        combat = null;
         stateCapture = null;
     }
 
@@ -239,6 +252,73 @@ public sealed class RunDeterminismRecorder : MonoBehaviour
                 RunPayloadField.Number("spawnId", spawned.Request.SpawnId),
                 RunPayloadField.Number("wave", spawned.Request.WaveNumber)));
         }
+    }
+
+    private void HandleShotResolved(ShotResult result)
+    {
+        RecordShot(result);
+    }
+
+    public void RecordShot(ShotResult result)
+    {
+        EnsureConfigured();
+        WaveEnemyLifecycle lifecycle = result.DamageTarget != null
+            ? result.DamageTarget.GetComponentInParent<WaveEnemyLifecycle>()
+            : null;
+        run.RecordEvent(RunEventType.ShotFired, StableEventPayload.Create(
+            RunPayloadField.Number("damage", Quantize(result.Damage.AppliedAmount)),
+            RunPayloadField.Flag("hit", result.DidHit),
+            RunPayloadField.Flag("killed", result.Damage.WasKilled),
+            RunPayloadField.Number("region", (int)result.Damage.Region),
+            RunPayloadField.Number("spawnId", lifecycle != null ? lifecycle.SpawnId : 0),
+            RunPayloadField.Number("surface", (int)result.Surface),
+            RunPayloadField.Text("weapon", combat?.EquippedWeapon?.StableId ?? string.Empty),
+            RunPayloadField.Number("x", Quantize(result.Point.x)),
+            RunPayloadField.Number("y", Quantize(result.Point.y)),
+            RunPayloadField.Number("z", Quantize(result.Point.z))));
+    }
+
+    private void HandleEnemyDied(EnemyDeathEvent death)
+    {
+        RecordEnemyDeath(death);
+    }
+
+    public void RecordEnemyDeath(EnemyDeathEvent death)
+    {
+        EnsureConfigured();
+        run.RecordEvent(RunEventType.EnemyKilled, StableEventPayload.Create(
+            RunPayloadField.Number("damage", Quantize(death.LastDamage.Amount)),
+            RunPayloadField.Number("damageType", (int)death.DamageType),
+            RunPayloadField.Text("enemyType", death.EnemyTypeId),
+            RunPayloadField.Number("rewardXp", death.RewardExperience),
+            RunPayloadField.Number("spawnId", death.SpawnId),
+            RunPayloadField.Number("wave", death.WaveNumber),
+            RunPayloadField.Number("x", Quantize(death.WorldPosition.x)),
+            RunPayloadField.Number("y", Quantize(death.WorldPosition.y)),
+            RunPayloadField.Number("z", Quantize(death.WorldPosition.z))));
+    }
+
+    private void HandleWaveStarted(int waveNumber)
+    {
+        RecordWaveTransition("started", waveNumber);
+    }
+
+    private void HandleWaveEnded(int waveNumber)
+    {
+        RecordWaveTransition("ended", waveNumber);
+    }
+
+    private void HandleWavesCompleted()
+    {
+        RecordWaveTransition("run-completed", waves != null ? waves.CurrentProgress.CurrentWave : 0);
+    }
+
+    public void RecordWaveTransition(string phase, int waveNumber)
+    {
+        EnsureConfigured();
+        run.RecordEvent(RunEventType.WaveTransition, StableEventPayload.Create(
+            RunPayloadField.Text("phase", phase ?? string.Empty),
+            RunPayloadField.Number("wave", waveNumber)));
     }
 
     private void HandleLootSettled(LootRewardSettlement settlement)

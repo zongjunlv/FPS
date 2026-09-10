@@ -168,6 +168,13 @@ namespace FPS.Determinism
         public string Expected { get; }
         public string Actual { get; }
         public string Summary => $"Tick {Tick}: {FieldPath} 预期 {Expected}，实际 {Actual}";
+
+        public static ReplayDivergence CreateForDiagnostics(
+            long tick,
+            string fieldPath,
+            string expected,
+            string actual) =>
+            new ReplayDivergence(tick, fieldPath, expected, actual);
     }
 
     public readonly struct ReplayAdvanceResult

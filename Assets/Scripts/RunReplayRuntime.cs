@@ -234,6 +234,7 @@ public sealed class RunReplayController : MonoBehaviour
 
     public RunReplayStatus Status => replay?.Status ?? RunReplayStatus.Ready;
     public ReplayDivergence Divergence => replay?.Divergence;
+    public RunRecord LoadedRecord { get; private set; }
     public string LastError { get; private set; }
 
     public bool LoadAndStart(
@@ -245,6 +246,7 @@ public sealed class RunReplayController : MonoBehaviour
         try
         {
             RunRecord record = RunRecordCodec.Import(json);
+            LoadedRecord = record;
             adapter = GetComponent<RunReplayRuntimeAdapter>() ??
                       gameObject.AddComponent<RunReplayRuntimeAdapter>();
             adapter.Configure(input, waves);

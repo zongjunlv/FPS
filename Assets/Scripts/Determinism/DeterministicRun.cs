@@ -24,7 +24,10 @@ namespace FPS.Determinism
         LootGenerated,
         WaveGenerated,
         EliteGenerated,
-        EnemySpawned
+        EnemySpawned,
+        ShotFired,
+        EnemyKilled,
+        WaveTransition
     }
 
     public readonly struct RunPayloadField
