@@ -123,6 +123,7 @@ public sealed class RunReplayDebugTimeline : MonoBehaviour
         DrawFilter("波次", ReplayTimelineEventKind.Wave);
         DrawFilter("出生", ReplayTimelineEventKind.EnemySpawn);
         DrawFilter("精英", ReplayTimelineEventKind.Elite);
+        DrawFilter("AI决策", ReplayTimelineEventKind.AiDecision);
         DrawFilter("偏差", ReplayTimelineEventKind.ChecksumDivergence);
         GUILayout.EndHorizontal();
     }

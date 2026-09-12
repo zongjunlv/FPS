@@ -73,9 +73,9 @@ public sealed class CombatRuntimeDiagnosticsPanel : MonoBehaviour
 
         scroll = GUILayout.BeginScrollView(scroll);
         GUILayout.BeginHorizontal();
-        DrawAiColumn(width * 0.31f);
-        DrawWaveColumn(width * 0.35f);
-        DrawPoolColumn(width * 0.31f);
+        DrawAiColumn(width * 0.43f);
+        DrawWaveColumn(width * 0.27f);
+        DrawPoolColumn(width * 0.27f);
         GUILayout.EndHorizontal();
         GUILayout.EndScrollView();
         GUILayout.EndArea();
@@ -88,6 +88,7 @@ public sealed class CombatRuntimeDiagnosticsPanel : MonoBehaviour
         DrawCounts("状态", snapshot.AwarenessStates);
         DrawCounts("职责", snapshot.Roles);
         DrawCounts("LOD", snapshot.LodTiers);
+        DrawUtilityDecisions();
         GUILayout.Space(8f);
         GUILayout.Label("感知预算");
         PerceptionRuntimeDiagnostics value = snapshot.Perception;
@@ -102,6 +103,80 @@ public sealed class CombatRuntimeDiagnosticsPanel : MonoBehaviour
             GUILayout.Label($"延迟 最大 {value.MaximumLatencyFrames} 帧 · 平均 {value.AverageLatencyFrames:F1} 帧");
         }
         GUILayout.EndVertical();
+    }
+
+    private void DrawUtilityDecisions()
+    {
+        GUILayout.Space(8f);
+        GUILayout.Label("Utility AI 决策", GUI.skin.box);
+
+        if (snapshot.UtilityDecisions.Count == 0)
+        {
+            GUILayout.Label("当前没有启用 Utility AI 的敌人");
+            return;
+        }
+
+        int count = Mathf.Min(4, snapshot.UtilityDecisions.Count);
+
+        for (int index = 0; index < count; index++)
+        {
+            EnemyUtilityRuntimeDiagnostics decision =
+                snapshot.UtilityDecisions[index];
+            EnemyUtilityWorldFacts facts = decision.Facts;
+            GUILayout.Label(
+                $"#{decision.SpawnId:000} {decision.Role} → " +
+                decision.SelectedAction);
+            GUILayout.Label("原因：" + decision.Reason);
+            GUILayout.Label(
+                $"距离 {facts.TargetDistance:F1}m · 生命 " +
+                $"{facts.HealthRatio * 100f:F0}% · " +
+                $"视线 {(facts.HasLineOfSight ? "有" : "无")} · " +
+                $"掩体 {(facts.TargetInCover ? "是" : "否")}");
+            GUILayout.Label(
+                $"友军 R{facts.FriendlyRaiderCount}/" +
+                $"P{facts.FriendlySuppressorCount}/" +
+                $"S{facts.FriendlySupportCount} · " +
+                $"支援 {(facts.HasSupportCoverage ? "覆盖" : "未覆盖")}");
+
+            for (int candidateIndex = 0;
+                 candidateIndex < decision.Candidates.Count;
+                 candidateIndex++)
+            {
+                EnemyUtilityCandidateRuntimeDiagnostics candidate =
+                    decision.Candidates[candidateIndex];
+                string cooldown = candidate.CooldownRemaining > 0.01f
+                    ? $" · 冷却 {candidate.CooldownRemaining:F1}s"
+                    : string.Empty;
+                GUILayout.Label(
+                    $"  {candidate.DisplayName}: {candidate.Score:F2} " +
+                    $"[{StatusLabel(candidate)}]{cooldown}");
+            }
+
+            GUILayout.Space(4f);
+        }
+
+        if (snapshot.UtilityDecisions.Count > count)
+        {
+            GUILayout.Label(
+                $"另有 {snapshot.UtilityDecisions.Count - count} 个决策体");
+        }
+    }
+
+    private static string StatusLabel(
+        EnemyUtilityCandidateRuntimeDiagnostics candidate)
+    {
+        if (candidate.Eligible)
+        {
+            return "可选";
+        }
+
+        return candidate.Status switch
+        {
+            "unreachable" => "不可达",
+            "cooldown" => "冷却中",
+            "below-threshold" => "低于门槛",
+            _ => "不可选"
+        };
     }
 
     private void DrawWaveColumn(float width)

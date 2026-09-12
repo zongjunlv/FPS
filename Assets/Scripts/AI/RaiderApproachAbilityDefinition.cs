@@ -6,6 +6,8 @@ using UnityEngine;
 public sealed class RaiderApproachAbilityDefinition :
     EnemyAbilityDefinition
 {
+    [Header("Utility AI")]
+    [SerializeField] private EnemyUtilityProfileDefinition utilityProfile;
     [SerializeField, Min(0.5f)] private float flankDistance = 4.5f;
     [SerializeField, Min(0f)] private float flankRearOffset = 1.5f;
     [SerializeField, Min(0.1f)] private float flankSampleRadius = 2f;
@@ -21,6 +23,7 @@ public sealed class RaiderApproachAbilityDefinition :
     [SerializeField, Min(0f)] private float damageMultiplier = 0.8f;
 
     public float FlankDistance => flankDistance;
+    public EnemyUtilityProfileDefinition UtilityProfile => utilityProfile;
     public float FlankRearOffset => flankRearOffset;
     public float FlankSampleRadius => flankSampleRadius;
     public float ChargeDistance => chargeDistance;
@@ -32,6 +35,12 @@ public sealed class RaiderApproachAbilityDefinition :
     public float WindupDuration => windupDuration;
     public float AttackCooldown => attackCooldown;
     public float DamageMultiplier => damageMultiplier;
+
+    public void ConfigureUtilityProfile(
+        EnemyUtilityProfileDefinition configuredProfile)
+    {
+        utilityProfile = configuredProfile;
+    }
 
     public void Configure(
         string id,

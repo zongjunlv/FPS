@@ -21,8 +21,9 @@ namespace FPS.Determinism
         EnemySpawn = 1 << 6,
         Elite = 1 << 7,
         ChecksumDivergence = 1 << 8,
+        AiDecision = 1 << 9,
         All = Input | Shot | EnemyKilled | Upgrade | Loot | Wave |
-              EnemySpawn | Elite | ChecksumDivergence
+              EnemySpawn | Elite | ChecksumDivergence | AiDecision
     }
 
     public readonly struct ReplayTimelineFilter
@@ -368,6 +369,7 @@ namespace FPS.Determinism
                 case RunEventType.WaveTransition: return ReplayTimelineEventKind.Wave;
                 case RunEventType.EnemySpawned: return ReplayTimelineEventKind.EnemySpawn;
                 case RunEventType.EliteGenerated: return ReplayTimelineEventKind.Elite;
+                case RunEventType.AiDecision: return ReplayTimelineEventKind.AiDecision;
                 default: throw new ArgumentOutOfRangeException(nameof(type), type, null);
             }
         }
@@ -384,6 +386,7 @@ namespace FPS.Determinism
                 case ReplayTimelineEventKind.Wave: return "波次";
                 case ReplayTimelineEventKind.EnemySpawn: return "敌人出生";
                 case ReplayTimelineEventKind.Elite: return "精英生成";
+                case ReplayTimelineEventKind.AiDecision: return "AI 决策";
                 default: return kind.ToString();
             }
         }

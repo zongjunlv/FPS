@@ -11,6 +11,8 @@ public sealed class EnemyAbilityController : MonoBehaviour
 
     private readonly RaiderTacticsStateMachine tactics = new();
     private readonly SuppressorTacticsStateMachine suppressorTactics = new();
+    private readonly EnemyUtilityDecisionEngine utilityDecisionEngine = new();
+    private readonly EnemyUtilityWorldFactCollector utilityFactCollector = new();
     private readonly RaycastHit[] lineOfFireHits =
         new RaycastHit[LineOfFireHitCapacity];
     private EnemyNavigationController navigation;
@@ -20,10 +22,13 @@ public sealed class EnemyAbilityController : MonoBehaviour
     private RaiderApproachAbilityDefinition raider;
     private SuppressorRangedAbilityDefinition suppressor;
     private EnemySupportAuraAbilityDefinition support;
+    private EnemyUtilityProfileDefinition utilityProfile;
     private Transform target;
     private Vector3 flankDestination;
+    private Vector3 retreatDestination;
     private Vector3 lastProgressPosition;
     private bool hasFlankDestination;
+    private bool hasRetreatDestination;
     private bool hasCommittedCharge;
     private bool preferRightFlank;
     private float noProgressElapsed;
@@ -34,6 +39,7 @@ public sealed class EnemyAbilityController : MonoBehaviour
     private Health health;
     private float supportCooldownRemaining;
     private EnemyAiLodController lod;
+    private EnemyUtilityDecisionResult lastUtilityDecision;
 
     public bool IsActive => activeSet != null &&
         (raider != null || suppressor != null || support != null);
@@ -51,6 +57,9 @@ public sealed class EnemyAbilityController : MonoBehaviour
     public int PathFailureCount { get; private set; }
     public int ActiveSupportTargetCount => activeSupportTargets.Count;
     public int SupportPulseCount { get; private set; }
+    public EnemyUtilityDecisionResult LastUtilityDecision =>
+        lastUtilityDecision;
+    public bool UsesUtilityAi => IsRaider && utilityProfile != null;
     public string SupportSourceId => enemy != null
         ? $"{gameObject.GetEntityId()}:{enemy.SpawnResetCount}"
         : $"{gameObject.GetEntityId()}:0";
@@ -77,6 +86,7 @@ public sealed class EnemyAbilityController : MonoBehaviour
     public float TracerSpeed => IsSuppressor
         ? suppressor.TracerSpeed
         : 260f;
+    public float SupportRadius => IsSupport ? support.Radius : 0f;
     public EnemyAttackMode AttackMode => IsSuppressor
         ? EnemyAttackMode.Hitscan
         : EnemyAttackMode.Melee;
@@ -180,6 +190,9 @@ public sealed class EnemyAbilityController : MonoBehaviour
         raider = approach;
         suppressor = ranged;
         support = aura;
+        utilityProfile = raider != null ? raider.UtilityProfile : null;
+        utilityDecisionEngine.Reset(utilityProfile);
+        lastUtilityDecision = null;
         target = newTarget;
         preferRightFlank = enemy != null &&
             enemy.SpawnResetCount % 2 == 0;
@@ -216,6 +229,16 @@ public sealed class EnemyAbilityController : MonoBehaviour
         if (IsSuppressor)
         {
             return ResolveSuppressorMovement(
+                chaseTarget,
+                knownTargetPosition,
+                hasVisualContact,
+                distance,
+                deltaTime);
+        }
+
+        if (UsesUtilityAi)
+        {
+            return ResolveRaiderUtilityMovement(
                 chaseTarget,
                 knownTargetPosition,
                 hasVisualContact,
@@ -327,6 +350,299 @@ public sealed class EnemyAbilityController : MonoBehaviour
         return true;
     }
 
+    private EnemyMovementDirective ResolveRaiderUtilityMovement(
+        Transform chaseTarget,
+        Vector3 knownTargetPosition,
+        bool hasVisualContact,
+        float distance,
+        float deltaTime)
+    {
+        EnemyUtilityWorldFacts facts = utilityFactCollector.Capture(
+            enemy,
+            chaseTarget,
+            hasVisualContact,
+            utilityProfile,
+            neighborQuery);
+        EnemyUtilityDecisionResult decision = utilityDecisionEngine.Evaluate(
+            facts,
+            deltaTime,
+            ResolveUtilitySeed(),
+            IsUtilityActionExecutable);
+        ApplyUtilityDecision(decision);
+
+        if (!decision.HasSelection)
+        {
+            navigation.SetSpeedMultiplier(1f);
+            return EnemyMovementDirective.MoveTo(knownTargetPosition);
+        }
+
+        EnemyUtilityActionDefinition action = decision.SelectedAction;
+
+        if (action.Kind != EnemyUtilityActionKind.Flank &&
+            !hasCommittedCharge)
+        {
+            hasFlankDestination = false;
+        }
+
+        if (action.Kind != EnemyUtilityActionKind.Retreat)
+        {
+            hasRetreatDestination = false;
+        }
+
+        switch (action.Kind)
+        {
+            case EnemyUtilityActionKind.Flank:
+                return ResolveUtilityFlank(
+                    action,
+                    chaseTarget,
+                    knownTargetPosition,
+                    hasVisualContact,
+                    distance,
+                    deltaTime,
+                    facts);
+            case EnemyUtilityActionKind.Retreat:
+                return ResolveUtilityRetreat(
+                    action,
+                    chaseTarget,
+                    knownTargetPosition,
+                    deltaTime,
+                    facts);
+            case EnemyUtilityActionKind.Chase:
+            default:
+                hasCommittedCharge = false;
+                navigation.SetSpeedMultiplier(
+                    action.MovementSpeedMultiplier);
+                return hasVisualContact && distance <= raider.AttackRange
+                    ? EnemyMovementDirective.None
+                    : EnemyMovementDirective.MoveTo(knownTargetPosition);
+        }
+    }
+
+    private EnemyMovementDirective ResolveUtilityFlank(
+        EnemyUtilityActionDefinition action,
+        Transform chaseTarget,
+        Vector3 knownTargetPosition,
+        bool hasVisualContact,
+        float distance,
+        float deltaTime,
+        EnemyUtilityWorldFacts facts)
+    {
+        if (hasCommittedCharge)
+        {
+            tactics.BeginCharge();
+            navigation.SetSpeedMultiplier(raider.ChargeSpeedMultiplier);
+            return hasVisualContact && distance <= raider.AttackRange
+                ? EnemyMovementDirective.None
+                : EnemyMovementDirective.MoveTo(knownTargetPosition);
+        }
+
+        if (hasFlankDestination)
+        {
+            if (navigation.HasReachedDestination)
+            {
+                utilityDecisionEngine.CompleteActive();
+                BeginCharge();
+                return EnemyMovementDirective.MoveTo(knownTargetPosition);
+            }
+
+            if (HasStoppedMakingProgress(deltaTime))
+            {
+                FailFlank();
+                return ResolveUtilityFailureFallback(
+                    action,
+                    knownTargetPosition,
+                    facts);
+            }
+
+            tactics.BeginFlank();
+            navigation.SetSpeedMultiplier(action.MovementSpeedMultiplier);
+            return EnemyMovementDirective.MoveTo(flankDestination);
+        }
+
+        if (!TrySelectFlank(chaseTarget, out Vector3 destination))
+        {
+            FailFlank();
+            return ResolveUtilityFailureFallback(
+                action,
+                knownTargetPosition,
+                facts);
+        }
+
+        navigation.SetSpeedMultiplier(action.MovementSpeedMultiplier);
+        return EnemyMovementDirective.MoveTo(destination);
+    }
+
+    private EnemyMovementDirective ResolveUtilityRetreat(
+        EnemyUtilityActionDefinition action,
+        Transform chaseTarget,
+        Vector3 knownTargetPosition,
+        float deltaTime,
+        EnemyUtilityWorldFacts facts)
+    {
+        hasCommittedCharge = false;
+        hasFlankDestination = false;
+        tactics.BeginRetreat();
+
+        if (hasRetreatDestination && navigation.HasReachedDestination)
+        {
+            hasRetreatDestination = false;
+            utilityDecisionEngine.CompleteActive();
+            navigation.SetSpeedMultiplier(1f);
+            return EnemyMovementDirective.Hold;
+        }
+
+        if (hasRetreatDestination && HasStoppedMakingProgress(deltaTime))
+        {
+            PathFailureCount++;
+            hasRetreatDestination = false;
+            noProgressElapsed = 0f;
+            return ResolveUtilityFailureFallback(
+                action,
+                knownTargetPosition,
+                facts);
+        }
+
+        if (!hasRetreatDestination &&
+            !TrySelectRetreatDestination(chaseTarget, action, out _))
+        {
+            PathFailureCount++;
+            return ResolveUtilityFailureFallback(
+                action,
+                knownTargetPosition,
+                facts);
+        }
+
+        navigation.SetSpeedMultiplier(action.MovementSpeedMultiplier);
+        return EnemyMovementDirective.MoveTo(retreatDestination);
+    }
+
+    private bool TrySelectRetreatDestination(
+        Transform chaseTarget,
+        EnemyUtilityActionDefinition action,
+        out Vector3 resolved)
+    {
+        Vector3 away = transform.position - chaseTarget.position;
+        away.y = 0f;
+
+        if (away.sqrMagnitude <= 0.001f)
+        {
+            away = -chaseTarget.forward;
+            away.y = 0f;
+        }
+
+        away.Normalize();
+        float distance = Mathf.Max(2f, action.MovementDistance);
+        float sampleRadius = Mathf.Max(1f, raider.FlankSampleRadius);
+        int firstSide = preferRightFlank ? 1 : -1;
+
+        for (int index = 0; index < 3; index++)
+        {
+            float angle = index == 0
+                ? 0f
+                : firstSide * (index == 1 ? 45f : -45f);
+            Vector3 candidate = transform.position +
+                Quaternion.AngleAxis(angle, Vector3.up) * away * distance;
+
+            if (!navigation.TryResolveReachableDestination(
+                    candidate,
+                    sampleRadius,
+                    out resolved))
+            {
+                continue;
+            }
+
+            retreatDestination = resolved;
+            hasRetreatDestination = true;
+            lastProgressPosition = transform.position;
+            noProgressElapsed = 0f;
+            preferRightFlank = !preferRightFlank;
+            return true;
+        }
+
+        resolved = default;
+        return false;
+    }
+
+    private EnemyMovementDirective ResolveUtilityFailureFallback(
+        EnemyUtilityActionDefinition failedAction,
+        Vector3 knownTargetPosition,
+        EnemyUtilityWorldFacts facts)
+    {
+        utilityDecisionEngine.ReportFailure(failedAction.StableId);
+        EnemyUtilityDecisionResult fallback = utilityDecisionEngine.Evaluate(
+            facts,
+            0f,
+            ResolveUtilitySeed(),
+            IsUtilityActionExecutable);
+        ApplyUtilityDecision(fallback);
+        navigation.SetSpeedMultiplier(
+            fallback.SelectedAction != null
+                ? fallback.SelectedAction.MovementSpeedMultiplier
+                : 1f);
+        return EnemyMovementDirective.MoveTo(knownTargetPosition);
+    }
+
+    private bool IsUtilityActionExecutable(
+        EnemyUtilityActionDefinition action)
+    {
+        if (action == null)
+        {
+            return false;
+        }
+
+        return action.Kind switch
+        {
+            EnemyUtilityActionKind.Chase => true,
+            EnemyUtilityActionKind.Flank => navigation != null,
+            EnemyUtilityActionKind.Retreat => navigation != null,
+            _ => false
+        };
+    }
+
+    private void ApplyUtilityDecision(EnemyUtilityDecisionResult decision)
+    {
+        lastUtilityDecision = decision;
+
+        if (decision == null || !decision.Changed)
+        {
+            return;
+        }
+
+        WaveEnemyLifecycle lifecycle = GetComponent<WaveEnemyLifecycle>();
+        RunDeterminismRecorder.Active?.TryRecordAiDecision(
+            lifecycle != null && lifecycle.IsArmed ? lifecycle.SpawnId : 0,
+            decision.PreviousActionId,
+            decision.SelectedAction?.StableId ?? string.Empty,
+            decision.ReasonCode,
+            FindSelectedScore(decision));
+    }
+
+    private static float FindSelectedScore(
+        EnemyUtilityDecisionResult decision)
+    {
+        if (decision?.SelectedAction == null)
+        {
+            return 0f;
+        }
+
+        for (int index = 0; index < decision.Candidates.Count; index++)
+        {
+            EnemyUtilityCandidateScore candidate = decision.Candidates[index];
+
+            if (ReferenceEquals(candidate.Action, decision.SelectedAction))
+            {
+                return candidate.Score;
+            }
+        }
+
+        return 0f;
+    }
+
+    private static long ResolveUtilitySeed()
+    {
+        return RunDeterminismRecorder.Active?.Record?.RunSeed ?? 18018L;
+    }
+
     public void NotifyAttackDecision(EnemyAttackDecision decision)
     {
         if (!IsActive)
@@ -352,9 +668,12 @@ public sealed class EnemyAbilityController : MonoBehaviour
         }
 
         hasFlankDestination = false;
+        hasRetreatDestination = false;
         hasCommittedCharge = false;
         flankDestination = Vector3.zero;
+        retreatDestination = Vector3.zero;
         noProgressElapsed = 0f;
+        utilityDecisionEngine.CancelActive();
         if (IsRaider)
         {
             tactics.BeginRegroup(raider.RegroupDuration);
@@ -373,16 +692,21 @@ public sealed class EnemyAbilityController : MonoBehaviour
         raider = null;
         suppressor = null;
         support = null;
+        utilityProfile = null;
         target = null;
         hasFlankDestination = false;
+        hasRetreatDestination = false;
         hasCommittedCharge = false;
         flankDestination = Vector3.zero;
+        retreatDestination = Vector3.zero;
         lastProgressPosition = Vector3.zero;
         noProgressElapsed = 0f;
         SuccessfulFlankSelections = 0;
         PathFailureCount = 0;
         SupportPulseCount = 0;
         supportCooldownRemaining = 0f;
+        lastUtilityDecision = null;
+        utilityDecisionEngine.Reset(null);
         tactics.Reset(false);
         suppressorTactics.Reset(false);
         navigation?.ResetMovementProfile();

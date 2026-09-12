@@ -86,6 +86,63 @@ public sealed class EnemyPoolRuntimeDiagnostics
     public int Expansion { get; }
 }
 
+public sealed class EnemyUtilityCandidateRuntimeDiagnostics
+{
+    public EnemyUtilityCandidateRuntimeDiagnostics(
+        string actionId,
+        string displayName,
+        float score,
+        bool eligible,
+        float cooldownRemaining,
+        string status)
+    {
+        ActionId = actionId ?? string.Empty;
+        DisplayName = string.IsNullOrWhiteSpace(displayName)
+            ? ActionId
+            : displayName.Trim();
+        Score = Math.Max(0f, score);
+        Eligible = eligible;
+        CooldownRemaining = Math.Max(0f, cooldownRemaining);
+        Status = status ?? string.Empty;
+    }
+
+    public string ActionId { get; }
+    public string DisplayName { get; }
+    public float Score { get; }
+    public bool Eligible { get; }
+    public float CooldownRemaining { get; }
+    public string Status { get; }
+}
+
+public sealed class EnemyUtilityRuntimeDiagnostics
+{
+    public EnemyUtilityRuntimeDiagnostics(
+        int spawnId,
+        string role,
+        string selectedAction,
+        string reason,
+        EnemyUtilityWorldFacts facts,
+        IReadOnlyList<EnemyUtilityCandidateRuntimeDiagnostics> candidates)
+    {
+        SpawnId = Math.Max(0, spawnId);
+        Role = string.IsNullOrWhiteSpace(role) ? "未分类" : role.Trim();
+        SelectedAction = string.IsNullOrWhiteSpace(selectedAction)
+            ? "无可执行行动"
+            : selectedAction.Trim();
+        Reason = string.IsNullOrWhiteSpace(reason) ? "无" : reason.Trim();
+        Facts = facts;
+        Candidates = candidates ??
+            Array.Empty<EnemyUtilityCandidateRuntimeDiagnostics>();
+    }
+
+    public int SpawnId { get; }
+    public string Role { get; }
+    public string SelectedAction { get; }
+    public string Reason { get; }
+    public EnemyUtilityWorldFacts Facts { get; }
+    public IReadOnlyList<EnemyUtilityCandidateRuntimeDiagnostics> Candidates { get; }
+}
+
 public sealed class RuntimeCombatDiagnosticsSnapshot
 {
     public RuntimeCombatDiagnosticsSnapshot(
@@ -94,7 +151,8 @@ public sealed class RuntimeCombatDiagnosticsSnapshot
         IReadOnlyList<RuntimeDiagnosticCount> lodTiers,
         PerceptionRuntimeDiagnostics perception,
         WaveRuntimeDiagnostics wave,
-        IReadOnlyList<EnemyPoolRuntimeDiagnostics> pools)
+        IReadOnlyList<EnemyPoolRuntimeDiagnostics> pools,
+        IReadOnlyList<EnemyUtilityRuntimeDiagnostics> utilityDecisions = null)
     {
         AwarenessStates = awarenessStates ?? Array.Empty<RuntimeDiagnosticCount>();
         Roles = roles ?? Array.Empty<RuntimeDiagnosticCount>();
@@ -102,6 +160,8 @@ public sealed class RuntimeCombatDiagnosticsSnapshot
         Perception = perception;
         Wave = wave;
         Pools = pools ?? Array.Empty<EnemyPoolRuntimeDiagnostics>();
+        UtilityDecisions = utilityDecisions ??
+            Array.Empty<EnemyUtilityRuntimeDiagnostics>();
     }
 
     public IReadOnlyList<RuntimeDiagnosticCount> AwarenessStates { get; }
@@ -110,6 +170,7 @@ public sealed class RuntimeCombatDiagnosticsSnapshot
     public PerceptionRuntimeDiagnostics Perception { get; }
     public WaveRuntimeDiagnostics Wave { get; }
     public IReadOnlyList<EnemyPoolRuntimeDiagnostics> Pools { get; }
+    public IReadOnlyList<EnemyUtilityRuntimeDiagnostics> UtilityDecisions { get; }
 }
 
 public sealed class RuntimeDiagnosticsRefreshGate

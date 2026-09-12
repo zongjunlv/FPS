@@ -254,6 +254,27 @@ public sealed class RunDeterminismRecorder : MonoBehaviour
         }
     }
 
+    public bool TryRecordAiDecision(
+        int spawnId,
+        string previousActionId,
+        string selectedActionId,
+        string reasonCode,
+        float score)
+    {
+        if (run == null)
+        {
+            return false;
+        }
+
+        run.RecordEvent(RunEventType.AiDecision, StableEventPayload.Create(
+            RunPayloadField.Text("action", selectedActionId ?? string.Empty),
+            RunPayloadField.Text("previous", previousActionId ?? string.Empty),
+            RunPayloadField.Text("reason", reasonCode ?? string.Empty),
+            RunPayloadField.Number("score", Quantize(score)),
+            RunPayloadField.Number("spawnId", Mathf.Max(0, spawnId))));
+        return true;
+    }
+
     private void HandleShotResolved(ShotResult result)
     {
         RecordShot(result);

@@ -2081,6 +2081,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::EnemyController
   currentEnemy: {fileID: 11400000, guid: 978c73e2a1f764a538a8cffe7075fde2, type: 2}
   bombEffect: {fileID: 1126181125208960, guid: ca26d7307564ff848b29e32bbe6279ef, type: 3}
+  displayName: 
   headDamageMultiplier: 2
 --- !u!65 &160434234
 BoxCollider:
@@ -8060,7 +8061,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 91d1b3fa8a2144ababf11fb76bf07314, type: 3}
-  m_Name:
+  m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::WeaponController
   weapon: {fileID: 11400000, guid: 492f0cab2a0f433586ae644e3bbaea1f, type: 2}
   muzzleFlash: {fileID: 1790961309}
@@ -8069,6 +8070,7 @@ MonoBehaviour:
   dryFireFeedbackInterval: 0.35
   maxAimDistance: 200
   tracerSpeed: 280
+  appliesBurnOnHit: 1
 --- !u!1 &721661990
 GameObject:
   m_ObjectHideFlags: 0
@@ -9041,6 +9043,7 @@ MonoBehaviour:
   dryFireFeedbackInterval: 0.35
   maxAimDistance: 200
   tracerSpeed: 280
+  appliesBurnOnHit: 1
 --- !u!1 &831014028
 GameObject:
   m_ObjectHideFlags: 0
@@ -11281,8 +11284,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: bac3c8bdfb75841aca392ec82a9c0c70, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::PlayerController
-  walkSpeed: 2
-  sprintSpeed: 5
+  walkSpeed: 5
+  sprintSpeed: 8
   crouchSpeed: 1.5
   standingHeight: 1.8
   crouchingHeight: 1.2
@@ -11414,7 +11417,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: f1d5c0f699e44cf28982b22b46a13f18, type: 3}
-  m_Name:
+  m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::WeaponLoadoutController
   weapons:
   - {fileID: 816876982}
@@ -11431,7 +11434,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: a0e681a4695f4c3b87db94b0d758e870, type: 3}
-  m_Name:
+  m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::ShotTracerPool
   capacity: 16
 --- !u!114 &1073853159
@@ -11444,7 +11447,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 2f7ec5e3de604f0c89870ece74dfa1bb, type: 3}
-  m_Name:
+  m_Name: 
   m_EditorClassIdentifier: FPS.Composition::PlayerCombatCompositionRoot
   input: {fileID: 1073853149}
   player: {fileID: 1073853139}
@@ -19835,7 +19838,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: a28d205f4ce1e4961b8d3d9c13f06c99, type: 3}
-  m_Name:
+  m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::MuzzleFlashController
   particles:
   - {fileID: 716486416}

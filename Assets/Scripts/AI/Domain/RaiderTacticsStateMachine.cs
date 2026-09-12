@@ -5,6 +5,7 @@ public enum RaiderTacticsPhase
     Disabled,
     Ready,
     Flanking,
+    Retreating,
     Charging,
     Windup,
     Striking,
@@ -41,6 +42,14 @@ public sealed class RaiderTacticsStateMachine
         if (Phase != RaiderTacticsPhase.Disabled)
         {
             Phase = RaiderTacticsPhase.Charging;
+        }
+    }
+
+    public void BeginRetreat()
+    {
+        if (Phase != RaiderTacticsPhase.Disabled)
+        {
+            Phase = RaiderTacticsPhase.Retreating;
         }
     }
 

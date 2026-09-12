@@ -179,7 +179,7 @@ public sealed class Issue49ContentValidationTests
         var archetype = CreateArchetype();
         archetype.ConfigureTemplateAddress("test/enemy");
         var settings = AddressableAssetSettings.Create(root + "/Addressables",
-            "TestSettings", false, true);
+            "TestSettings", false, false);
         var group = settings.CreateGroup("Wrong Enemies", false, false, false,
             null, typeof(BundledAssetGroupSchema));
         string prefabPath = root + "/Enemy.prefab";

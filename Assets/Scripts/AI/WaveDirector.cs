@@ -94,6 +94,7 @@ public sealed class WaveDirector : MonoBehaviour, IWaveProgressSource
         var awareness = new Dictionary<string, int>(StringComparer.Ordinal);
         var roles = new Dictionary<string, int>(StringComparer.Ordinal);
         var lod = new Dictionary<string, int>(StringComparer.Ordinal);
+        var utilityDecisions = new List<EnemyUtilityRuntimeDiagnostics>();
         WaveDefinition definition = CurrentDefinition;
 
         foreach (EnemySpawnHandle handle in activeEnemies.Values)
@@ -107,7 +108,21 @@ public sealed class WaveDirector : MonoBehaviour, IWaveProgressSource
             Increment(
                 lod,
                 (perception?.LodTier ?? EnemyAiLodTier.Near).ToString());
-            Increment(roles, ResolveRole(definition, handle.EnemyTypeId));
+            string role = ResolveRole(definition, handle.EnemyTypeId);
+            Increment(roles, role);
+            EnemyAbilityController abilities = handle.Controller != null
+                ? handle.Controller.AbilityController
+                : null;
+            EnemyUtilityDecisionResult utility =
+                abilities?.LastUtilityDecision;
+
+            if (utility != null)
+            {
+                utilityDecisions.Add(BuildUtilityDiagnostics(
+                    handle.SpawnId,
+                    role,
+                    utility));
+            }
         }
 
         PooledEnemyFactory pool = enemyFactory switch
@@ -122,7 +137,8 @@ public sealed class WaveDirector : MonoBehaviour, IWaveProgressSource
             ToSortedCounts(lod),
             EnemyPerceptionScheduler.Instance?.CaptureDiagnostics(),
             CaptureDiagnostics(),
-            pool?.CaptureDiagnostics());
+            pool?.CaptureDiagnostics(),
+            utilityDecisions);
     }
 
     public WaveRuntimeSnapshot CaptureRuntimeState()
@@ -925,6 +941,48 @@ public sealed class WaveDirector : MonoBehaviour, IWaveProgressSource
             }
         }
         return "unknown";
+    }
+
+    private static EnemyUtilityRuntimeDiagnostics BuildUtilityDiagnostics(
+        int spawnId,
+        string role,
+        EnemyUtilityDecisionResult decision)
+    {
+        var candidates = new List<EnemyUtilityCandidateRuntimeDiagnostics>(
+            decision.Candidates.Count);
+
+        for (int index = 0; index < decision.Candidates.Count; index++)
+        {
+            EnemyUtilityCandidateScore candidate = decision.Candidates[index];
+            candidates.Add(new EnemyUtilityCandidateRuntimeDiagnostics(
+                candidate.Action?.StableId,
+                candidate.Action?.DisplayName,
+                candidate.Score,
+                candidate.Eligible,
+                candidate.CooldownRemaining,
+                candidate.Status));
+        }
+
+        return new EnemyUtilityRuntimeDiagnostics(
+            spawnId,
+            role,
+            decision.SelectedAction?.DisplayName,
+            TranslateUtilityReason(decision.ReasonCode),
+            decision.Facts,
+            candidates);
+    }
+
+    private static string TranslateUtilityReason(string reason)
+    {
+        return reason switch
+        {
+            "highest-score" => "当前评分最高",
+            "commitment" => "承诺时间内保持行动",
+            "hysteresis" => "迟滞保护，避免频繁切换",
+            "fallback" => "寻路失败，降级到后备行动",
+            "no-candidate" => "没有满足门槛的行动",
+            _ => reason ?? string.Empty
+        };
     }
 
     private static void Increment(IDictionary<string, int> counts, string key)

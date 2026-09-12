@@ -13,6 +13,7 @@ MonoBehaviour:
   m_Name: RaiderFlank
   m_EditorClassIdentifier: FPS.Composition::RaiderApproachAbilityDefinition
   stableId: enemy.ability.raider_flank
+  utilityProfile: {fileID: 11400000, guid: b3c8d5f7badc14f3eacbe84f084c5997, type: 2}
   flankDistance: 5.5
   flankRearOffset: 2.5
   flankSampleRadius: 2

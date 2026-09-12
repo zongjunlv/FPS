@@ -27,7 +27,8 @@ namespace FPS.Determinism
         EnemySpawned,
         ShotFired,
         EnemyKilled,
-        WaveTransition
+        WaveTransition,
+        AiDecision
     }
 
     public readonly struct RunPayloadField
