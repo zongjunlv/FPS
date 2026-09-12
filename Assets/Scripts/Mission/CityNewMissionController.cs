@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using FPS.Simulation;
 using UnityEngine;
 using UnityEngine.InputSystem;
 using UnityEngine.SceneManagement;
@@ -10,7 +11,8 @@ using UnityEngine.SceneManagement;
     typeof(PlayerCombatController))]
 public sealed class CityNewMissionController : MonoBehaviour
 {
-    private readonly MissionFlowStateMachine flow = new();
+    private MissionFlowStateMachine flow = new();
+    private RunSimulationKernel simulation;
     private readonly MissionRunStatistics statistics = new();
     private Health playerHealth;
     private PlayerController player;
@@ -94,7 +96,9 @@ public sealed class CityNewMissionController : MonoBehaviour
         Unbind();
         Terminal = terminal;
         TargetHealth = targetHealth;
+        simulation = null;
         statistics.Reset();
+        flow = new MissionFlowStateMachine();
         flow.Configure(1);
         QuitRequested = false;
         IsRestarting = false;
@@ -142,6 +146,7 @@ public sealed class CityNewMissionController : MonoBehaviour
         waveDirector = configuredWaveDirector;
         statistics.Reset();
         statistics.UseAuthoritativeKillTracking();
+        flow = new MissionFlowStateMachine();
         flow.Configure(1);
         QuitRequested = false;
         IsRestarting = false;
@@ -158,10 +163,18 @@ public sealed class CityNewMissionController : MonoBehaviour
             waveDirector.EnemyDied += HandleEnemyDied;
             waveDirector.WaveEnded += HandleWaveEnded;
             waveDirector.WaveCompleted += HandleWaveCompleted;
+            waveDirector.SimulationReady += HandleSimulationReady;
+            if (waveDirector.Simulation != null)
+            {
+                AttachSimulation(waveDirector.Simulation);
+            }
 
             if (waveDirector.IsCompleted)
             {
-                flow.RegisterTargetEliminated();
+                if (simulation == null)
+                {
+                    flow.RegisterTargetEliminated();
+                }
             }
         }
 
@@ -182,9 +195,16 @@ public sealed class CityNewMissionController : MonoBehaviour
 
     public bool TryEnterExtraction(GameObject actor)
     {
-        if (!configured ||
-            actor != gameObject ||
-            !flow.TryExtract())
+        if (!configured || actor != gameObject)
+        {
+            return false;
+        }
+        bool extracted = simulation != null
+            ? simulation.Submit(SimulationCommand.Create(
+                simulation.Tick,
+                SimulationCommandType.EnterExtraction))
+            : flow.TryExtract();
+        if (!extracted)
         {
             return false;
         }
@@ -252,7 +272,19 @@ public sealed class CityNewMissionController : MonoBehaviour
             return false;
         }
 
-        if (!flow.TryRestoreSilently(snapshot, out error))
+        if (simulation != null)
+        {
+            MissionFlowRestoreState current = flow.CaptureState();
+            if (current.State != snapshot.State ||
+                current.RequiredTargets != snapshot.RequiredTargets ||
+                current.EliminatedTargets != snapshot.EliminatedTargets ||
+                current.TerminalCompleted != snapshot.TerminalCompleted)
+            {
+                error = "任务状态与权威战局内核不一致。";
+                return false;
+            }
+        }
+        else if (!flow.TryRestoreSilently(snapshot, out error))
         {
             return false;
         }
@@ -322,6 +354,7 @@ public sealed class CityNewMissionController : MonoBehaviour
             waveDirector.EnemyDied -= HandleEnemyDied;
             waveDirector.WaveEnded -= HandleWaveEnded;
             waveDirector.WaveCompleted -= HandleWaveCompleted;
+            waveDirector.SimulationReady -= HandleSimulationReady;
             waveDirector = null;
         }
 
@@ -337,11 +370,19 @@ public sealed class CityNewMissionController : MonoBehaviour
         }
 
         flow.StateChanged -= HandleStateChanged;
+        simulation = null;
     }
 
     private void HandleTerminalCompleted(
         TerminalInteractable completedTerminal)
     {
+        if (simulation != null)
+        {
+            simulation.Submit(SimulationCommand.Create(
+                simulation.Tick,
+                SimulationCommandType.TerminalCompleted));
+            return;
+        }
         flow.CompleteTerminal();
     }
 
@@ -353,7 +394,10 @@ public sealed class CityNewMissionController : MonoBehaviour
 
     private void HandleWaveCompleted()
     {
-        flow.RegisterTargetEliminated();
+        if (simulation == null)
+        {
+            flow.RegisterTargetEliminated();
+        }
         CompleteAlreadyActivatedTerminal();
     }
 
@@ -383,11 +427,38 @@ public sealed class CityNewMissionController : MonoBehaviour
 
     private void HandlePlayerDied()
     {
-        if (flow.Fail())
+        bool failed = simulation != null
+            ? simulation.Submit(SimulationCommand.Create(
+                simulation.Tick,
+                SimulationCommandType.PlayerDefeated))
+            : flow.Fail();
+        if (failed)
         {
             waveDirector?.StopRun(WaveStopReason.PlayerDied);
             EndRunSystems();
             ApplyOutcome();
+        }
+    }
+
+    private void HandleSimulationReady(RunSimulationKernel readySimulation)
+    {
+        AttachSimulation(readySimulation);
+        HandleStateChanged(flow.State);
+    }
+
+    private void AttachSimulation(RunSimulationKernel readySimulation)
+    {
+        if (readySimulation == null || ReferenceEquals(simulation, readySimulation))
+        {
+            return;
+        }
+        bool wasConfigured = configured;
+        flow.StateChanged -= HandleStateChanged;
+        simulation = readySimulation;
+        flow = simulation.Mission;
+        if (wasConfigured)
+        {
+            flow.StateChanged += HandleStateChanged;
         }
     }
 
@@ -627,7 +698,16 @@ public sealed class CityNewMissionController : MonoBehaviour
             Terminal != null &&
             Terminal.State == TerminalInteractionState.Completed)
         {
-            flow.CompleteTerminal();
+            if (simulation != null)
+            {
+                simulation.Submit(SimulationCommand.Create(
+                    simulation.Tick,
+                    SimulationCommandType.TerminalCompleted));
+            }
+            else
+            {
+                flow.CompleteTerminal();
+            }
         }
     }
 

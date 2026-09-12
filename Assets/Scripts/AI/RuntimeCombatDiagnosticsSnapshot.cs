@@ -44,7 +44,10 @@ public sealed class WaveRuntimeDiagnostics
         int currentWave, int totalWaves, string phase,
         int threatBudget, int resolvedThreat,
         IReadOnlyList<RuntimeDiagnosticCount> candidates,
-        IReadOnlyList<RuntimeDiagnosticCount> spawnQueue)
+        IReadOnlyList<RuntimeDiagnosticCount> spawnQueue,
+        long simulationTick = 0,
+        int fixedTickRate = 0,
+        long nextEventSequence = 0)
     {
         CurrentWave = Math.Max(0, currentWave);
         TotalWaves = Math.Max(0, totalWaves);
@@ -53,6 +56,9 @@ public sealed class WaveRuntimeDiagnostics
         ResolvedThreat = Math.Max(0, resolvedThreat);
         Candidates = candidates ?? Array.Empty<RuntimeDiagnosticCount>();
         SpawnQueue = spawnQueue ?? Array.Empty<RuntimeDiagnosticCount>();
+        SimulationTick = Math.Max(0, simulationTick);
+        FixedTickRate = Math.Max(0, fixedTickRate);
+        NextEventSequence = Math.Max(0, nextEventSequence);
     }
 
     public int CurrentWave { get; }
@@ -62,6 +68,9 @@ public sealed class WaveRuntimeDiagnostics
     public int ResolvedThreat { get; }
     public IReadOnlyList<RuntimeDiagnosticCount> Candidates { get; }
     public IReadOnlyList<RuntimeDiagnosticCount> SpawnQueue { get; }
+    public long SimulationTick { get; }
+    public int FixedTickRate { get; }
+    public long NextEventSequence { get; }
 }
 
 public sealed class EnemyPoolRuntimeDiagnostics

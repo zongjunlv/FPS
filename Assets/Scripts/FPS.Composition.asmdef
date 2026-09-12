@@ -2,6 +2,7 @@
   "name": "FPS.Composition",
   "rootNamespace": "FPS",
   "references": [
+    "FPS.Simulation",
     "FPS.Determinism",
     "FPS.SaveGame",
     "FPS.Core",

@@ -191,6 +191,9 @@ public sealed class CombatRuntimeDiagnosticsPanel : MonoBehaviour
         else
         {
             GUILayout.Label($"波次 {wave.CurrentWave}/{wave.TotalWaves} · {wave.Phase}");
+            GUILayout.Label(
+                $"权威 Tick {wave.SimulationTick} @ {wave.FixedTickRate}/s · " +
+                $"事件序号 {wave.NextEventSequence}");
             GUILayout.Label($"威胁预算 {wave.ThreatBudget} · 已选威胁 {wave.ResolvedThreat}");
             DrawCounts("候选阵容", wave.Candidates);
             DrawCounts("待生成队列", wave.SpawnQueue);

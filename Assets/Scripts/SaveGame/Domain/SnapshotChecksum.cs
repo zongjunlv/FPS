@@ -51,6 +51,7 @@ namespace FPS.SaveGame
                 WriteRotation(writer, snapshot.PlayerRotation);
                 WriteFloat(writer, snapshot.CameraPitch);
                 writer.Write(snapshot.PlayerCrouching);
+                WriteSimulationClock(writer, snapshot.Simulation);
                 writer.Flush();
                 using (var sha = SHA256.Create())
                 {
@@ -212,6 +213,22 @@ namespace FPS.SaveGame
             WriteFloat(writer, value.W);
         }
 
+        private static void WriteSimulationClock(
+            BinaryWriter writer,
+            SimulationClockSnapshot value)
+        {
+            // No null marker is written so pre-Issue-58 schema-v2 checksums remain
+            // byte-for-byte valid. New saves append the authoritative clock block.
+            if (value == null) return;
+            writer.Write("FPS.Simulation.v1");
+            writer.Write(value.Tick);
+            writer.Write(value.NextEventSequence);
+            writer.Write(value.FixedTickRate);
+            writer.Write(value.Paused);
+            WriteFloat(writer, value.PlayerHealth);
+            WriteFloat(writer, value.PlayerArmor);
+        }
+
         private static void WriteFloat(BinaryWriter writer, float value)
         {
             // JSON does not preserve IEEE-754's signed zero. Canonicalize both
@@ -260,6 +277,14 @@ namespace FPS.SaveGame
                 error = "玩家位置、朝向或视角状态无效。";
             else if (snapshot.Enemies.Count > MaximumEnemies)
                 error = "敌人列表超出容量限制。";
+            else if (snapshot.Simulation != null &&
+                     (snapshot.Simulation.Tick < 0 ||
+                      snapshot.Simulation.NextEventSequence < 0 ||
+                      snapshot.Simulation.FixedTickRate < 1 ||
+                      snapshot.Simulation.FixedTickRate > 1000 ||
+                      !FiniteNonNegative(snapshot.Simulation.PlayerHealth) ||
+                      !FiniteNonNegative(snapshot.Simulation.PlayerArmor)))
+                error = "权威战局时钟状态无效。";
             if (error != null) return false;
 
             var weapons = new HashSet<string>(StringComparer.Ordinal);

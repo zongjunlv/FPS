@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using FPS.GameplayEffects;
+using FPS.Simulation;
 using UnityEngine;
 
 public enum WaveStopReason
@@ -15,6 +16,7 @@ public enum WaveStopReason
 public sealed class WaveDirector : MonoBehaviour, IWaveProgressSource
 {
     private const float CueDuration = 1.6f;
+    public const int SimulationTickRate = 30;
 
     private readonly Dictionary<int, EnemySpawnHandle> activeEnemies = new();
     private readonly List<Vector3> occupiedPositions = new();
@@ -27,6 +29,9 @@ public sealed class WaveDirector : MonoBehaviour, IWaveProgressSource
     private Transform player;
     private Health playerHealth;
     private MultiWaveFlowState flow;
+    private RunSimulationKernel simulation;
+    private float simulationTickAccumulator;
+    private int simulationEventCursor;
     private float spawnCooldown;
     private float cueRemaining;
     private int nextSpawnId = 1;
@@ -44,6 +49,7 @@ public sealed class WaveDirector : MonoBehaviour, IWaveProgressSource
     public event Action WaveCompleted;
     public event Action<EnemyDeathEvent> EnemyDied;
     public event Action<EnemySpawnedEvent> EnemySpawned;
+    public event Action<RunSimulationKernel> SimulationReady;
 
     public WaveProgressSnapshot CurrentProgress => CreateProgress();
     public WaveRunPhase Phase => flow != null
@@ -51,6 +57,7 @@ public sealed class WaveDirector : MonoBehaviour, IWaveProgressSource
         : WaveRunPhase.Idle;
     public bool IsRunning => flow != null && flow.IsRunning;
     public bool IsCompleted => flow != null && flow.IsCompleted;
+    public RunSimulationKernel Simulation => simulation;
     public int PeakAliveCount { get; private set; }
     public int SpawnAttemptCount { get; private set; }
     public int CompletionEventCount { get; private set; }
@@ -86,7 +93,10 @@ public sealed class WaveDirector : MonoBehaviour, IWaveProgressSource
                 : 0,
             definition.ResolvedThreatCost,
             CountEntries(definition.EnemyEntries, 0),
-            BuildSpawnQueue(definition, flow.SpawnedCount));
+            BuildSpawnQueue(definition, flow.SpawnedCount),
+            simulation.Tick,
+            simulation.Configuration.FixedTickRate,
+            simulation.NextEventSequence);
     }
 
     public RuntimeCombatDiagnosticsSnapshot CaptureCombatDiagnostics()
@@ -189,7 +199,8 @@ public sealed class WaveDirector : MonoBehaviour, IWaveProgressSource
             flow.CaptureState(),
             Mathf.Max(0f, spawnCooldown),
             nextSpawnId,
-            enemies);
+            enemies,
+            simulation.CaptureState());
     }
 
     public bool TryRestoreRuntimeState(
@@ -278,8 +289,18 @@ public sealed class WaveDirector : MonoBehaviour, IWaveProgressSource
             staged.Add(handle);
         }
 
+        RunSimulationSnapshot simulationSnapshot = snapshot.Simulation ??
+            new RunSimulationSnapshot(
+                simulation.Configuration.Seed,
+                0,
+                0,
+                false,
+                playerHealth != null ? playerHealth.CurrentHealth : 100f,
+                playerHealth != null ? playerHealth.CurrentArmor : 0f,
+                snapshot.Flow,
+                simulation.Mission.CaptureState());
         if (snapshot.NextSpawnId <= maximumSpawnId ||
-            !flow.TryRestore(snapshot.Flow, out error))
+            !simulation.TryRestore(simulationSnapshot, out error))
         {
             ReleaseStaged(staged);
             return false;
@@ -293,6 +314,8 @@ public sealed class WaveDirector : MonoBehaviour, IWaveProgressSource
 
         nextSpawnId = snapshot.NextSpawnId;
         spawnCooldown = snapshot.SpawnCooldownRemaining;
+        simulationTickAccumulator = 0f;
+        simulationEventCursor = 0;
         completedWaveSpawnCounts.Clear();
         for (int wave = 1; wave < flow.CurrentWave; wave++)
         {
@@ -385,6 +408,7 @@ public sealed class WaveDirector : MonoBehaviour, IWaveProgressSource
         }
 
         UpdatePresentationCue();
+        AdvanceAuthoritativeSimulation(Time.deltaTime);
 
         if (flow.Phase == WaveRunPhase.Intermission)
         {
@@ -461,13 +485,16 @@ public sealed class WaveDirector : MonoBehaviour, IWaveProgressSource
 
     public bool StartRun()
     {
-        if (!configured || flow == null || !IsFactoryReady || !flow.StartRun())
+        if (!configured || flow == null || !IsFactoryReady ||
+            !simulation.Submit(SimulationCommand.Create(
+                simulation.Tick,
+                SimulationCommandType.StartRun)))
         {
             return false;
         }
 
         StopReason = WaveStopReason.None;
-        BeginCurrentWavePresentation();
+        DrainSimulationEvents();
         return true;
     }
 
@@ -521,7 +548,16 @@ public sealed class WaveDirector : MonoBehaviour, IWaveProgressSource
                 stage.IntermissionAfterSeconds);
         }
 
-        flow = new MultiWaveFlowState(rules);
+        int runSeed = player.GetComponent<PlayerUpgradeController>()?.RunSeed ??
+                      18018;
+        simulation = new RunSimulationKernel(
+            new RunSimulationConfiguration(
+                runSeed,
+                SimulationTickRate,
+                rules));
+        flow = simulation.Wave;
+        simulationTickAccumulator = 0f;
+        simulationEventCursor = 0;
         completedWaveSpawnCounts.Clear();
         peakAliveByWave.Clear();
 
@@ -551,6 +587,12 @@ public sealed class WaveDirector : MonoBehaviour, IWaveProgressSource
         if (playerHealth != null)
         {
             playerHealth.Died += HandlePlayerDied;
+            playerHealth.VitalsChanged += HandlePlayerVitalsChanged;
+            simulation.Submit(SimulationCommand.Create(
+                simulation.Tick,
+                SimulationCommandType.PlayerVitalsChanged,
+                primaryValue: playerHealth.CurrentHealth,
+                secondaryValue: playerHealth.CurrentArmor));
         }
 
         configured = true;
@@ -560,6 +602,7 @@ public sealed class WaveDirector : MonoBehaviour, IWaveProgressSource
             ?.BindKillSource(this);
         UnityEngine.Object.FindAnyObjectByType<UnifiedGameHud>()
             ?.BindWave(this);
+        SimulationReady?.Invoke(simulation);
         PublishProgress();
     }
 
@@ -585,23 +628,98 @@ public sealed class WaveDirector : MonoBehaviour, IWaveProgressSource
 
     private void UpdateIntermission()
     {
-        int previousCountdown = Mathf.CeilToInt(
-            flow.IntermissionRemaining);
-        bool startedNextWave = flow.Tick(Time.deltaTime);
         int currentCountdown = Mathf.CeilToInt(
             flow.IntermissionRemaining);
-
-        if (startedNextWave)
-        {
-            BeginCurrentWavePresentation();
-            return;
-        }
-
-        if (currentCountdown != previousCountdown ||
-            currentCountdown != lastPublishedCountdown)
+        if (currentCountdown != lastPublishedCountdown)
         {
             lastPublishedCountdown = currentCountdown;
             PublishProgress();
+        }
+    }
+
+    private void AdvanceAuthoritativeSimulation(float deltaTime)
+    {
+        if (simulation == null || !flow.IsRunning || deltaTime <= 0f)
+        {
+            return;
+        }
+
+        float fixedDelta = simulation.Configuration.FixedDeltaSeconds;
+        simulationTickAccumulator += deltaTime;
+        while (simulationTickAccumulator + 0.000001f >= fixedDelta)
+        {
+            simulationTickAccumulator -= fixedDelta;
+            simulation.AdvanceTick();
+            DrainSimulationEvents();
+        }
+    }
+
+    /// <summary>Advances exactly one authoritative tick, even while paused.</summary>
+    public bool StepSimulation()
+    {
+        if (simulation == null)
+        {
+            return false;
+        }
+        simulation.Step();
+        DrainSimulationEvents();
+        return true;
+    }
+
+    /// <summary>Headless deterministic fast-forward used by diagnostics and tests.</summary>
+    public long FastForwardSimulation(long ticks)
+    {
+        if (simulation == null)
+        {
+            return 0;
+        }
+        long advanced = simulation.FastForward(ticks);
+        DrainSimulationEvents();
+        return advanced;
+    }
+
+    private void DrainSimulationEvents()
+    {
+        if (simulation == null)
+        {
+            return;
+        }
+
+        IReadOnlyList<SimulationEvent> events = simulation.Events;
+        while (simulationEventCursor < events.Count)
+        {
+            SimulationEvent simulationEvent =
+                events[simulationEventCursor++];
+            switch (simulationEvent.Type)
+            {
+                case SimulationEventType.WaveStarted:
+                    BeginCurrentWavePresentation();
+                    break;
+                case SimulationEventType.WaveEnded:
+                {
+                    int waveNumber = simulationEvent.IntegerValue;
+                    if (completedWaveSpawnCounts.Count < waveNumber)
+                    {
+                        completedWaveSpawnCounts.Add(
+                            stages[waveNumber - 1].Wave.TotalEnemyCount);
+                    }
+                    WaveEndedEventCount++;
+                    bool runCompleted = flow.IsCompleted &&
+                                        waveNumber == flow.TotalWaves;
+                    SetCue(
+                        runCompleted
+                            ? WavePresentationCue.RunCompleted
+                            : WavePresentationCue.WaveCleared,
+                        waveNumber);
+                    PublishProgress();
+                    WaveEnded?.Invoke(waveNumber);
+                    break;
+                }
+                case SimulationEventType.WaveCompleted:
+                    CompletionEventCount++;
+                    WaveCompleted?.Invoke();
+                    break;
+            }
         }
     }
 
@@ -671,7 +789,10 @@ public sealed class WaveDirector : MonoBehaviour, IWaveProgressSource
             return;
         }
 
-        if (!flow.TryRegisterSpawn(spawnId))
+        if (!simulation.Submit(SimulationCommand.Create(
+                simulation.Tick,
+                SimulationCommandType.EnemySpawned,
+                spawnId)))
         {
             enemyFactory.Release(handle);
             spawnCooldown = definition.RetryInterval;
@@ -679,6 +800,7 @@ public sealed class WaveDirector : MonoBehaviour, IWaveProgressSource
         }
 
         activeEnemies.Add(spawnId, handle);
+        DrainSimulationEvents();
         EnemySpawned?.Invoke(new EnemySpawnedEvent(request, handle));
         RecordSpawnClearances(spawnPoint);
         nextSpawnId++;
@@ -720,44 +842,23 @@ public sealed class WaveDirector : MonoBehaviour, IWaveProgressSource
 
         int endingWave = flow.CurrentWave;
 
-        if (!flow.TrySettle(handle.SpawnId))
+        if (!simulation.Submit(SimulationCommand.Create(
+                simulation.Tick,
+                SimulationCommandType.EnemySettled,
+                handle.SpawnId)))
         {
             return;
         }
 
-        WaveRunPhase phaseAfterSettle = flow.Phase;
         activeEnemies.Remove(handle.SpawnId);
         PublishEnemyDeath(handle, reason, endingWave);
         enemyFactory.Release(handle);
+        DrainSimulationEvents();
 
-        if (phaseAfterSettle == WaveRunPhase.Intermission ||
-            phaseAfterSettle == WaveRunPhase.Completed ||
-            (phaseAfterSettle == WaveRunPhase.Spawning &&
-             endingWave != flow.CurrentWave))
+        if (flow.Phase == WaveRunPhase.Intermission ||
+            flow.Phase == WaveRunPhase.Completed ||
+            endingWave != flow.CurrentWave)
         {
-            completedWaveSpawnCounts.Add(
-                stages[endingWave - 1].Wave.TotalEnemyCount);
-            WaveEndedEventCount++;
-            SetCue(
-                phaseAfterSettle == WaveRunPhase.Completed
-                    ? WavePresentationCue.RunCompleted
-                    : WavePresentationCue.WaveCleared,
-                endingWave);
-            PublishProgress();
-            WaveEnded?.Invoke(endingWave);
-
-            if (phaseAfterSettle == WaveRunPhase.Completed)
-            {
-                CompletionEventCount++;
-                WaveCompleted?.Invoke();
-                return;
-            }
-
-            if (phaseAfterSettle == WaveRunPhase.Spawning)
-            {
-                BeginCurrentWavePresentation();
-            }
-
             return;
         }
 
@@ -805,11 +906,29 @@ public sealed class WaveDirector : MonoBehaviour, IWaveProgressSource
         StopRun(WaveStopReason.PlayerDied);
     }
 
+    private void HandlePlayerVitalsChanged()
+    {
+        if (simulation == null || playerHealth == null)
+        {
+            return;
+        }
+        simulation.Submit(SimulationCommand.Create(
+            simulation.Tick,
+            SimulationCommandType.PlayerVitalsChanged,
+            primaryValue: playerHealth.CurrentHealth,
+            secondaryValue: playerHealth.CurrentArmor));
+    }
+
     private bool StopRunInternal(
         WaveStopReason reason,
         bool publish)
     {
-        bool stopped = flow != null && flow.StopRun();
+        bool stopped = flow != null && flow.IsRunning &&
+                       simulation != null &&
+                       simulation.Submit(SimulationCommand.Create(
+                           simulation.Tick,
+                           SimulationCommandType.StopRun));
+        DrainSimulationEvents();
 
         if (!stopped && activeEnemies.Count == 0)
         {
@@ -844,6 +963,7 @@ public sealed class WaveDirector : MonoBehaviour, IWaveProgressSource
         if (playerHealth != null)
         {
             playerHealth.Died -= HandlePlayerDied;
+            playerHealth.VitalsChanged -= HandlePlayerVitalsChanged;
             playerHealth = null;
         }
     }

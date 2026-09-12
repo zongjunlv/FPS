@@ -2,6 +2,7 @@
   "name": "FPS.PlayModeTests",
   "rootNamespace": "FPS.Tests.PlayMode",
   "references": [
+    "FPS.Simulation",
     "FPS.Determinism",
     "FPS.Core",
     "FPS.Combat",

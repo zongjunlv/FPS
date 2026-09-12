@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using FPS.GameplayEffects;
+using FPS.Simulation;
 using UnityEngine;
 
 public readonly struct EnemyRuntimeSnapshot
@@ -42,16 +43,19 @@ public sealed class WaveRuntimeSnapshot
         MultiWaveFlowStateSnapshot flow,
         float spawnCooldownRemaining,
         int nextSpawnId,
-        IReadOnlyList<EnemyRuntimeSnapshot> enemies)
+        IReadOnlyList<EnemyRuntimeSnapshot> enemies,
+        RunSimulationSnapshot simulation = null)
     {
         Flow = flow;
         SpawnCooldownRemaining = spawnCooldownRemaining;
         NextSpawnId = nextSpawnId;
         Enemies = enemies ?? Array.Empty<EnemyRuntimeSnapshot>();
+        Simulation = simulation;
     }
 
     public MultiWaveFlowStateSnapshot Flow { get; }
     public float SpawnCooldownRemaining { get; }
     public int NextSpawnId { get; }
     public IReadOnlyList<EnemyRuntimeSnapshot> Enemies { get; }
+    public RunSimulationSnapshot Simulation { get; }
 }

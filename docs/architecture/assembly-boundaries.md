@@ -12,9 +12,12 @@ FPS.Core
 │   └── FPS.Inventory
 ├── FPS.UI
 └── FPS.Composition
+
+FPS.Simulation ──> FPS.Composition
 ```
 
 - `FPS.Core` 不依赖任何项目运行时程序集。
+- `FPS.Simulation` 是固定 Tick 的权威战局内核，不依赖 Unity 或其他项目运行时程序集。
 - `FPS.GameplayEffects` 只依赖 `FPS.Core`。
 - `FPS.Combat` 可以依赖 `FPS.Core` 与 `FPS.GameplayEffects`。
 - `FPS.AI`、`FPS.Inventory` 可以依赖 Core、Combat 与 GameplayEffects，但不得相互依赖，也不得依赖 UI。
@@ -29,6 +32,7 @@ FPS.Core
 - AI：警觉、攻击与小队情报的纯状态模型。
 - Inventory：背包、快捷栏、物品定义与确定性掉落模型。
 - UI：安全区适配和 HUD 视觉配置。
+- Simulation：波次、任务、玩家战局状态、稳定命令与有序战局事件。
 - Composition：现有场景 Bootstrap、跨模块控制器和尚未解耦的表现层。
 
 `AssemblyBoundaryTests` 会验证程序集存在、引用方向、无循环依赖、源码归属，以及运行时与测试代码不再硬编码旧程序集名称。

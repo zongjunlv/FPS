@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using FPS.GameplayEffects;
 using FPS.SaveGame;
+using FPS.Simulation;
 using UnityEngine;
 
 /// <summary>Maps data-only saves onto a prepared player, without replaying rewards.</summary>
@@ -414,20 +415,35 @@ public sealed class RunSnapshotRuntimeAdapter : MonoBehaviour
         }
 
         WaveRuntimeSnapshot runtime = director.CaptureRuntimeState();
-        SingleWaveStateSnapshot wave = runtime.Flow.CurrentWaveState;
+        RunSimulationSnapshot authoritative = runtime.Simulation;
+        if (authoritative == null)
+        {
+            throw new InvalidOperationException(
+                "权威战局仿真尚未准备完成。");
+        }
+        SingleWaveStateSnapshot wave = authoritative.Wave.CurrentWaveState;
         snapshot.Wave = new WaveSnapshot
         {
-            CurrentWave = runtime.Flow.CurrentWave,
-            Phase = (int)runtime.Flow.Phase,
+            CurrentWave = authoritative.Wave.CurrentWave,
+            Phase = (int)authoritative.Wave.Phase,
             TotalEnemyCount = wave.TotalCount,
             MaximumAliveCount = wave.MaximumAliveCount,
             SpawnedIds = new List<int>(wave.SpawnedIds),
             ActiveIds = new List<int>(wave.ActiveIds),
             SettledIds = new List<int>(wave.SettledIds),
-            IntermissionRemaining = runtime.Flow.IntermissionRemaining,
+            IntermissionRemaining = authoritative.Wave.IntermissionRemaining,
             SpawnCooldownRemaining = runtime.SpawnCooldownRemaining,
             NextSpawnId = runtime.NextSpawnId,
             RemainingThreatBudget = 0
+        };
+        snapshot.Simulation = new SimulationClockSnapshot
+        {
+            Tick = authoritative.Tick,
+            NextEventSequence = authoritative.NextEventSequence,
+            FixedTickRate = director.Simulation.Configuration.FixedTickRate,
+            Paused = authoritative.Paused,
+            PlayerHealth = authoritative.PlayerHealth,
+            PlayerArmor = authoritative.PlayerArmor
         };
         snapshot.Enemies.Clear();
         foreach (EnemyRuntimeSnapshot enemy in runtime.Enemies)
@@ -450,7 +466,7 @@ public sealed class RunSnapshotRuntimeAdapter : MonoBehaviour
             });
         }
 
-        MissionFlowRestoreState missionState = mission.CaptureMissionState();
+        MissionFlowRestoreState missionState = authoritative.Mission;
         PlayerRunProgression progression =
             GetComponent<PlayerRunProgression>();
         RunProgressionRestoreSnapshot progressionState =

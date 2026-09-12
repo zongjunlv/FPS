@@ -16,6 +16,7 @@ namespace FPS.Tests.Architecture
                 new Dictionary<string, string[]>
                 {
                     ["FPS.Determinism"] = Array.Empty<string>(),
+                    ["FPS.Simulation"] = Array.Empty<string>(),
                     ["FPS.Core"] = Array.Empty<string>(),
                     ["FPS.Combat"] = new[]
                     {
@@ -57,7 +58,8 @@ namespace FPS.Tests.Architecture
                         "FPS.Inventory",
                         "FPS.SaveGame",
                         "FPS.UI",
-                        "FPS.Determinism"
+                        "FPS.Determinism",
+                        "FPS.Simulation"
                     }
                 };
 
@@ -115,6 +117,8 @@ namespace FPS.Tests.Architecture
             AssertAssembly<FPS.SaveGame.RunSnapshot>("FPS.SaveGame");
             AssertAssembly<FPS.Determinism.DeterministicRun>(
                 "FPS.Determinism");
+            AssertAssembly<FPS.Simulation.RunSimulationKernel>(
+                "FPS.Simulation");
             AssertAssembly<SafeAreaFitter>("FPS.UI");
             AssertAssembly(
                 typeof(GameplayEffectsModule),

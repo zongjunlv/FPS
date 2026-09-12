@@ -30,6 +30,21 @@ namespace FPS.SaveGame
         [DataMember(Order = 18, IsRequired = true)] public float CameraPitch;
         [DataMember(Order = 19, IsRequired = true)] public bool PlayerCrouching;
         [DataMember(Order = 20, IsRequired = true)] public string Checksum;
+        // Optional for schema-v2 backward compatibility. Older saves are rebuilt
+        // into the authoritative simulation from their Wave and Mission fields.
+        [DataMember(Order = 21, IsRequired = false, EmitDefaultValue = false)]
+        public SimulationClockSnapshot Simulation;
+    }
+
+    [Serializable, DataContract]
+    public sealed class SimulationClockSnapshot
+    {
+        [DataMember(Order = 0, IsRequired = true)] public long Tick;
+        [DataMember(Order = 1, IsRequired = true)] public long NextEventSequence;
+        [DataMember(Order = 2, IsRequired = true)] public int FixedTickRate = 30;
+        [DataMember(Order = 3, IsRequired = true)] public bool Paused;
+        [DataMember(Order = 4, IsRequired = true)] public float PlayerHealth;
+        [DataMember(Order = 5, IsRequired = true)] public float PlayerArmor;
     }
 
     [Serializable, DataContract]

@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using FPS.SaveGame;
+using FPS.Simulation;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 
@@ -143,6 +144,27 @@ public static class RunSnapshotSession
             (WaveRunPhase)saved.Phase,
             single,
             saved.IntermissionRemaining);
+        var missionFlow = new MissionFlowRestoreState(
+            (MissionFlowState)mission.Phase,
+            mission.RequiredTargets,
+            mission.EliminatedTargets,
+            mission.TerminalCompleted);
+        SimulationClockSnapshot clock = pendingWorld.Simulation;
+        if (clock != null &&
+            clock.FixedTickRate != director.Simulation.Configuration.FixedTickRate)
+        {
+            error = "存档固定 Tick 频率与当前战局配置不一致。";
+            return false;
+        }
+        var simulationState = new RunSimulationSnapshot(
+            pendingWorld.Seed,
+            clock?.Tick ?? 0,
+            clock?.NextEventSequence ?? 0,
+            clock?.Paused ?? false,
+            clock?.PlayerHealth ?? pendingWorld.Health,
+            clock?.PlayerArmor ?? pendingWorld.Armor,
+            flow,
+            missionFlow);
         var enemies = new EnemyRuntimeSnapshot[pendingWorld.Enemies.Count];
         for (int index = 0; index < enemies.Length; index++)
         {
@@ -170,7 +192,8 @@ public static class RunSnapshotSession
                 flow,
                 saved.SpawnCooldownRemaining,
                 saved.NextSpawnId,
-                enemies),
+                enemies,
+                simulationState),
             out error))
         {
             return false;
