@@ -1,0 +1,24 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 0eb6d42a02bd64399831b491adbd6a6b, type: 3}
+  m_Name: SpreadBurn
+  m_EditorClassIdentifier: FPS.GameplayEffects::FPS.GameplayEffects.CombatRuleEffectDefinition
+  stableId: build.effect.spread_burn
+  effectKind: 1
+  target: 2
+  gameplayEffect: {fileID: 11400000, guid: 74444de70ad9145c4aecab1874430d2b, type: 2}
+  grantedTag: status.burning
+  radius: 7
+  maximumTargets: 4
+  hudMessage: 
+  followUpEffects:
+  - {fileID: 11400000, guid: 9401902042ba54653b936efd3d96993c, type: 2}

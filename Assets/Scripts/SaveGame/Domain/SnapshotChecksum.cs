@@ -52,6 +52,7 @@ namespace FPS.SaveGame
                 WriteFloat(writer, snapshot.CameraPitch);
                 writer.Write(snapshot.PlayerCrouching);
                 WriteSimulationClock(writer, snapshot.Simulation);
+                WriteCombatBuild(writer, snapshot.CombatBuild);
                 writer.Flush();
                 using (var sha = SHA256.Create())
                 {
@@ -229,6 +230,35 @@ namespace FPS.SaveGame
             WriteFloat(writer, value.PlayerArmor);
         }
 
+        private static void WriteCombatBuild(
+            BinaryWriter writer,
+            CombatBuildSnapshot value)
+        {
+            // As with the simulation block, omit a null marker to preserve the
+            // checksum of earlier schema-v2 saves.
+            if (value == null) return;
+            writer.Write("FPS.CombatBuild.v1");
+            writer.Write(value.NextEventId);
+            writer.Write(value.InstalledBuildIds?.Count ?? -1);
+            if (value.InstalledBuildIds != null)
+                foreach (string id in value.InstalledBuildIds)
+                    writer.Write(id ?? string.Empty);
+            writer.Write(value.Cooldowns?.Count ?? -1);
+            if (value.Cooldowns != null)
+                foreach (CombatRuleCooldownSaveSnapshot cooldown in
+                         value.Cooldowns)
+                {
+                    writer.Write(cooldown != null);
+                    if (cooldown == null) continue;
+                    writer.Write(cooldown.RuleId ?? string.Empty);
+                    writer.Write(cooldown.ReadyTick);
+                }
+            writer.Write(value.ProcessedEventIds?.Count ?? -1);
+            if (value.ProcessedEventIds != null)
+                foreach (long eventId in value.ProcessedEventIds)
+                    writer.Write(eventId);
+        }
+
         private static void WriteFloat(BinaryWriter writer, float value)
         {
             // JSON does not preserve IEEE-754's signed zero. Canonicalize both
@@ -246,6 +276,9 @@ namespace FPS.SaveGame
         public const int MaximumEnemies = 4096;
         public const int MaximumEffectsPerEntity = 256;
         public const int MaximumEffectStacks = 128;
+        public const int MaximumCombatBuilds = 128;
+        public const int MaximumCombatRuleCooldowns = 1024;
+        public const int MaximumCombatRuleEvents = 256;
 
         public static bool TryValidate(RunSnapshot snapshot, out string error)
         {
@@ -285,6 +318,8 @@ namespace FPS.SaveGame
                       !FiniteNonNegative(snapshot.Simulation.PlayerHealth) ||
                       !FiniteNonNegative(snapshot.Simulation.PlayerArmor)))
                 error = "权威战局时钟状态无效。";
+            else if (!ValidateCombatBuild(snapshot.CombatBuild, out error))
+                return false;
             if (error != null) return false;
 
             var weapons = new HashSet<string>(StringComparer.Ordinal);
@@ -342,6 +377,57 @@ namespace FPS.SaveGame
                 !ValidateEffects(snapshot.PlayerEffects, "玩家", out error))
                 return false;
 
+            return true;
+        }
+
+        private static bool ValidateCombatBuild(
+            CombatBuildSnapshot value,
+            out string error)
+        {
+            error = null;
+            if (value == null) return true;
+            if (value.NextEventId < 0 || value.InstalledBuildIds == null ||
+                value.Cooldowns == null || value.ProcessedEventIds == null ||
+                value.InstalledBuildIds.Count > MaximumCombatBuilds ||
+                value.Cooldowns.Count > MaximumCombatRuleCooldowns ||
+                value.ProcessedEventIds.Count > MaximumCombatRuleEvents)
+            {
+                error = "构筑运行时状态缺失或超出容量限制。";
+                return false;
+            }
+
+            var builds = new HashSet<string>(StringComparer.Ordinal);
+            foreach (string id in value.InstalledBuildIds)
+            {
+                if (!ValidId(id) || !builds.Add(id))
+                {
+                    error = "构筑标识缺失或重复。";
+                    return false;
+                }
+            }
+
+            var rules = new HashSet<string>(StringComparer.Ordinal);
+            foreach (CombatRuleCooldownSaveSnapshot cooldown in
+                     value.Cooldowns)
+            {
+                if (cooldown == null || !ValidId(cooldown.RuleId) ||
+                    cooldown.ReadyTick < 0 || !rules.Add(cooldown.RuleId))
+                {
+                    error = "构筑规则冷却状态无效或重复。";
+                    return false;
+                }
+            }
+
+            var events = new HashSet<long>();
+            foreach (long eventId in value.ProcessedEventIds)
+            {
+                if (eventId <= 0 || eventId > value.NextEventId ||
+                    !events.Add(eventId))
+                {
+                    error = "构筑事件去重窗口无效。";
+                    return false;
+                }
+            }
             return true;
         }
 

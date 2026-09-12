@@ -32,6 +32,7 @@ public sealed class PlayerCombatCompositionRoot : MonoBehaviour
         get;
         private set;
     }
+    public PlayerCombatBuildController CombatBuilds { get; private set; }
 
     private AmmoHudPresenter ammoHud;
     private PlayerCrosshairPresenter crosshair;
@@ -78,6 +79,7 @@ public sealed class PlayerCombatCompositionRoot : MonoBehaviour
         player.SetRuntimeStats(RuntimeStats);
 
         if (!combat.Initialize() || !CombatFeedback.Initialize() ||
+            !CombatBuilds.Initialize() ||
             !KillAmmoEffect.Initialize() ||
             !LowHealthFireRateEffect.Initialize())
         {
@@ -133,6 +135,7 @@ public sealed class PlayerCombatCompositionRoot : MonoBehaviour
         CombatFeedback = GetOrAdd<PlayerCombatFeedbackController>();
         HudBootstrap = GetOrAdd<UnifiedGameHudBootstrap>();
         CombatEvents = GetOrAdd<PlayerCombatEventRouter>();
+        CombatBuilds = GetOrAdd<PlayerCombatBuildController>();
         KillAmmoEffect = GetOrAdd<PlayerKillAmmoEffectController>();
         LowHealthFireRateEffect =
             GetOrAdd<PlayerLowHealthFireRateEffectController>();
@@ -164,6 +167,7 @@ public sealed class PlayerCombatCompositionRoot : MonoBehaviour
             damageAudio,
             feedbackAudio);
         KillAmmoEffect.Configure(combat, CombatEvents);
+        CombatBuilds.Configure(combat, CombatEvents, PlayerHealth);
         LowHealthFireRateEffect.Configure(PlayerHealth, RuntimeStats);
         HudBootstrap.Configure(gameObject, null);
     }

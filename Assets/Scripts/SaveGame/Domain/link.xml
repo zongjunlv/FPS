@@ -1,6 +1,8 @@
 <linker>
   <assembly fullname="FPS.SaveGame">
     <type fullname="FPS.SaveGame.RunSnapshot" preserve="all" />
+    <type fullname="FPS.SaveGame.CombatBuildSnapshot" preserve="all" />
+    <type fullname="FPS.SaveGame.CombatRuleCooldownSaveSnapshot" preserve="all" />
     <type fullname="FPS.SaveGame.WeaponAmmoSnapshot" preserve="all" />
     <type fullname="FPS.SaveGame.UpgradeLevelSnapshot" preserve="all" />
     <type fullname="FPS.SaveGame.InventorySlotSnapshot" preserve="all" />

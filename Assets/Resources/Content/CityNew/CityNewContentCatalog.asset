@@ -41,3 +41,5 @@ MonoBehaviour:
   - {fileID: 11400000, guid: 194265fc96be047a2a83df065c724782, type: 2}
   - {fileID: 11400000, guid: 21cd52b611911420eb8f7fdecdb33db7, type: 2}
   - {fileID: 11400000, guid: dbe4d93014b31470299f978bc2846a69, type: 2}
+  combatBuilds:
+  - {fileID: 11400000, guid: 1093ef0e1203546d098b31e09700fae2, type: 2}

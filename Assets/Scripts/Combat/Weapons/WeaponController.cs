@@ -14,13 +14,12 @@ public class WeaponController : MonoBehaviour
     [SerializeField, Min(0.1f)] private float dryFireFeedbackInterval = 0.35f;
     [SerializeField, Min(1f)] private float maxAimDistance = 200f;
     [SerializeField, Min(200f)] private float tracerSpeed = 280f;
-    [SerializeField] private bool appliesBurnOnHit = true;
-
     public event Action AmmoChanged;
     public event Action DryFired;
     public event Action ReloadStateChanged;
     public event Action RuntimePropertiesChanged;
     public event Action<ShotResult> ShotResolved;
+    public event Action ReloadCompleted;
 
     public bool IsAutomatic => weapon.IsAutomatic;
     public string StableId => weapon != null ? weapon.StableId : null;
@@ -91,6 +90,7 @@ public class WeaponController : MonoBehaviour
     private CombatEffectPool combatEffectPool;
     private PlayerRuntimeCombatStats runtimeCombatStats;
     private readonly RaycastHit[] hitBuffer = new RaycastHit[32];
+    private ICombatTriggerSink combatTriggerSink;
 
     private void Awake()
     {
@@ -162,6 +162,7 @@ public class WeaponController : MonoBehaviour
         {
             ResetWeaponAnimationSpeed();
             AmmoChanged?.Invoke();
+            ReloadCompleted?.Invoke();
             ReloadStateChanged?.Invoke();
         }
     }
@@ -251,6 +252,11 @@ public class WeaponController : MonoBehaviour
         tracerPool = sharedTracerPool;
         soundEventChannel = combatSoundEvents;
         SetRuntimeCombatStats(combatStats);
+    }
+
+    public void SetCombatTriggerSink(ICombatTriggerSink sink)
+    {
+        combatTriggerSink = sink;
     }
 
     public bool TryStartReload()
@@ -565,9 +571,19 @@ public class WeaponController : MonoBehaviour
                         : gameObject,
                     DamageType.Hitscan));
 
-            if (appliesBurnOnHit && damageResult.WasApplied &&
-                !damageResult.WasKilled && targetHealth != null)
+            if (combatTriggerSink != null)
             {
+                combatTriggerSink.PublishHit(
+                    damageTarget,
+                    damageResult,
+                    hit.point,
+                    DamageType.Hitscan);
+            }
+            else if (damageResult.WasApplied && !damageResult.WasKilled &&
+                     targetHealth != null)
+            {
+                // Compatibility for isolated weapon prefabs/tests. The formal
+                // CityNew composition always routes this through the rule engine.
                 targetHealth.GetComponent<EnemyBurnEffectController>()?
                     .ApplyBurn(
                         shooterRoot != null

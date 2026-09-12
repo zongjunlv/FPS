@@ -36,6 +36,7 @@ public sealed class EnemyBurnEffectController : MonoBehaviour
     private string supportStatusLabel;
     private Color supportStatusColor = Color.white;
     private int supportSourceCount;
+    private bool wasBurningWhenKilled;
     private const float HealthFillWidth = 116f;
     private const float OverheadWorldScale = 0.0065f;
     private const string OverheadRootName = "Enemy Overhead Information";
@@ -65,6 +66,7 @@ public sealed class EnemyBurnEffectController : MonoBehaviour
             ? presentationRoot.transform.localScale.x
             : 0f;
     public GameplayEffectDefinition Definition => EnsureDefinition();
+    public bool WasBurningWhenKilled => wasBurningWhenKilled;
 
     public bool TryCaptureGameplayEffectSnapshot(
         System.Func<Object, string> sourceEncoder,
@@ -115,6 +117,7 @@ public sealed class EnemyBurnEffectController : MonoBehaviour
     {
         if (health != null)
         {
+            health.Killed += HandleKilled;
             health.Died += HandleDeath;
             health.VitalsChanged += SyncPresentation;
         }
@@ -126,17 +129,24 @@ public sealed class EnemyBurnEffectController : MonoBehaviour
     {
         if (health != null)
         {
+            health.Killed -= HandleKilled;
             health.Died -= HandleDeath;
             health.VitalsChanged -= SyncPresentation;
         }
 
-        ClearBurn();
+        // Disable may be part of the death/despawn sequence. Clear the active
+        // runtime without erasing the death-time tag memory required by the
+        // subsequent combat event. Pool reset calls ClearBurn explicitly.
+        runtime?.Clear();
+        TickCount = 0;
+        SyncPresentation();
     }
 
     private void OnDestroy()
     {
         if (health != null)
         {
+            health.Killed -= HandleKilled;
             health.Died -= HandleDeath;
             health.VitalsChanged -= SyncPresentation;
         }
@@ -179,12 +189,24 @@ public sealed class EnemyBurnEffectController : MonoBehaviour
 
     public bool ApplyBurn(GameObject source)
     {
-        if (health == null || health.IsDead || source == null)
+        return ApplyStatus(EnsureDefinition(), source);
+    }
+
+    public bool ApplyStatus(
+        GameplayEffectDefinition definition,
+        GameObject source)
+    {
+        if (health == null || health.IsDead || source == null ||
+            definition == null ||
+            definition.DurationPolicy != GameplayEffectDurationPolicy.Timed ||
+            !string.Equals(
+                definition.StableId,
+                "status.burn",
+                System.StringComparison.Ordinal))
         {
             return false;
         }
 
-        GameplayEffectDefinition definition = EnsureDefinition();
         GameplayEffectApplicationResult result = runtime.ApplyTimed(
             definition,
             new GameplayEffectContext(
@@ -209,6 +231,7 @@ public sealed class EnemyBurnEffectController : MonoBehaviour
 
     public void ClearBurn()
     {
+        wasBurningWhenKilled = false;
         runtime?.Clear();
         TickCount = 0;
         SyncPresentation();
@@ -295,8 +318,20 @@ public sealed class EnemyBurnEffectController : MonoBehaviour
 
     private void HandleDeath()
     {
-        ClearBurn();
+        // Killed is the preferred capture point, but dynamically-added enemy
+        // components can finish enabling later in the same frame. Preserve the
+        // tag again at death so rule evaluation never depends on subscription
+        // order between EnemyController and this presentation/runtime component.
+        wasBurningWhenKilled |= IsBurning;
+        runtime?.Clear();
+        TickCount = 0;
+        SyncPresentation();
         SetOverheadPresentationEnabled(false);
+    }
+
+    private void HandleKilled(DamageInfo damage)
+    {
+        wasBurningWhenKilled = IsBurning;
     }
 
     private GameplayEffectDefinition EnsureDefinition()

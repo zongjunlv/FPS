@@ -1,0 +1,28 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 18090672f02cd4693876afb3d737bdb4, type: 3}
+  m_Name: IgniteOnHit
+  m_EditorClassIdentifier: FPS.GameplayEffects::FPS.GameplayEffects.CombatRuleDefinition
+  stableId: build.rule.ignite_on_hit
+  trigger: 0
+  requiredSourceTags:
+  - entity.player
+  requiredTargetTags:
+  - entity.enemy
+  - enemy.alive
+  excludedTargetTags: []
+  minimumHealthNormalized: 0
+  maximumHealthNormalized: 1
+  cooldownTicks: 0
+  probabilityBasisPoints: 10000
+  effects:
+  - {fileID: 11400000, guid: 4afabde828cb744678d415403d5c1395, type: 2}

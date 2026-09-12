@@ -34,6 +34,30 @@ namespace FPS.SaveGame
         // into the authoritative simulation from their Wave and Mission fields.
         [DataMember(Order = 21, IsRequired = false, EmitDefaultValue = false)]
         public SimulationClockSnapshot Simulation;
+        // Optional for schema-v2 backward compatibility. Older saves keep the
+        // starter build initialized by the scene composition root.
+        [DataMember(Order = 22, IsRequired = false, EmitDefaultValue = false)]
+        public CombatBuildSnapshot CombatBuild;
+    }
+
+    [Serializable, DataContract]
+    public sealed class CombatBuildSnapshot
+    {
+        [DataMember(Order = 0, IsRequired = true)] public long NextEventId;
+        [DataMember(Order = 1, IsRequired = true)]
+        public List<string> InstalledBuildIds = new List<string>();
+        [DataMember(Order = 2, IsRequired = true)]
+        public List<CombatRuleCooldownSaveSnapshot> Cooldowns =
+            new List<CombatRuleCooldownSaveSnapshot>();
+        [DataMember(Order = 3, IsRequired = true)]
+        public List<long> ProcessedEventIds = new List<long>();
+    }
+
+    [Serializable, DataContract]
+    public sealed class CombatRuleCooldownSaveSnapshot
+    {
+        [DataMember(Order = 0, IsRequired = true)] public string RuleId;
+        [DataMember(Order = 1, IsRequired = true)] public long ReadyTick;
     }
 
     [Serializable, DataContract]

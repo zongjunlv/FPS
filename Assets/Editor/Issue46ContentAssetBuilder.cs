@@ -86,6 +86,21 @@ public static class Issue46ContentAssetBuilder
                 GameplayModifierOperation.Add,
                 35f));
 
+        GameplayEffectDefinition burnEffect =
+            Asset<GameplayEffectDefinition>("Effects/EnemyBurn.asset");
+        burnEffect.ConfigureTimed(
+            "status.burn",
+            4f,
+            1f,
+            4f,
+            3,
+            GameplayEffectStackRefreshPolicy.RefreshAllDurations);
+        burnEffect.ConfigureTags(
+            "status.burning",
+            "status.damage_over_time",
+            "target.enemy");
+        CombatBuildDefinition emberBuild = BuildEmberChain(burnEffect);
+
         RaiderApproachAbilityDefinition raiderAbility =
             Asset<RaiderApproachAbilityDefinition>(
                 "Enemies/Abilities/RaiderFlank.asset");
@@ -206,7 +221,8 @@ public static class Issue46ContentAssetBuilder
             sequence,
             loot,
             upgrades,
-            items);
+            items,
+            new[] { emberBuild });
 
         MarkAllDirty();
         AssetDatabase.SaveAssets();
@@ -409,6 +425,88 @@ public static class Issue46ContentAssetBuilder
         return result;
     }
 
+    private static CombatBuildDefinition BuildEmberChain(
+        GameplayEffectDefinition burnEffect)
+    {
+        CombatRuleEffectDefinition burnOnHit =
+            Asset<CombatRuleEffectDefinition>(
+                "Builds/Effects/ApplyBurnOnHit.asset");
+        burnOnHit.Configure(
+            "build.effect.apply_burn_on_hit",
+            CombatRuleEffectKind.ApplyStatus,
+            CombatRuleTarget.EventTarget,
+            burnEffect,
+            "status.burning",
+            0f,
+            1,
+            string.Empty);
+
+        CombatRuleEffectDefinition spreadHud =
+            Asset<CombatRuleEffectDefinition>(
+                "Builds/Effects/BurnSpreadHud.asset");
+        spreadHud.Configure(
+            "build.effect.burn_spread_hud",
+            CombatRuleEffectKind.ShowHudMessage,
+            CombatRuleTarget.EventSource,
+            null,
+            string.Empty,
+            0f,
+            1,
+            "余烬扩散  ×{count}");
+
+        CombatRuleEffectDefinition spreadBurn =
+            Asset<CombatRuleEffectDefinition>(
+                "Builds/Effects/SpreadBurn.asset");
+        spreadBurn.Configure(
+            "build.effect.spread_burn",
+            CombatRuleEffectKind.SpreadStatus,
+            CombatRuleTarget.NearbyEnemies,
+            burnEffect,
+            "status.burning",
+            7f,
+            4,
+            string.Empty,
+            spreadHud);
+
+        CombatRuleDefinition igniteRule = Asset<CombatRuleDefinition>(
+            "Builds/Rules/IgniteOnHit.asset");
+        igniteRule.Configure(
+            "build.rule.ignite_on_hit",
+            CombatTriggerType.Hit,
+            new[] { "entity.player" },
+            new[] { "entity.enemy", "enemy.alive" },
+            Array.Empty<string>(),
+            0f,
+            1f,
+            0,
+            10000,
+            burnOnHit);
+
+        CombatRuleDefinition spreadRule = Asset<CombatRuleDefinition>(
+            "Builds/Rules/SpreadBurnOnKill.asset");
+        spreadRule.Configure(
+            "build.rule.spread_burn_on_kill",
+            CombatTriggerType.Kill,
+            new[] { "entity.player" },
+            new[] { "entity.enemy", "status.burning" },
+            Array.Empty<string>(),
+            0f,
+            1f,
+            1,
+            10000,
+            spreadBurn);
+
+        CombatBuildDefinition build = Asset<CombatBuildDefinition>(
+            "Builds/EmberChain.asset");
+        build.Configure(
+            "build.ember_chain",
+            "余烬连锁",
+            true,
+            igniteRule,
+            spreadRule);
+        return build;
+    }
+
     private static T Asset<T>(string relativePath) where T : ScriptableObject
     {
         string path = $"{Root}/{relativePath}";
@@ -439,7 +537,10 @@ public static class Issue46ContentAssetBuilder
             $"{Root}/Waves",
             $"{Root}/Loot",
             $"{Root}/Items",
-            $"{Root}/Upgrades"
+            $"{Root}/Upgrades",
+            $"{Root}/Builds",
+            $"{Root}/Builds/Effects",
+            $"{Root}/Builds/Rules"
         };
         foreach (string folder in folders)
         {

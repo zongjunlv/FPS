@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using FPS.GameplayEffects;
 using UnityEngine;
 
 [CreateAssetMenu(
@@ -18,6 +19,7 @@ public sealed class CityNewContentCatalog : ScriptableObject
     [SerializeField] private LootDropTableDefinition lootDropTable;
     [SerializeField] private List<UpgradeDefinition> upgrades = new();
     [SerializeField] private List<ItemDefinition> items = new();
+    [SerializeField] private List<CombatBuildDefinition> combatBuilds = new();
 
     public string StableId => stableId;
     public EnemyDefinition DefaultEnemy => defaultEnemy;
@@ -27,6 +29,7 @@ public sealed class CityNewContentCatalog : ScriptableObject
     public LootDropTableDefinition LootDropTable => lootDropTable;
     public IReadOnlyList<UpgradeDefinition> Upgrades => upgrades;
     public IReadOnlyList<ItemDefinition> Items => items;
+    public IReadOnlyList<CombatBuildDefinition> CombatBuilds => combatBuilds;
 
     public static CityNewContentCatalog LoadDefault()
     {
@@ -40,7 +43,8 @@ public sealed class CityNewContentCatalog : ScriptableObject
         WaveSequenceDefinition sequence,
         LootDropTableDefinition drops,
         IEnumerable<UpgradeDefinition> upgradeDefinitions,
-        IEnumerable<ItemDefinition> itemDefinitions)
+        IEnumerable<ItemDefinition> itemDefinitions,
+        IEnumerable<CombatBuildDefinition> buildDefinitions = null)
     {
         stableId = id?.Trim();
         defaultEnemy = enemy;
@@ -55,6 +59,9 @@ public sealed class CityNewContentCatalog : ScriptableObject
         items = itemDefinitions != null
             ? new List<ItemDefinition>(itemDefinitions)
             : new List<ItemDefinition>();
+        combatBuilds = buildDefinitions != null
+            ? new List<CombatBuildDefinition>(buildDefinitions)
+            : new List<CombatBuildDefinition>();
     }
 
     public bool TryValidate(out string error)
@@ -165,6 +172,23 @@ public sealed class CityNewContentCatalog : ScriptableObject
                 "item",
                 out error))
         {
+            return false;
+        }
+
+        if (!ValidateDefinitions(
+                combatBuilds,
+                build => build != null ? build.StableId : null,
+                "combat build",
+                out error))
+        {
+            return false;
+        }
+
+        IReadOnlyList<CombatRuleValidationIssue> buildIssues =
+            CombatRuleContentValidator.Validate(combatBuilds);
+        if (buildIssues.Count > 0)
+        {
+            error = buildIssues[0].Message;
             return false;
         }
 

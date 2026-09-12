@@ -18,6 +18,7 @@ public static class RunSnapshotSession
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
     private static void ResetSession()
     {
+        RunSnapshotPresentationGate.HideImmediately();
         pending = null;
         pendingWorld = null;
         newSeed = null;
@@ -32,6 +33,7 @@ public static class RunSnapshotSession
         if (composition == null || !composition.TryInitialize())
         {
             pending = null;
+            RunSnapshotPresentationGate.HideImmediately();
             error = "玩家组件尚未准备完成，无法恢复快照。";
             return false;
         }
@@ -41,6 +43,8 @@ public static class RunSnapshotSession
         {
             var upgrades = player.GetComponent<PlayerUpgradeController>();
             upgrades.ConfigureRun(newSeed.Value, upgrades.AvailableUpgrades);
+            player.GetComponent<PlayerCombatBuildController>()?
+                .ResetForRun(newSeed.Value);
             newSeed = null;
         }
         RunSnapshot snapshot = pending;
@@ -48,6 +52,7 @@ public static class RunSnapshotSession
         error = string.Empty;
         if (snapshot == null)
         {
+            RunSnapshotPresentationGate.HideImmediately();
             LastMessage = "新战局已开始，已有存档未删除。";
             return true;
         }
@@ -67,6 +72,15 @@ public static class RunSnapshotSession
         if (legacy || !restored)
         {
             pendingLoadNotice = null;
+            if (legacy && restored)
+            {
+                RunSnapshotPresentationGate
+                    .ReleaseWhenRestoredHudIsReady();
+            }
+            else
+            {
+                RunSnapshotPresentationGate.HideImmediately();
+            }
         }
         return restored;
     }
@@ -251,10 +265,12 @@ public static class RunSnapshotSession
             LastMessage = FormatLoadMessage(
                 "读取成功：已恢复保存时的玩家、背包、波次、敌人与任务状态。");
             pendingLoadNotice = null;
+            RunSnapshotPresentationGate.ReleaseWhenRestoredHudIsReady();
         }
         else
         {
             LastMessage = "读取失败：" + error;
+            RunSnapshotPresentationGate.HideImmediately();
         }
         return restored;
     }
@@ -267,6 +283,7 @@ public static class RunSnapshotSession
         int originalSchemaVersion = 0)
     {
         pending = snapshot ?? throw new ArgumentNullException(nameof(snapshot));
+        RunSnapshotPresentationGate.Show();
         pendingWorld = null;
         newSeed = null;
         pendingLoadNotice = loadNotice;
@@ -275,8 +292,14 @@ public static class RunSnapshotSession
         SceneManager.LoadSceneAsync(SceneManager.GetActiveScene().path, LoadSceneMode.Single);
     }
 
+    public static void AbortRestorePresentation()
+    {
+        RunSnapshotPresentationGate.HideImmediately();
+    }
+
     public static void NewGame()
     {
+        RunSnapshotPresentationGate.HideImmediately();
         pending = null;
         pendingWorld = null;
         newSeed = Guid.NewGuid().GetHashCode();

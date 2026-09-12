@@ -14,6 +14,7 @@ public sealed class RunSnapshotRuntimeAdapter : MonoBehaviour
     private WeaponLoadoutController loadout;
     private PlayerInventoryController inventory;
     private PlayerController player;
+    private PlayerCombatBuildController combatBuilds;
 
     private bool Resolve(out string error)
     {
@@ -23,8 +24,10 @@ public sealed class RunSnapshotRuntimeAdapter : MonoBehaviour
         loadout = GetComponent<WeaponLoadoutController>();
         inventory = GetComponent<PlayerInventoryController>();
         player = GetComponent<PlayerController>();
+        combatBuilds = GetComponent<PlayerCombatBuildController>();
         error = health == null || upgrades == null || stats == null ||
-                loadout == null || inventory == null || player == null
+                loadout == null || inventory == null || player == null ||
+                combatBuilds == null
             ? "玩家存档依赖尚未就绪。" : string.Empty;
         return error.Length == 0;
     }
@@ -77,6 +80,8 @@ public sealed class RunSnapshotRuntimeAdapter : MonoBehaviour
             throw new InvalidOperationException(error);
         }
         snapshot.PlayerEffects = ToSaveEffects(playerEffects);
+        snapshot.CombatBuild = ToSaveCombatBuild(
+            combatBuilds.CaptureSnapshot());
         if (!ValidateSnapshot(snapshot, out error)) throw new InvalidOperationException(error);
         return snapshot;
     }
@@ -168,6 +173,13 @@ public sealed class RunSnapshotRuntimeAdapter : MonoBehaviour
             error = "背包、快捷栏或物品冷却状态无法恢复。";
             return false;
         }
+        if (snapshot.CombatBuild != null &&
+            !combatBuilds.CanRestoreSnapshot(
+                ToRuntimeCombatBuild(snapshot.CombatBuild),
+                out error))
+        {
+            return false;
+        }
         error = string.Empty;
         return true;
     }
@@ -192,6 +204,7 @@ public sealed class RunSnapshotRuntimeAdapter : MonoBehaviour
             return false;
         }
         upgrades.RestoreSnapshotUpgrades(snapshot.Seed, snapshot.UpgradeSelectionHistory);
+        combatBuilds.ResetForRun(snapshot.Seed);
         if (!upgrades.TryRestoreGameplayEffectSnapshot(
                 ToRuntimeEffects(snapshot.PlayerEffects),
                 out error))
@@ -210,6 +223,13 @@ public sealed class RunSnapshotRuntimeAdapter : MonoBehaviour
         loadout.RestoreEquippedWeapon(equippedIndex);
         health.TryRestoreSnapshotVitals(snapshot.Health, snapshot.Armor);
         inventory.TryRestoreSnapshot(ToRuntimeInventory(snapshot));
+        if (snapshot.CombatBuild != null &&
+            !combatBuilds.TryRestoreSnapshot(
+                ToRuntimeCombatBuild(snapshot.CombatBuild),
+                out error))
+        {
+            return false;
+        }
         return true;
     }
 
@@ -328,6 +348,7 @@ public sealed class RunSnapshotRuntimeAdapter : MonoBehaviour
         upgrades.RestoreSnapshotUpgrades(
             snapshot.Seed,
             snapshot.UpgradeSelectionHistory);
+        combatBuilds.ResetForRun(snapshot.Seed);
         int equippedIndex = 0;
         for (int index = 0; index < loadout.WeaponCount; index++)
         {
@@ -603,6 +624,56 @@ public sealed class RunSnapshotRuntimeAdapter : MonoBehaviour
                 stacks);
         }
         return new GameplayEffectRuntimeSnapshot(instances);
+    }
+
+    internal static CombatBuildSnapshot ToSaveCombatBuild(
+        CombatRuleRuntimeSnapshot runtime)
+    {
+        if (runtime == null)
+        {
+            return null;
+        }
+
+        var saved = new CombatBuildSnapshot
+        {
+            NextEventId = runtime.NextEventId,
+            InstalledBuildIds = new List<string>(runtime.InstalledBuildIds),
+            ProcessedEventIds = new List<long>(runtime.ProcessedEventIds)
+        };
+        for (int index = 0; index < runtime.Cooldowns.Count; index++)
+        {
+            CombatRuleCooldownSnapshot cooldown = runtime.Cooldowns[index];
+            saved.Cooldowns.Add(new CombatRuleCooldownSaveSnapshot
+            {
+                RuleId = cooldown.RuleId,
+                ReadyTick = cooldown.ReadyTick
+            });
+        }
+        return saved;
+    }
+
+    internal static CombatRuleRuntimeSnapshot ToRuntimeCombatBuild(
+        CombatBuildSnapshot saved)
+    {
+        if (saved == null)
+        {
+            return null;
+        }
+
+        var cooldowns = new CombatRuleCooldownSnapshot[
+            saved.Cooldowns.Count];
+        for (int index = 0; index < cooldowns.Length; index++)
+        {
+            CombatRuleCooldownSaveSnapshot cooldown = saved.Cooldowns[index];
+            cooldowns[index] = new CombatRuleCooldownSnapshot(
+                cooldown.RuleId,
+                cooldown.ReadyTick);
+        }
+        return new CombatRuleRuntimeSnapshot(
+            saved.InstalledBuildIds,
+            cooldowns,
+            saved.ProcessedEventIds,
+            saved.NextEventId);
     }
 
     private static bool Finite(float value) => !float.IsNaN(value) && !float.IsInfinity(value);

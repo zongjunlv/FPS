@@ -1,0 +1,20 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 81fce4b40a4f54483953465c9b9077b2, type: 3}
+  m_Name: EmberChain
+  m_EditorClassIdentifier: FPS.GameplayEffects::FPS.GameplayEffects.CombatBuildDefinition
+  stableId: build.ember_chain
+  displayName: "\u4F59\u70EC\u8FDE\u9501"
+  installOnRunStart: 1
+  rules:
+  - {fileID: 11400000, guid: c746c6391a87e4f2694a6aa5c14216e3, type: 2}
+  - {fileID: 11400000, guid: 15c784b04dbe94ca99e097d0a6adb9fc, type: 2}

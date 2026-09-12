@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using FPS.Determinism;
+using FPS.GameplayEffects;
 using UnityEngine;
 
 /// <summary>Unity adapter for logical replay; physics and rendering are not pixel deterministic.</summary>
@@ -15,6 +16,7 @@ public sealed class RunReplayRuntimeAdapter : MonoBehaviour, IRunReplayAdapter
     private PlayerInventoryController inventory;
     private WaveDirector waves;
     private WaveSequenceDefinition sequence;
+    private PlayerCombatBuildController combatBuilds;
 
     public IReadOnlyList<RunEvent> ConfigurationEvents { get; private set; } =
         Array.Empty<RunEvent>();
@@ -30,6 +32,7 @@ public sealed class RunReplayRuntimeAdapter : MonoBehaviour, IRunReplayAdapter
         health = GetComponent<Health>();
         loadout = GetComponent<WeaponLoadoutController>();
         inventory = GetComponent<PlayerInventoryController>();
+        combatBuilds = GetComponent<PlayerCombatBuildController>();
         waves = waveSource;
         if (waveSequence != null) sequence = waveSequence;
     }
@@ -107,6 +110,7 @@ public sealed class RunReplayRuntimeAdapter : MonoBehaviour, IRunReplayAdapter
                 inventorySnapshot.QuickSlots.Bindings[index]));
 
         CaptureWaveState(fields);
+        CaptureCombatBuildState(fields);
         return ReplayStateSnapshot.Create(fields);
     }
 
@@ -178,10 +182,50 @@ public sealed class RunReplayRuntimeAdapter : MonoBehaviour, IRunReplayAdapter
         }
     }
 
+    private void CaptureCombatBuildState(List<ReplayStateField> fields)
+    {
+        CombatRuleRuntimeSnapshot snapshot = combatBuilds.CaptureSnapshot();
+        fields.Add(ReplayStateField.Number(
+            "combatBuild/event/next",
+            snapshot.NextEventId));
+        fields.Add(ReplayStateField.Number(
+            "combatBuild/installed/count",
+            snapshot.InstalledBuildIds.Count));
+        for (int index = 0; index < snapshot.InstalledBuildIds.Count; index++)
+        {
+            fields.Add(ReplayStateField.Text(
+                "combatBuild/installed/" +
+                index.ToString(CultureInfo.InvariantCulture),
+                snapshot.InstalledBuildIds[index]));
+        }
+        fields.Add(ReplayStateField.Number(
+            "combatBuild/cooldown/count",
+            snapshot.Cooldowns.Count));
+        for (int index = 0; index < snapshot.Cooldowns.Count; index++)
+        {
+            CombatRuleCooldownSnapshot cooldown = snapshot.Cooldowns[index];
+            string prefix = "combatBuild/cooldown/" +
+                index.ToString(CultureInfo.InvariantCulture);
+            fields.Add(ReplayStateField.Text(prefix + "/rule", cooldown.RuleId));
+            fields.Add(ReplayStateField.Number(prefix + "/readyTick", cooldown.ReadyTick));
+        }
+        fields.Add(ReplayStateField.Number(
+            "combatBuild/events/count",
+            snapshot.ProcessedEventIds.Count));
+        for (int index = 0; index < snapshot.ProcessedEventIds.Count; index++)
+        {
+            fields.Add(ReplayStateField.Number(
+                "combatBuild/events/" +
+                index.ToString(CultureInfo.InvariantCulture),
+                snapshot.ProcessedEventIds[index]));
+        }
+    }
+
     private void EnsureConfigured()
     {
         if (input == null || health == null || progression == null || loadout == null ||
-            inventory == null || waves == null)
+            inventory == null || waves == null || combatBuilds == null ||
+            !combatBuilds.IsInitialized)
             throw new InvalidOperationException("回放运行时依赖尚未配置完成。");
     }
 

@@ -336,6 +336,7 @@ public sealed class CityNewWaveBootstrap : MonoBehaviour
 
     private bool FailConfiguration(string reason)
     {
+        RunSnapshotSession.AbortRestorePresentation();
         ConfigurationError =
             $"CityNew content configuration is invalid: {reason}";
         Debug.LogError(ConfigurationError, this);

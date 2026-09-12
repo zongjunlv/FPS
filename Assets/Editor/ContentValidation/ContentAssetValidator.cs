@@ -96,7 +96,9 @@ public static class ContentAssetValidator
         asset is EnemyDefinition || asset is EnemyArchetypeDefinition || asset is EnemyAffixDefinition ||
         asset is EnemyAbilityDefinition || asset is EnemyAbilitySetDefinition || asset is WaveDefinition ||
         asset is WaveSequenceDefinition || asset is LootDropTableDefinition || asset is ItemDefinition ||
-        asset is UpgradeDefinition || asset is GameplayEffectDefinition;
+        asset is UpgradeDefinition || asset is GameplayEffectDefinition ||
+        asset is CombatBuildDefinition || asset is CombatRuleDefinition ||
+        asset is CombatRuleEffectDefinition;
 
     private static void ValidateAsset(ScriptableObject asset, SerializedObject data,
         ContentValidationReport report, AddressableAssetSettings settings, HashSet<string> knownTags)
@@ -198,6 +200,19 @@ public static class ContentAssetValidator
             if (effect.DurationPolicy == GameplayEffectDurationPolicy.Timed &&
                 (data.FindProperty("duration").floatValue <= 0 || data.FindProperty("tickInterval").floatValue <= 0))
                 report.Add("RANGE_INVALID", "定时效果的持续时间和tick间隔必须大于零。", asset);
+        }
+        if (asset is CombatBuildDefinition build)
+        {
+            IReadOnlyList<CombatRuleValidationIssue> issues =
+                CombatRuleContentValidator.Validate(new[] { build });
+            for (int index = 0; index < issues.Count; index++)
+            {
+                CombatRuleValidationIssue issue = issues[index];
+                report.Add(
+                    "COMBAT_RULE_" + issue.Code.ToString().ToUpperInvariant(),
+                    issue.Message,
+                    asset);
+            }
         }
     }
 
