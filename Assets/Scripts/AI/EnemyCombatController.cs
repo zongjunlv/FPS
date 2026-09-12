@@ -30,6 +30,7 @@ public sealed class EnemyCombatController : MonoBehaviour
     private Coroutine attackAnimationRoutine;
     private EnemyAbilityController abilities;
     private EnemyAiLodController lod;
+    private EnemyVisualAnimator visualAnimator;
     private Transform cachedHealthTarget;
     private Health cachedTargetHealth;
     private ShotTracerPool rangedTracerPool;
@@ -45,10 +46,11 @@ public sealed class EnemyCombatController : MonoBehaviour
         enemy = GetComponent<EnemyController>();
         perception = GetComponent<EnemyPerceptionController>();
         navigation = GetComponent<EnemyNavigationController>();
-        animator = GetComponent<Animator>();
+        animator = GetComponentInChildren<Animator>(true);
         audioSource = GetComponent<AudioSource>();
         abilities = GetComponent<EnemyAbilityController>();
         lod = GetComponent<EnemyAiLodController>();
+        visualAnimator = GetComponent<EnemyVisualAnimator>();
 
         if (audioSource == null)
         {
@@ -373,6 +375,14 @@ public sealed class EnemyCombatController : MonoBehaviour
             presentation.AttackImpact != null)
         {
             audioSource.PlayOneShot(presentation.AttackImpact);
+        }
+
+        visualAnimator ??= GetComponent<EnemyVisualAnimator>();
+
+        if (visualAnimator != null)
+        {
+            visualAnimator.PlayAttack();
+            return;
         }
 
         if (animator == null ||

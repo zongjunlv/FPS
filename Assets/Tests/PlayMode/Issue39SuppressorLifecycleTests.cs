@@ -1,4 +1,5 @@
 using System.Collections;
+using System.Linq;
 using NUnit.Framework;
 using UnityEngine;
 using UnityEngine.SceneManagement;
@@ -220,7 +221,9 @@ public sealed class Issue39SuppressorLifecycleTests
         PooledEnemyFactory pool =
             Object.FindAnyObjectByType<PooledEnemyFactory>();
         Assert.That(pool, Is.Not.Null);
-        Assert.That(pool.PooledObjectCount, Is.EqualTo(4));
+        int expectedPrewarm = CityNewContentCatalog.LoadDefault().EnemyArchetypes
+            .Select(archetype => archetype.TemplateAddress).Distinct().Count() * 4;
+        Assert.That(pool.PooledObjectCount, Is.EqualTo(expectedPrewarm));
         Assert.That(pool.ExpansionCount, Is.Zero);
         EnemyAbilityController abilities =
             suppressorHandle.Controller.AbilityController;

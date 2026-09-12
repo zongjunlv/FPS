@@ -4,6 +4,7 @@ public class EnemyController : MonoBehaviour
 {
     [SerializeField] private EnemyDefinition currentEnemy;
     [SerializeField] private GameObject bombEffect;
+    [SerializeField] private string displayName;
 
     [SerializeField, Min(1f)] private float headDamageMultiplier = 2f;
 
@@ -14,6 +15,7 @@ public class EnemyController : MonoBehaviour
     private bool[] colliderBaseline;
     private Rigidbody[] rigidbodies;
     private Animator animator;
+    private bool resetAnimatorWhenEnabled;
     private float configuredHealth;
     private float configuredArmor;
     private EnemyAffixController affixController;
@@ -59,6 +61,9 @@ public class EnemyController : MonoBehaviour
     public EnemyAffixController AffixController => affixController;
     public EnemyAbilityController AbilityController => abilityController;
     public EnemySupportEffectReceiver SupportEffects => supportEffects;
+    public string DisplayName => string.IsNullOrWhiteSpace(displayName)
+        ? string.Empty
+        : displayName.Trim();
 
     public void SetFactoryManaged(bool managed)
     {
@@ -86,6 +91,17 @@ public class EnemyController : MonoBehaviour
         EnsureAffixes();
         EnsureHitboxes();
         CacheRuntimeBaseline();
+    }
+
+    private void OnEnable()
+    {
+        if (!resetAnimatorWhenEnabled)
+        {
+            return;
+        }
+
+        resetAnimatorWhenEnabled = false;
+        ResetAnimatorState();
     }
 
     private void EnsureAwareness()
@@ -184,11 +200,16 @@ public class EnemyController : MonoBehaviour
             body.angularVelocity = Vector3.zero;
         }
 
-        if (animator != null)
+        if (gameObject.activeInHierarchy)
         {
-            animator.Rebind();
-            animator.Update(0f);
+            ResetAnimatorState();
         }
+        else
+        {
+            resetAnimatorWhenEnabled = true;
+        }
+
+        GetComponent<EnemyVisualAnimator>()?.ResetForSpawn();
 
         health.Initialize(configuredHealth, configuredArmor);
         GetComponent<EnemyAiLodController>()?.ResetForSpawn(target);
@@ -228,6 +249,7 @@ public class EnemyController : MonoBehaviour
         GetComponent<EnemyCombatController>()?.PrepareForPool();
         GetComponent<EnemyNavigationController>()?.PrepareForPool();
         GetComponent<EnemyPerceptionController>()?.PrepareForPool();
+        GetComponent<EnemyVisualAnimator>()?.PrepareForPool();
 
         if (colliders != null)
         {
@@ -303,7 +325,23 @@ public class EnemyController : MonoBehaviour
         }
 
         rigidbodies = GetComponentsInChildren<Rigidbody>(true);
-        animator = GetComponent<Animator>();
+        animator = GetComponentInChildren<Animator>(true);
+    }
+
+    private void ResetAnimatorState()
+    {
+        if (animator == null)
+        {
+            animator = GetComponentInChildren<Animator>(true);
+        }
+
+        if (animator == null || !animator.isActiveAndEnabled)
+        {
+            return;
+        }
+
+        animator.Rebind();
+        animator.Update(0f);
     }
 
     private void RestoreColliderBaseline()

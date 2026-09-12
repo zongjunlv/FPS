@@ -11,6 +11,8 @@
     "FPS.UI",
     "FPS.Composition",
     "FPS.SaveGame",
+    "Unity.Addressables",
+    "Unity.ResourceManager",
     "Unity.InputSystem",
     "Unity.InputSystem.TestFramework"
   ],

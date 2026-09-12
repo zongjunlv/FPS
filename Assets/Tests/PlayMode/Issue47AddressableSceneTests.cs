@@ -34,7 +34,7 @@ namespace FPS.Tests.PlayMode
         }
 
         [UnityTest]
-        public IEnumerator CityNewLoadsOneAddressAndReusesEnemiesAfterDeath()
+        public IEnumerator CityNewLoadsCatalogAddressesAndReusesEnemiesAfterDeath()
         {
             yield return SceneManager.LoadSceneAsync(
                 "Assets/ImportPackages/CSAssets2026/Scenes/CityNew.unity");
@@ -53,8 +53,12 @@ namespace FPS.Tests.PlayMode
             Assert.That(bootstrap.ConfigurationError, Is.Empty);
             Assert.That(factory, Is.Not.Null);
             Assert.That(factory.PreparationState, Is.EqualTo(EnemyFactoryPreparationState.Ready));
-            Assert.That(factory.LoadedTemplateCount, Is.EqualTo(1));
-            Assert.That(factory.Pool.PooledObjectCount, Is.GreaterThanOrEqualTo(4));
+            int expectedTemplateCount = bootstrap.ContentCatalog.EnemyArchetypes
+                .Select(archetype => archetype.TemplateAddress)
+                .Distinct()
+                .Count();
+            Assert.That(factory.LoadedTemplateCount, Is.EqualTo(expectedTemplateCount));
+            Assert.That(factory.Pool.PooledObjectCount, Is.GreaterThanOrEqualTo(expectedTemplateCount));
             var victim = bootstrap.Director.ActiveEnemies.Values.First();
             Vector3 point = victim.Controller.transform.position;
             int deaths = bootstrap.Director.EnemyDeathEventCount;
@@ -67,7 +71,7 @@ namespace FPS.Tests.PlayMode
             int instantiated = factory.Pool.InstantiateCount;
             int reused = factory.Pool.ReuseCount;
             yield return factory.PrepareAsync();
-            Assert.That(factory.LoadedTemplateCount, Is.EqualTo(1));
+            Assert.That(factory.LoadedTemplateCount, Is.EqualTo(expectedTemplateCount));
             var entry = new WaveEnemyEntry(bootstrap.ContentCatalog.EnemyArchetypes[0]);
             var request = new EnemySpawnRequest(47001, entry, point, Quaternion.identity,
                 GameObject.FindGameObjectWithTag("Player").transform);

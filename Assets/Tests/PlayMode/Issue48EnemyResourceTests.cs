@@ -35,9 +35,14 @@ namespace FPS.Tests.PlayMode
             {
                 yield return LoadCity();
                 var service = SharedAssetLeaseService.Default;
+                int expectedHandleCount = CityNewContentCatalog.LoadDefault()
+                    .EnemyArchetypes
+                    .Select(archetype => archetype.TemplateAddress)
+                    .Distinct()
+                    .Count();
                 Assert.That(service.GetReferenceCount<GameObject>("enemy/spider"), Is.EqualTo(1));
                 var extra = service.Acquire<GameObject>("enemy/spider");
-                Assert.That(service.ActiveHandleCount, Is.EqualTo(1));
+                Assert.That(service.ActiveHandleCount, Is.EqualTo(expectedHandleCount));
                 Assert.That(service.GetReferenceCount<GameObject>("enemy/spider"), Is.EqualTo(2));
                 extra.Cancel();
                 extra.Dispose();

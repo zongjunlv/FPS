@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Linq;
 using System.Reflection;
 using NUnit.Framework;
 using UnityEngine;
@@ -35,7 +36,12 @@ namespace FPS.Tests.PlayMode
             Component pool = Find(RuntimeType("PooledEnemyFactory"));
             Component director = Find(RuntimeType("WaveDirector"));
             Assert.That(pool, Is.Not.Null);
-            Assert.That(Get<int>(pool, "PooledObjectCount"), Is.EqualTo(4));
+            int expectedPrewarm = CityNewContentCatalog.LoadDefault()
+                .EnemyArchetypes
+                .Select(archetype => archetype.TemplateAddress)
+                .Distinct()
+                .Count() * 4;
+            Assert.That(Get<int>(pool, "PooledObjectCount"), Is.EqualTo(expectedPrewarm));
             int instantiatedBefore = Get<int>(pool, "InstantiateCount");
             int reusedBefore = Get<int>(pool, "ReuseCount");
             List<object> firstWaveHandles = ActiveHandles(director);

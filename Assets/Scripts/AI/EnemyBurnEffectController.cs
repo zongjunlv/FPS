@@ -24,6 +24,7 @@ public sealed class EnemyBurnEffectController : MonoBehaviour
     private GameObject statusRoot;
     private ParticleSystem flameParticles;
     private TextMeshProUGUI statusLabel;
+    private EnemyController enemy;
     private RectTransform healthFill;
     private Image healthFillImage;
     private Material particleMaterial;
@@ -101,6 +102,7 @@ public sealed class EnemyBurnEffectController : MonoBehaviour
     private void Awake()
     {
         health = GetComponent<Health>();
+        enemy = GetComponent<EnemyController>();
         runtime = new GameplayEffectRuntime(
             gameObject,
             "Enemy Status Effects");
@@ -495,12 +497,17 @@ public sealed class EnemyBurnEffectController : MonoBehaviour
         bool hasAffix = HasAffixStatus;
         bool hasRole = HasRoleStatus;
         bool hasSupport = HasSupportStatus;
+        string displayName = enemy != null
+            ? enemy.DisplayName
+            : string.Empty;
+        bool hasDisplayName = !string.IsNullOrWhiteSpace(displayName);
 
         if (statusRoot != null)
         {
             statusRoot.SetActive(
                 showOverhead &&
-                (stacks > 0 || hasAffix || hasRole || hasSupport));
+                (stacks > 0 || hasAffix || hasRole || hasSupport ||
+                 hasDisplayName));
         }
 
         if (statusLabel != null)
@@ -523,6 +530,11 @@ public sealed class EnemyBurnEffectController : MonoBehaviour
                 : !string.IsNullOrEmpty(roleAndAffix)
                     ? roleAndAffix
                     : supported;
+            combined = hasDisplayName && !string.IsNullOrEmpty(combined)
+                ? $"{displayName} · {combined}"
+                : hasDisplayName
+                    ? displayName
+                    : combined;
             statusLabel.text = stacks > 0 &&
                                !string.IsNullOrEmpty(combined)
                 ? $"{combined} · BURN ×{stacks}"
@@ -537,7 +549,9 @@ public sealed class EnemyBurnEffectController : MonoBehaviour
                     ? roleStatusColor
                     : hasSupport
                         ? supportStatusColor
-                    : new Color(1f, 0.48f, 0.08f, 1f);
+                        : hasDisplayName
+                            ? Color.white
+                            : new Color(1f, 0.48f, 0.08f, 1f);
         }
 
         if (burnVisualRoot != null)

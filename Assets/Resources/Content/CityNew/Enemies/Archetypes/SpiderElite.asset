@@ -15,7 +15,7 @@ MonoBehaviour:
   stableId: enemy.archetype.spider_elite
   enemyTypeId: spider_bot
   template: {fileID: 0}
-  templateAddress: enemy/spider
+  templateAddress: enemy/quad-shell-elite
   rewardTier: 1
   affix: {fileID: 11400000, guid: f8d66ec0b89cb4c97b539d52a55dd703, type: 2}
   abilitySet: {fileID: 0}

@@ -15,7 +15,7 @@ MonoBehaviour:
   stableId: enemy.archetype.spider_assault
   enemyTypeId: spider_bot
   template: {fileID: 0}
-  templateAddress: enemy/spider
+  templateAddress: enemy/trilobite-assault
   rewardTier: 0
   affix: {fileID: 0}
   abilitySet: {fileID: 0}

@@ -15,8 +15,28 @@ MonoBehaviour:
   m_GroupName: Local Enemies
   m_GUID: 917ae4615cca3470f9088fa443e03495
   m_SerializeEntries:
+  - m_GUID: 11c1bca72439c4db2a8a3a3f5043dea6
+    m_Address: enemy/quad-shell-elite
+    m_ReadOnly: 0
+    m_SerializedLabels: []
+    FlaggedDuringContentUpdateRestriction: 0
+  - m_GUID: 7d6cff42a505c4c2d9284c8f8a0f1560
+    m_Address: enemy/trilobite-assault
+    m_ReadOnly: 0
+    m_SerializedLabels: []
+    FlaggedDuringContentUpdateRestriction: 0
   - m_GUID: 959332f9606ea4118acd5676d58e48a7
     m_Address: enemy/spider
+    m_ReadOnly: 0
+    m_SerializedLabels: []
+    FlaggedDuringContentUpdateRestriction: 0
+  - m_GUID: bf76624e0f12d43399811894da9313c7
+    m_Address: enemy/eye-drone-suppressor
+    m_ReadOnly: 0
+    m_SerializedLabels: []
+    FlaggedDuringContentUpdateRestriction: 0
+  - m_GUID: d0126187073be4dda97072fb31f2da87
+    m_Address: enemy/eye-drone-support
     m_ReadOnly: 0
     m_SerializedLabels: []
     FlaggedDuringContentUpdateRestriction: 0
