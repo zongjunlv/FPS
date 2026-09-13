@@ -38,6 +38,37 @@ namespace FPS.SaveGame
         // starter build initialized by the scene composition root.
         [DataMember(Order = 22, IsRequired = false, EmitDefaultValue = false)]
         public CombatBuildSnapshot CombatBuild;
+        // Optional so schema-v2 saves created before the dynamic director remain valid.
+        [DataMember(Order = 23, IsRequired = false, EmitDefaultValue = false)]
+        public CombatDirectorSaveSnapshot CombatDirector;
+    }
+
+    [Serializable, DataContract]
+    public sealed class CombatDirectorSaveSnapshot
+    {
+        [DataMember(Order = 0, IsRequired = true)] public int Phase;
+        [DataMember(Order = 1, IsRequired = true)] public ulong RandomState;
+        [DataMember(Order = 2, IsRequired = true)] public long NextEvaluationTick;
+        [DataMember(Order = 3, IsRequired = true)] public long WarningEndTick;
+        [DataMember(Order = 4, IsRequired = true)] public long CooldownEndTick;
+        [DataMember(Order = 5, IsRequired = true)] public long NextEventId = 1;
+        [DataMember(Order = 6, IsRequired = true)] public int LastIntensity;
+        [DataMember(Order = 7, IsRequired = true)] public int FailedSpawnAttempts;
+        [DataMember(Order = 8, IsRequired = false, EmitDefaultValue = false)]
+        public CombatDirectorEventSaveSnapshot CurrentEvent;
+    }
+
+    [Serializable, DataContract]
+    public sealed class CombatDirectorEventSaveSnapshot
+    {
+        [DataMember(Order = 0, IsRequired = true)] public long EventId;
+        [DataMember(Order = 1, IsRequired = true)] public string EnemyTypeId;
+        [DataMember(Order = 2, IsRequired = true)] public string RoleTag;
+        [DataMember(Order = 3, IsRequired = true)] public int RequestedCount;
+        [DataMember(Order = 4, IsRequired = true)] public int SpawnedCount;
+        [DataMember(Order = 5, IsRequired = true)] public int SignedDirectionDegrees;
+        [DataMember(Order = 6, IsRequired = true)] public float SelectedScore;
+        [DataMember(Order = 7, IsRequired = true)] public string Reason;
     }
 
     [Serializable, DataContract]

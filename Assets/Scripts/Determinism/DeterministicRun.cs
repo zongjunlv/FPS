@@ -14,7 +14,8 @@ namespace FPS.Determinism
         Upgrade,
         Loot,
         Wave,
-        Elite
+        Elite,
+        Director
     }
 
     public enum RunEventType
@@ -28,7 +29,8 @@ namespace FPS.Determinism
         ShotFired,
         EnemyKilled,
         WaveTransition,
-        AiDecision
+        AiDecision,
+        CombatDirectorDecision
     }
 
     public readonly struct RunPayloadField
@@ -124,6 +126,13 @@ namespace FPS.Determinism
         internal DeterministicRandom(ulong seed)
         {
             state = seed;
+        }
+
+        public ulong State => state;
+
+        public void RestoreState(ulong restoredState)
+        {
+            state = restoredState;
         }
 
         public uint NextUInt32()

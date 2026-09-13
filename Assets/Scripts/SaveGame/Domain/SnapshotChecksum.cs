@@ -53,6 +53,7 @@ namespace FPS.SaveGame
                 writer.Write(snapshot.PlayerCrouching);
                 WriteSimulationClock(writer, snapshot.Simulation);
                 WriteCombatBuild(writer, snapshot.CombatBuild);
+                WriteCombatDirector(writer, snapshot.CombatDirector);
                 writer.Flush();
                 using (var sha = SHA256.Create())
                 {
@@ -259,6 +260,32 @@ namespace FPS.SaveGame
                     writer.Write(eventId);
         }
 
+        private static void WriteCombatDirector(
+            BinaryWriter writer,
+            CombatDirectorSaveSnapshot value)
+        {
+            if (value == null) return;
+            writer.Write("FPS.CombatDirector.v1");
+            writer.Write(value.Phase);
+            writer.Write(value.RandomState);
+            writer.Write(value.NextEvaluationTick);
+            writer.Write(value.WarningEndTick);
+            writer.Write(value.CooldownEndTick);
+            writer.Write(value.NextEventId);
+            writer.Write(value.LastIntensity);
+            writer.Write(value.FailedSpawnAttempts);
+            writer.Write(value.CurrentEvent != null);
+            if (value.CurrentEvent == null) return;
+            writer.Write(value.CurrentEvent.EventId);
+            writer.Write(value.CurrentEvent.EnemyTypeId ?? string.Empty);
+            writer.Write(value.CurrentEvent.RoleTag ?? string.Empty);
+            writer.Write(value.CurrentEvent.RequestedCount);
+            writer.Write(value.CurrentEvent.SpawnedCount);
+            writer.Write(value.CurrentEvent.SignedDirectionDegrees);
+            WriteFloat(writer, value.CurrentEvent.SelectedScore);
+            writer.Write(value.CurrentEvent.Reason ?? string.Empty);
+        }
+
         private static void WriteFloat(BinaryWriter writer, float value)
         {
             // JSON does not preserve IEEE-754's signed zero. Canonicalize both
@@ -319,6 +346,10 @@ namespace FPS.SaveGame
                       !FiniteNonNegative(snapshot.Simulation.PlayerArmor)))
                 error = "权威战局时钟状态无效。";
             else if (!ValidateCombatBuild(snapshot.CombatBuild, out error))
+                return false;
+            else if (!ValidateCombatDirector(
+                         snapshot.CombatDirector,
+                         out error))
                 return false;
             if (error != null) return false;
 
@@ -427,6 +458,52 @@ namespace FPS.SaveGame
                     error = "构筑事件去重窗口无效。";
                     return false;
                 }
+            }
+            return true;
+        }
+
+        private static bool ValidateCombatDirector(
+            CombatDirectorSaveSnapshot value,
+            out string error)
+        {
+            error = null;
+            if (value == null) return true;
+            if (value.Phase < 0 || value.Phase > 3 ||
+                value.NextEvaluationTick < 0 || value.WarningEndTick < 0 ||
+                value.CooldownEndTick < 0 || value.NextEventId < 1 ||
+                value.LastIntensity < 0 || value.LastIntensity > 2 ||
+                value.FailedSpawnAttempts < 0 ||
+                value.FailedSpawnAttempts >= 3)
+            {
+                error = "动态战斗导演阶段或计数状态无效。";
+                return false;
+            }
+            CombatDirectorEventSaveSnapshot current = value.CurrentEvent;
+            if (current == null)
+            {
+                if (value.Phase == 1 || value.Phase == 2)
+                {
+                    error = "动态战斗导演活动事件缺失。";
+                    return false;
+                }
+                return true;
+            }
+            int absoluteAngle = Math.Abs(current.SignedDirectionDegrees);
+            if (current.EventId < 1 || current.EventId >= value.NextEventId ||
+                !ValidId(current.EnemyTypeId) || !ValidId(current.RoleTag) ||
+                current.RequestedCount < 1 || current.RequestedCount > 2 ||
+                current.SpawnedCount < 0 ||
+                current.SpawnedCount > current.RequestedCount ||
+                absoluteAngle < 120 || absoluteAngle > 165 ||
+                !Finite(current.SelectedScore) ||
+                current.SelectedScore < 0f || current.SelectedScore > 1f ||
+                current.Reason == null || current.Reason.Length > 512 ||
+                (value.Phase == 1 && current.SpawnedCount != 0) ||
+                (value.Phase == 2 &&
+                 current.SpawnedCount >= current.RequestedCount))
+            {
+                error = "动态战斗导演事件状态无效。";
+                return false;
             }
             return true;
         }

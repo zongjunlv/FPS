@@ -26,6 +26,7 @@ public sealed class WaveDirector : MonoBehaviour, IWaveProgressSource
 
     private IEnemyFactory enemyFactory;
     private IEnemySpawnPointResolver spawnPointResolver;
+    private readonly DynamicCombatDirectorRuntime combatDirector = new();
     private Transform player;
     private Health playerHealth;
     private MultiWaveFlowState flow;
@@ -74,6 +75,9 @@ public sealed class WaveDirector : MonoBehaviour, IWaveProgressSource
     public IReadOnlyList<int> CompletedWaveSpawnCounts =>
         completedWaveSpawnCounts;
     public IReadOnlyList<int> PeakAliveByWave => peakAliveByWave;
+    public CombatDirectorPhase CombatDirectorPhase => combatDirector.Phase;
+    public CombatDirectorRuntimeSnapshot CaptureCombatDirectorState() =>
+        combatDirector.CaptureState();
 
     public WaveRuntimeDiagnostics CaptureDiagnostics()
     {
@@ -148,7 +152,8 @@ public sealed class WaveDirector : MonoBehaviour, IWaveProgressSource
             EnemyPerceptionScheduler.Instance?.CaptureDiagnostics(),
             CaptureDiagnostics(),
             pool?.CaptureDiagnostics(),
-            utilityDecisions);
+            utilityDecisions,
+            combatDirector.CaptureDiagnostics());
     }
 
     public WaveRuntimeSnapshot CaptureRuntimeState()
@@ -200,7 +205,8 @@ public sealed class WaveDirector : MonoBehaviour, IWaveProgressSource
             Mathf.Max(0f, spawnCooldown),
             nextSpawnId,
             enemies,
-            simulation.CaptureState());
+            simulation.CaptureState(),
+            combatDirector.CaptureState());
     }
 
     public bool TryRestoreRuntimeState(
@@ -228,6 +234,12 @@ public sealed class WaveDirector : MonoBehaviour, IWaveProgressSource
             return false;
         }
         int maximumSpawnId = 0;
+
+        if (snapshot.Director != null &&
+            !combatDirector.CanRestore(snapshot.Director, out error))
+        {
+            return false;
+        }
 
         for (int index = 0; index < snapshot.Enemies.Count; index++)
         {
@@ -314,6 +326,13 @@ public sealed class WaveDirector : MonoBehaviour, IWaveProgressSource
 
         nextSpawnId = snapshot.NextSpawnId;
         spawnCooldown = snapshot.SpawnCooldownRemaining;
+        if (snapshot.Director != null &&
+            !combatDirector.TryRestore(snapshot.Director, out error))
+        {
+            ReleaseStaged(staged);
+            activeEnemies.Clear();
+            return false;
+        }
         simulationTickAccumulator = 0f;
         simulationEventCursor = 0;
         completedWaveSpawnCounts.Clear();
@@ -423,6 +442,15 @@ public sealed class WaveDirector : MonoBehaviour, IWaveProgressSource
 
         spawnCooldown -= Time.deltaTime;
 
+        if (combatDirector.PausesNormalSpawning)
+        {
+            if (combatDirector.HasSpawnRequest && spawnCooldown <= 0f)
+            {
+                TrySpawnDirectorReinforcement();
+            }
+            return;
+        }
+
         if (spawnCooldown <= 0f)
         {
             TrySpawnNext();
@@ -442,6 +470,7 @@ public sealed class WaveDirector : MonoBehaviour, IWaveProgressSource
         destroying = true;
         StopRunInternal(WaveStopReason.Destroyed, false);
         UnbindPlayerHealth();
+        combatDirector.Unbind();
 
         if (Active == this)
         {
@@ -596,6 +625,12 @@ public sealed class WaveDirector : MonoBehaviour, IWaveProgressSource
         }
 
         configured = true;
+        combatDirector.Configure(
+            runSeed,
+            this,
+            player,
+            playerHealth,
+            player.GetComponent<WeaponLoadoutController>());
         player.GetComponent<PlayerRunProgression>()
             ?.BindKillSource(this);
         player.GetComponent<PlayerCombatEventRouter>()
@@ -651,6 +686,7 @@ public sealed class WaveDirector : MonoBehaviour, IWaveProgressSource
             simulationTickAccumulator -= fixedDelta;
             simulation.AdvanceTick();
             DrainSimulationEvents();
+            AdvanceCombatDirector();
         }
     }
 
@@ -663,6 +699,7 @@ public sealed class WaveDirector : MonoBehaviour, IWaveProgressSource
         }
         simulation.Step();
         DrainSimulationEvents();
+        AdvanceCombatDirector();
         return true;
     }
 
@@ -673,8 +710,17 @@ public sealed class WaveDirector : MonoBehaviour, IWaveProgressSource
         {
             return 0;
         }
-        long advanced = simulation.FastForward(ticks);
-        DrainSimulationEvents();
+        if (ticks < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(ticks));
+        }
+        long advanced = 0;
+        while (advanced < ticks && simulation.AdvanceTick())
+        {
+            advanced++;
+            DrainSimulationEvents();
+            AdvanceCombatDirector();
+        }
         return advanced;
     }
 
@@ -765,7 +811,99 @@ public sealed class WaveDirector : MonoBehaviour, IWaveProgressSource
             return;
         }
 
-        WaveEnemyEntry entry = definition.GetEntry(flow.SpawnedCount);
+        if (TryCommitSpawn(
+                definition,
+                definition.GetEntry(flow.SpawnedCount),
+                spawnPoint))
+        {
+            spawnCooldown = definition.SpawnInterval;
+        }
+    }
+
+    private void AdvanceCombatDirector()
+    {
+        if (simulation == null || flow == null || !flow.IsRunning ||
+            CurrentDefinition == null)
+        {
+            return;
+        }
+        combatDirector.AdvanceTick(
+            simulation.Tick,
+            CurrentDefinition,
+            flow.SpawnedCount,
+            flow.AliveCount,
+            CurrentPoolCapacity(),
+            spawnPointResolver is IDirectedEnemySpawnPointResolver &&
+            RuntimeNavMeshBootstrap.IsSceneReady);
+    }
+
+    private int CurrentPoolCapacity()
+    {
+        return enemyFactory switch
+        {
+            PooledEnemyFactory direct => direct.RemainingSpawnCapacity,
+            AddressableEnemyFactory addressable when addressable.Pool != null =>
+                addressable.Pool.RemainingSpawnCapacity,
+            _ => CurrentDefinition?.MaximumAliveCount ?? 0
+        };
+    }
+
+    private void TrySpawnDirectorReinforcement()
+    {
+        WaveDefinition definition = CurrentDefinition;
+        CombatDirectorEventState directorEvent = combatDirector.CurrentEvent;
+        WaveEnemyEntry entry = definition != null && flow != null &&
+                               flow.SpawnedCount >= 0 &&
+                               flow.SpawnedCount < definition.TotalEnemyCount
+            ? definition.GetEntry(flow.SpawnedCount)
+            : null;
+        if (definition == null || directorEvent == null ||
+            !flow.CanSpawn ||
+            spawnPointResolver is not IDirectedEnemySpawnPointResolver directed ||
+            entry == null ||
+            !string.Equals(
+                entry.EnemyTypeId,
+                directorEvent.EnemyTypeId,
+                StringComparison.Ordinal))
+        {
+            combatDirector.ReportSpawnOutcome(false);
+            spawnCooldown = definition?.RetryInterval ?? 0.2f;
+            return;
+        }
+
+        SpawnAttemptCount++;
+        occupiedPositions.Clear();
+        foreach (EnemySpawnHandle active in activeEnemies.Values)
+            if (active.Controller != null)
+                occupiedPositions.Add(active.Controller.transform.position);
+
+        if (!directed.TryResolveDirected(
+                player,
+                occupiedPositions,
+                directorEvent.SignedDirectionDegrees,
+                directorEvent.SpawnedCount,
+                out Vector3 spawnPoint))
+        {
+            combatDirector.ReportSpawnOutcome(false);
+            spawnCooldown = definition.RetryInterval;
+            return;
+        }
+
+        if (!TryCommitSpawn(definition, entry, spawnPoint))
+        {
+            combatDirector.ReportSpawnOutcome(false);
+            return;
+        }
+
+        combatDirector.ReportSpawnOutcome(true);
+        spawnCooldown = Mathf.Min(definition.SpawnInterval, 0.2f);
+    }
+
+    private bool TryCommitSpawn(
+        WaveDefinition definition,
+        WaveEnemyEntry entry,
+        Vector3 spawnPoint)
+    {
         int spawnId = nextSpawnId;
         Vector3 facing = player.position - spawnPoint;
         facing.y = 0f;
@@ -779,16 +917,14 @@ public sealed class WaveDirector : MonoBehaviour, IWaveProgressSource
             spawnPoint,
             rotation,
             player);
-
         if (!enemyFactory.TrySpawn(
                 request,
                 HandleEnemyEnded,
                 out EnemySpawnHandle handle))
         {
             spawnCooldown = definition.RetryInterval;
-            return;
+            return false;
         }
-
         if (!simulation.Submit(SimulationCommand.Create(
                 simulation.Tick,
                 SimulationCommandType.EnemySpawned,
@@ -796,9 +932,8 @@ public sealed class WaveDirector : MonoBehaviour, IWaveProgressSource
         {
             enemyFactory.Release(handle);
             spawnCooldown = definition.RetryInterval;
-            return;
+            return false;
         }
-
         activeEnemies.Add(spawnId, handle);
         DrainSimulationEvents();
         EnemySpawned?.Invoke(new EnemySpawnedEvent(request, handle));
@@ -809,8 +944,8 @@ public sealed class WaveDirector : MonoBehaviour, IWaveProgressSource
         peakAliveByWave[waveIndex] = Mathf.Max(
             peakAliveByWave[waveIndex],
             flow.AliveCount);
-        spawnCooldown = definition.SpawnInterval;
         PublishProgress();
+        return true;
     }
 
     private void RecordSpawnClearances(Vector3 spawnPoint)

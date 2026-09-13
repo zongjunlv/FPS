@@ -110,6 +110,7 @@ public sealed class RunReplayRuntimeAdapter : MonoBehaviour, IRunReplayAdapter
                 inventorySnapshot.QuickSlots.Bindings[index]));
 
         CaptureWaveState(fields);
+        CaptureCombatDirectorState(fields);
         CaptureCombatBuildState(fields);
         return ReplayStateSnapshot.Create(fields);
     }
@@ -219,6 +220,51 @@ public sealed class RunReplayRuntimeAdapter : MonoBehaviour, IRunReplayAdapter
                 index.ToString(CultureInfo.InvariantCulture),
                 snapshot.ProcessedEventIds[index]));
         }
+    }
+
+    private void CaptureCombatDirectorState(List<ReplayStateField> fields)
+    {
+        FPS.Simulation.CombatDirectorRuntimeSnapshot snapshot =
+            waves.CaptureCombatDirectorState();
+        if (snapshot == null) return;
+        fields.Add(ReplayStateField.Number(
+            "combatDirector/phase",
+            (int)snapshot.Phase));
+        fields.Add(ReplayStateField.Text(
+            "combatDirector/randomState",
+            snapshot.RandomState.ToString(CultureInfo.InvariantCulture)));
+        fields.Add(ReplayStateField.Number(
+            "combatDirector/nextEvaluationTick",
+            snapshot.NextEvaluationTick));
+        fields.Add(ReplayStateField.Number(
+            "combatDirector/warningEndTick",
+            snapshot.WarningEndTick));
+        fields.Add(ReplayStateField.Number(
+            "combatDirector/cooldownEndTick",
+            snapshot.CooldownEndTick));
+        fields.Add(ReplayStateField.Number(
+            "combatDirector/nextEventId",
+            snapshot.NextEventId));
+        FPS.Simulation.CombatDirectorEventState current = snapshot.CurrentEvent;
+        if (current == null) return;
+        fields.Add(ReplayStateField.Number(
+            "combatDirector/event/id",
+            current.EventId));
+        fields.Add(ReplayStateField.Text(
+            "combatDirector/event/type",
+            current.EnemyTypeId));
+        fields.Add(ReplayStateField.Text(
+            "combatDirector/event/role",
+            current.RoleTag));
+        fields.Add(ReplayStateField.Number(
+            "combatDirector/event/requested",
+            current.RequestedCount));
+        fields.Add(ReplayStateField.Number(
+            "combatDirector/event/spawned",
+            current.SpawnedCount));
+        fields.Add(ReplayStateField.Number(
+            "combatDirector/event/angle",
+            current.SignedDirectionDegrees));
     }
 
     private void EnsureConfigured()

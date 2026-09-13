@@ -275,6 +275,30 @@ public sealed class RunDeterminismRecorder : MonoBehaviour
         return true;
     }
 
+    public bool TryRecordCombatDirectorDecision(
+        string result,
+        FPS.Simulation.CombatDirectorEventState directorEvent,
+        FPS.Simulation.CombatPressureSnapshot pressure)
+    {
+        if (run == null || directorEvent == null) return false;
+        run.RecordEvent(
+            RunEventType.CombatDirectorDecision,
+            StableEventPayload.Create(
+                RunPayloadField.Number("angle", directorEvent.SignedDirectionDegrees),
+                RunPayloadField.Number("eventId", directorEvent.EventId),
+                RunPayloadField.Text("reason", directorEvent.Reason),
+                RunPayloadField.Text("result", result ?? string.Empty),
+                RunPayloadField.Text("role", directorEvent.RoleTag),
+                RunPayloadField.Number("score", Quantize(directorEvent.SelectedScore)),
+                RunPayloadField.Number("spawned", directorEvent.SpawnedCount),
+                RunPayloadField.Number("requested", directorEvent.RequestedCount),
+                RunPayloadField.Text("type", directorEvent.EnemyTypeId),
+                RunPayloadField.Number(
+                    "pressure",
+                    Quantize(pressure?.OverallPressure ?? 0f))));
+        return true;
+    }
+
     private void HandleShotResolved(ShotResult result)
     {
         RecordShot(result);

@@ -58,9 +58,11 @@ public sealed class UnifiedGameHud : MonoBehaviour
     private TMP_Text waveCountdownText;
     private TMP_Text waveCueText;
     private TMP_Text rewardCueText;
+    private TMP_Text combatWarningText;
     private TMP_FontAsset runtimeRewardFontAsset;
     private readonly Queue<RewardCueNotice> rewardCueQueue = new();
     private Coroutine rewardCueRoutine;
+    private Coroutine combatWarningRoutine;
     private RectTransform progressionHudRoot;
     private Image experienceFill;
     private TMP_Text levelText;
@@ -105,6 +107,8 @@ public sealed class UnifiedGameHud : MonoBehaviour
         waveCueText != null ? waveCueText.text : string.Empty;
     public string RewardCueText =>
         rewardCueText != null ? rewardCueText.text : string.Empty;
+    public string CombatWarningText =>
+        combatWarningText != null ? combatWarningText.text : string.Empty;
     public string LevelText =>
         levelText != null ? levelText.text : string.Empty;
     public string ExperienceText =>
@@ -167,6 +171,28 @@ public sealed class UnifiedGameHud : MonoBehaviour
         {
             rewardCueRoutine = StartCoroutine(ProcessRewardCueQueue());
         }
+    }
+
+    public void ShowCombatWarning(string message, float durationSeconds = 2f)
+    {
+        if (combatWarningText == null || string.IsNullOrWhiteSpace(message))
+        {
+            return;
+        }
+        if (combatWarningRoutine != null)
+            StopCoroutine(combatWarningRoutine);
+        combatWarningText.text = message;
+        combatWarningText.gameObject.SetActive(true);
+        combatWarningRoutine = StartCoroutine(
+            HideCombatWarningAfter(Mathf.Max(0.25f, durationSeconds)));
+    }
+
+    private IEnumerator HideCombatWarningAfter(float seconds)
+    {
+        yield return new WaitForSecondsRealtime(seconds);
+        if (combatWarningText != null)
+            combatWarningText.gameObject.SetActive(false);
+        combatWarningRoutine = null;
     }
 
     public void ClearRewardCues()
@@ -650,6 +676,7 @@ public sealed class UnifiedGameHud : MonoBehaviour
         BuildWeaponHud();
         BuildWaveHud();
         BuildRewardCue();
+        BuildCombatWarning();
         BuildCrosshair();
         BuildDamageOverlay();
     }
@@ -800,6 +827,27 @@ public sealed class UnifiedGameHud : MonoBehaviour
 
         rewardCueText.fontStyle = FontStyles.Bold;
         rewardCueText.gameObject.SetActive(false);
+    }
+
+    private void BuildCombatWarning()
+    {
+        combatWarningText = CreateText(
+            "CombatDirectorWarning",
+            OverlayLayer,
+            22f,
+            TextAlignmentOptions.Center,
+            Vector2.zero,
+            new Vector2(760f, 42f));
+        RectTransform rect = combatWarningText.rectTransform;
+        rect.anchorMin = new Vector2(0.5f, 1f);
+        rect.anchorMax = new Vector2(0.5f, 1f);
+        rect.pivot = new Vector2(0.5f, 1f);
+        rect.anchoredPosition = new Vector2(0f, -244f);
+        if (runtimeRewardFontAsset != null)
+            combatWarningText.font = runtimeRewardFontAsset;
+        combatWarningText.fontStyle = FontStyles.Bold;
+        combatWarningText.color = new Color(1f, 0.48f, 0.16f, 1f);
+        combatWarningText.gameObject.SetActive(false);
     }
 
     private static TMP_FontAsset CreateRewardFontAsset()

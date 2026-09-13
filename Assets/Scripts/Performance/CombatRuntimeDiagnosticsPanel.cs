@@ -198,7 +198,54 @@ public sealed class CombatRuntimeDiagnosticsPanel : MonoBehaviour
             DrawCounts("候选阵容", wave.Candidates);
             DrawCounts("待生成队列", wave.SpawnQueue);
         }
+        DrawCombatDirector();
         GUILayout.EndVertical();
+    }
+
+    private void DrawCombatDirector()
+    {
+        GUILayout.Space(8f);
+        GUILayout.Label("动态战斗导演", GUI.skin.box);
+        CombatDirectorRuntimeDiagnostics value = snapshot.CombatDirector;
+        if (value == null)
+        {
+            GUILayout.Label("导演尚未运行");
+            return;
+        }
+        GUILayout.Label($"阶段 {PhaseLabel(value.Phase)} · 信号 {value.LastSignal}");
+        GUILayout.Label(
+            $"综合压力 {value.Pressure:F2} · 生命 {value.Health:F2} · " +
+            $"护甲 {value.Armor:F2} · 弹药 {value.Ammo:F2}");
+        GUILayout.Label(
+            $"近期受伤 {value.RecentDamage:F2} · 清怪 {value.ClearRate:F2} · " +
+            $"场上威胁 {value.ActiveThreat:F2}");
+        GUILayout.Label(
+            $"热区 ({value.HeatCellX},{value.HeatCellZ}) {value.Heat:F2}");
+        GUILayout.Label(
+            $"资源 波次 {value.RemainingWaveSlots} / 存活 {value.AliveCapacity} / " +
+            $"对象池 {value.PoolCapacity} · 路径 {(value.DirectedSpawnReady ? "就绪" : "不可用")}");
+        if (!string.IsNullOrEmpty(value.SelectedEnemyType))
+        {
+            GUILayout.Label(
+                $"选择 {value.SelectedEnemyType} / {value.SelectedRole} · " +
+                $"评分 {value.SelectedScore:F2}");
+            GUILayout.Label(
+                $"进度 {value.SpawnedCount}/{value.RequestedCount} · " +
+                $"方向 {value.SignedDirectionDegrees}°");
+            GUILayout.Label("原因：" + value.Reason);
+        }
+    }
+
+    private static string PhaseLabel(string phase)
+    {
+        return phase switch
+        {
+            "Observing" => "观察",
+            "Warning" => "预警",
+            "Deploying" => "投放",
+            "Cooldown" => "冷却",
+            _ => phase
+        };
     }
 
     private void DrawPoolColumn(float width)

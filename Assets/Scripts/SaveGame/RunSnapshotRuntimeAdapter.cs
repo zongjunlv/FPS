@@ -466,6 +466,7 @@ public sealed class RunSnapshotRuntimeAdapter : MonoBehaviour
             PlayerHealth = authoritative.PlayerHealth,
             PlayerArmor = authoritative.PlayerArmor
         };
+        snapshot.CombatDirector = ToSaveCombatDirector(runtime.Director);
         snapshot.Enemies.Clear();
         foreach (EnemyRuntimeSnapshot enemy in runtime.Enemies)
         {
@@ -650,6 +651,64 @@ public sealed class RunSnapshotRuntimeAdapter : MonoBehaviour
             });
         }
         return saved;
+    }
+
+    internal static CombatDirectorSaveSnapshot ToSaveCombatDirector(
+        CombatDirectorRuntimeSnapshot runtime)
+    {
+        if (runtime == null) return null;
+        CombatDirectorEventState current = runtime.CurrentEvent;
+        return new CombatDirectorSaveSnapshot
+        {
+            Phase = (int)runtime.Phase,
+            RandomState = runtime.RandomState,
+            NextEvaluationTick = runtime.NextEvaluationTick,
+            WarningEndTick = runtime.WarningEndTick,
+            CooldownEndTick = runtime.CooldownEndTick,
+            NextEventId = runtime.NextEventId,
+            LastIntensity = runtime.LastIntensity,
+            FailedSpawnAttempts = runtime.FailedSpawnAttempts,
+            CurrentEvent = current == null
+                ? null
+                : new CombatDirectorEventSaveSnapshot
+                {
+                    EventId = current.EventId,
+                    EnemyTypeId = current.EnemyTypeId,
+                    RoleTag = current.RoleTag,
+                    RequestedCount = current.RequestedCount,
+                    SpawnedCount = current.SpawnedCount,
+                    SignedDirectionDegrees = current.SignedDirectionDegrees,
+                    SelectedScore = current.SelectedScore,
+                    Reason = current.Reason
+                }
+        };
+    }
+
+    internal static CombatDirectorRuntimeSnapshot ToRuntimeCombatDirector(
+        CombatDirectorSaveSnapshot saved)
+    {
+        if (saved == null) return null;
+        CombatDirectorEventSaveSnapshot current = saved.CurrentEvent;
+        return new CombatDirectorRuntimeSnapshot(
+            (CombatDirectorPhase)saved.Phase,
+            saved.RandomState,
+            saved.NextEvaluationTick,
+            saved.WarningEndTick,
+            saved.CooldownEndTick,
+            saved.NextEventId,
+            saved.LastIntensity,
+            saved.FailedSpawnAttempts,
+            current == null
+                ? null
+                : new CombatDirectorEventState(
+                    current.EventId,
+                    current.EnemyTypeId,
+                    current.RoleTag,
+                    current.RequestedCount,
+                    current.SpawnedCount,
+                    current.SignedDirectionDegrees,
+                    current.SelectedScore,
+                    current.Reason));
     }
 
     internal static CombatRuleRuntimeSnapshot ToRuntimeCombatBuild(

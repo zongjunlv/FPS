@@ -44,6 +44,9 @@ public sealed class PooledEnemyFactory : MonoBehaviour, IEnemyFactory
     public int ExpansionCount { get; private set; }
     public int ReleaseCount { get; private set; }
     public int SuccessfulSpawnCount { get; private set; }
+    public int RemainingSpawnCapacity => Mathf.Max(
+        0,
+        maximumCapacity - ActiveCount);
 
     public IReadOnlyList<EnemyPoolRuntimeDiagnostics> CaptureDiagnostics()
     {

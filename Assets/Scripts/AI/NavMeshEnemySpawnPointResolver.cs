@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.AI;
@@ -12,8 +13,18 @@ public interface IEnemySpawnPointResolver
         out Vector3 spawnPoint);
 }
 
+public interface IDirectedEnemySpawnPointResolver
+{
+    bool TryResolveDirected(
+        Transform player,
+        IReadOnlyList<Vector3> occupiedPositions,
+        int signedDirectionDegrees,
+        int retryIndex,
+        out Vector3 spawnPoint);
+}
+
 public sealed class NavMeshEnemySpawnPointResolver : MonoBehaviour,
-    IEnemySpawnPointResolver
+    IEnemySpawnPointResolver, IDirectedEnemySpawnPointResolver
 {
     private const float GoldenAngle = 137.50776f;
 
@@ -127,6 +138,99 @@ public sealed class NavMeshEnemySpawnPointResolver : MonoBehaviour,
 
         spawnPoint = default;
         return false;
+    }
+
+    public bool TryResolveDirected(
+        Transform player,
+        IReadOnlyList<Vector3> occupiedPositions,
+        int signedDirectionDegrees,
+        int retryIndex,
+        out Vector3 spawnPoint)
+    {
+        AttemptCount++;
+        if (player == null || !RuntimeNavMeshBootstrap.IsSceneReady ||
+            !NavMesh.SamplePosition(
+                player.position,
+                out NavMeshHit playerHit,
+                4f,
+                NavMesh.AllAreas))
+        {
+            LastFailureReason = "Player or runtime NavMesh is not ready.";
+            spawnPoint = default;
+            return false;
+        }
+
+        for (int localAttempt = 0; localAttempt < 10; localAttempt++)
+        {
+            int sequence = Math.Max(0, retryIndex) * 10 + localAttempt;
+            float jitter = ((sequence % 5) - 2) * 8f;
+            float angle = signedDirectionDegrees + jitter;
+            float blend = (sequence % 4) / 3f;
+            float radius = Mathf.Lerp(minimumRadius, maximumRadius, blend);
+            Vector3 direction = Quaternion.Euler(0f, angle, 0f) *
+                                player.forward;
+            Vector3 desired = player.position + direction * radius;
+            if (!TryValidateCandidate(
+                    player,
+                    playerHit,
+                    desired,
+                    occupiedPositions,
+                    out spawnPoint))
+                continue;
+            LastFailureReason = string.Empty;
+            return true;
+        }
+
+        spawnPoint = default;
+        return false;
+    }
+
+    private bool TryValidateCandidate(
+        Transform player,
+        NavMeshHit playerHit,
+        Vector3 desired,
+        IReadOnlyList<Vector3> occupiedPositions,
+        out Vector3 spawnPoint)
+    {
+        spawnPoint = default;
+        if (!NavMesh.SamplePosition(
+                desired,
+                out NavMeshHit hit,
+                2.25f,
+                NavMesh.AllAreas))
+        {
+            LastFailureReason = "Candidate is outside NavMesh.";
+            return false;
+        }
+        if (HorizontalSqrDistance(hit.position, player.position) <
+            safetyDistance * safetyDistance)
+        {
+            LastFailureReason = "Candidate is inside player safety radius.";
+            return false;
+        }
+        if (Mathf.Abs(hit.position.y - desired.y) > 2f ||
+            HorizontalSqrDistance(hit.position, desired) > 2.25f * 2.25f)
+        {
+            LastFailureReason = "NavMesh projection moved to another level.";
+            return false;
+        }
+        if (IsTooCloseToEnemy(hit.position, occupiedPositions))
+        {
+            LastFailureReason = "Candidate is too close to an active enemy.";
+            return false;
+        }
+        var path = new NavMeshPath();
+        if (!NavMesh.CalculatePath(
+                playerHit.position,
+                hit.position,
+                NavMesh.AllAreas,
+                path) || path.status != NavMeshPathStatus.PathComplete)
+        {
+            LastFailureReason = "Candidate is not reachable from the player.";
+            return false;
+        }
+        spawnPoint = hit.position;
+        return true;
     }
 
     private bool IsTooCloseToEnemy(

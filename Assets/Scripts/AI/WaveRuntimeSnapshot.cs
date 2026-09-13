@@ -44,13 +44,15 @@ public sealed class WaveRuntimeSnapshot
         float spawnCooldownRemaining,
         int nextSpawnId,
         IReadOnlyList<EnemyRuntimeSnapshot> enemies,
-        RunSimulationSnapshot simulation = null)
+        RunSimulationSnapshot simulation = null,
+        CombatDirectorRuntimeSnapshot director = null)
     {
         Flow = flow;
         SpawnCooldownRemaining = spawnCooldownRemaining;
         NextSpawnId = nextSpawnId;
         Enemies = enemies ?? Array.Empty<EnemyRuntimeSnapshot>();
         Simulation = simulation;
+        Director = director;
     }
 
     public MultiWaveFlowStateSnapshot Flow { get; }
@@ -58,4 +60,5 @@ public sealed class WaveRuntimeSnapshot
     public int NextSpawnId { get; }
     public IReadOnlyList<EnemyRuntimeSnapshot> Enemies { get; }
     public RunSimulationSnapshot Simulation { get; }
+    public CombatDirectorRuntimeSnapshot Director { get; }
 }

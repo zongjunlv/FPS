@@ -207,7 +207,9 @@ public static class RunSnapshotSession
                 saved.SpawnCooldownRemaining,
                 saved.NextSpawnId,
                 enemies,
-                simulationState),
+                simulationState,
+                RunSnapshotRuntimeAdapter.ToRuntimeCombatDirector(
+                    pendingWorld.CombatDirector)),
             out error))
         {
             return false;
