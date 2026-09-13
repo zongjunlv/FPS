@@ -1,0 +1,21 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a160c14cae0e9427bbf9175a3e16e2eb, type: 3}
+  m_Name: CityNewEncounterSequence
+  m_EditorClassIdentifier: FPS.Composition::EncounterSequenceDefinition
+  stableId: city_new.encounters.default
+  contentVersion: 1
+  encounters:
+  - {fileID: 11400000, guid: a573b98e28f7c4f77b49b124967887c7, type: 2}
+  - {fileID: 11400000, guid: 10966bec7ba4f416f905a30ffc50ff7f, type: 2}
+  - {fileID: 11400000, guid: c85aeeb0a117a45b6bd450e57f8f8c2c, type: 2}
+  - {fileID: 11400000, guid: fb2043f8b642146c98081fcbe8aae32e, type: 2}

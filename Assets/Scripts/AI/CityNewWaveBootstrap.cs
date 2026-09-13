@@ -123,6 +123,7 @@ public sealed class CityNewWaveBootstrap : MonoBehaviour
             factory,
             resolver,
             playerObject.transform);
+        ConfigureEncounters(playerObject, director);
         ConfigureLootRewards(playerObject, director);
         ConfigureRunRecording(playerObject, director, runSeed);
 
@@ -135,6 +136,15 @@ public sealed class CityNewWaveBootstrap : MonoBehaviour
         if (RunSnapshotSession.HasPendingWorldRestore && !restoredWave)
         {
             FailConfiguration(waveRestoreError);
+            yield break;
+        }
+
+        if (restoredWave &&
+            !RunSnapshotSession.TryRestoreEncounter(
+                playerObject.GetComponent<EncounterRuntimeController>(),
+                out string encounterRestoreError))
+        {
+            FailConfiguration(encounterRestoreError);
             yield break;
         }
 
@@ -271,6 +281,18 @@ public sealed class CityNewWaveBootstrap : MonoBehaviour
             configuredDirector,
             contentCatalog.LootDropTable,
             upgrades != null ? upgrades.RunSeed : 18018);
+    }
+
+    private void ConfigureEncounters(
+        GameObject playerObject,
+        WaveDirector configuredDirector)
+    {
+        EncounterRuntimeController encounters =
+            playerObject.GetComponent<EncounterRuntimeController>();
+        encounters ??= playerObject.AddComponent<EncounterRuntimeController>();
+        encounters.Configure(
+            contentCatalog.EncounterSequence,
+            configuredDirector);
     }
 
     private void ConfigureUpgrades(GameObject playerObject)

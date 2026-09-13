@@ -41,6 +41,31 @@ namespace FPS.SaveGame
         // Optional so schema-v2 saves created before the dynamic director remain valid.
         [DataMember(Order = 23, IsRequired = false, EmitDefaultValue = false)]
         public CombatDirectorSaveSnapshot CombatDirector;
+        // Optional so saves created before the encounter system remain loadable.
+        [DataMember(Order = 24, IsRequired = false, EmitDefaultValue = false)]
+        public EncounterSaveSnapshot Encounter;
+    }
+
+    [Serializable, DataContract]
+    public sealed class EncounterSaveSnapshot
+    {
+        [DataMember(Order = 0, IsRequired = true)] public int SequenceContentVersion;
+        [DataMember(Order = 1, IsRequired = true)] public int NextIndex;
+        [DataMember(Order = 2, IsRequired = true)] public string ActiveEncounterId;
+        [DataMember(Order = 3, IsRequired = true)] public int ActiveDefinitionVersion;
+        [DataMember(Order = 4, IsRequired = true)] public int Phase;
+        [DataMember(Order = 5, IsRequired = true)] public long StartedTick;
+        [DataMember(Order = 6, IsRequired = true)] public long ActiveTick;
+        [DataMember(Order = 7, IsRequired = true)] public long DeadlineTick;
+        [DataMember(Order = 8, IsRequired = true)] public int Progress;
+        [DataMember(Order = 9, IsRequired = true)]
+        public List<string> ResolvedEncounterIds = new List<string>();
+        [DataMember(Order = 10, IsRequired = true)]
+        public List<string> RewardedEncounterIds = new List<string>();
+        [DataMember(Order = 11, IsRequired = true)]
+        public List<int> ActiveRosterTokens = new List<int>();
+        // Encounter timing can continue after the main wave simulation stops.
+        [DataMember(Order = 12, IsRequired = true)] public long CurrentTick;
     }
 
     [Serializable, DataContract]

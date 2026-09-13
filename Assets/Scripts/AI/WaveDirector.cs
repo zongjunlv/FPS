@@ -19,6 +19,9 @@ public sealed class WaveDirector : MonoBehaviour, IWaveProgressSource
     public const int SimulationTickRate = 30;
 
     private readonly Dictionary<int, EnemySpawnHandle> activeEnemies = new();
+    private readonly Dictionary<int, EnemySpawnHandle> encounterEnemies = new();
+    private readonly Dictionary<int, Action<EnemySpawnHandle, EnemyExitReason>>
+        encounterCallbacks = new();
     private readonly List<Vector3> occupiedPositions = new();
     private readonly List<WaveStageDefinition> stages = new();
     private readonly List<int> completedWaveSpawnCounts = new();
@@ -72,6 +75,11 @@ public sealed class WaveDirector : MonoBehaviour, IWaveProgressSource
     public WaveStopReason StopReason { get; private set; }
     public IReadOnlyDictionary<int, EnemySpawnHandle> ActiveEnemies =>
         activeEnemies;
+    public IReadOnlyDictionary<int, EnemySpawnHandle> EncounterEnemies =>
+        encounterEnemies;
+    public bool IsEncounterSpawnReady => configured && IsFactoryReady &&
+        spawnPointResolver is IDirectedEnemySpawnPointResolver &&
+        RuntimeNavMeshBootstrap.IsSceneReady;
     public IReadOnlyList<int> CompletedWaveSpawnCounts =>
         completedWaveSpawnCounts;
     public IReadOnlyList<int> PeakAliveByWave => peakAliveByWave;
@@ -535,6 +543,74 @@ public sealed class WaveDirector : MonoBehaviour, IWaveProgressSource
         return StopRunInternal(reason, true);
     }
 
+    public bool TrySpawnEncounterEnemy(
+        EncounterRosterEntry rosterEntry,
+        int spawnOrdinal,
+        Action<EnemySpawnHandle, EnemyExitReason> onEnded,
+        out EnemySpawnHandle handle)
+    {
+        handle = default;
+        if (rosterEntry?.Archetype == null || !IsEncounterSpawnReady ||
+            player == null ||
+            spawnPointResolver is not IDirectedEnemySpawnPointResolver directed)
+            return false;
+
+        occupiedPositions.Clear();
+        AddOccupied(activeEnemies);
+        AddOccupied(encounterEnemies);
+        int direction = Mathf.Clamp(
+            rosterEntry.SignedDirectionDegrees + SpawnSpread(spawnOrdinal),
+            -180,
+            180);
+        if (!directed.TryResolveDirected(
+                player,
+                occupiedPositions,
+                direction,
+                Mathf.Max(0, spawnOrdinal),
+                out Vector3 spawnPoint))
+            return false;
+
+        Vector3 facing = player.position - spawnPoint;
+        facing.y = 0f;
+        Quaternion rotation = facing.sqrMagnitude > 0.001f
+            ? Quaternion.LookRotation(facing.normalized)
+            : Quaternion.identity;
+        int spawnId = nextSpawnId++;
+        var entry = new WaveEnemyEntry(rosterEntry.Archetype, 1);
+        var request = new EnemySpawnRequest(
+            spawnId,
+            flow != null ? Mathf.Max(1, flow.CurrentWave) : 1,
+            entry,
+            spawnPoint,
+            rotation,
+            player);
+        if (!enemyFactory.TrySpawn(
+                request,
+                HandleEncounterEnemyEnded,
+                out handle))
+        {
+            nextSpawnId--;
+            return false;
+        }
+        encounterEnemies.Add(spawnId, handle);
+        if (onEnded != null) encounterCallbacks.Add(spawnId, onEnded);
+        EnemySpawned?.Invoke(new EnemySpawnedEvent(request, handle));
+        RecordSpawnClearances(spawnPoint);
+        return true;
+    }
+
+    public void ReleaseEncounterEnemies()
+    {
+        var handles = new List<EnemySpawnHandle>(encounterEnemies.Values);
+        for (int index = 0; index < handles.Count; index++)
+        {
+            handles[index].Lifecycle?.Disarm();
+            enemyFactory?.Release(handles[index]);
+        }
+        encounterEnemies.Clear();
+        encounterCallbacks.Clear();
+    }
+
     private void ConfigureCore(
         IReadOnlyList<WaveStageDefinition> configuredStages,
         IEnemyFactory factory,
@@ -966,6 +1042,21 @@ public sealed class WaveDirector : MonoBehaviour, IWaveProgressSource
         }
     }
 
+    private static int SpawnSpread(int ordinal)
+    {
+        if (ordinal <= 0) return 0;
+        int step = (ordinal + 1) / 2 * 12;
+        return ordinal % 2 == 0 ? -step : step;
+    }
+
+    private void AddOccupied(
+        IReadOnlyDictionary<int, EnemySpawnHandle> enemies)
+    {
+        foreach (EnemySpawnHandle active in enemies.Values)
+            if (active.Controller != null)
+                occupiedPositions.Add(active.Controller.transform.position);
+    }
+
     private void HandleEnemyEnded(
         EnemySpawnHandle handle,
         EnemyExitReason reason)
@@ -1001,6 +1092,20 @@ public sealed class WaveDirector : MonoBehaviour, IWaveProgressSource
         spawnCooldown = Mathf.Min(
             spawnCooldown,
             CurrentDefinition.SpawnInterval);
+    }
+
+    private void HandleEncounterEnemyEnded(
+        EnemySpawnHandle handle,
+        EnemyExitReason reason)
+    {
+        if (!encounterEnemies.Remove(handle.SpawnId)) return;
+        encounterCallbacks.Remove(
+            handle.SpawnId,
+            out Action<EnemySpawnHandle, EnemyExitReason> callback);
+        int wave = flow != null ? Mathf.Max(1, flow.CurrentWave) : 1;
+        PublishEnemyDeath(handle, reason, wave);
+        callback?.Invoke(handle, reason);
+        enemyFactory?.Release(handle);
     }
 
     private void PublishEnemyDeath(
@@ -1065,7 +1170,8 @@ public sealed class WaveDirector : MonoBehaviour, IWaveProgressSource
                            SimulationCommandType.StopRun));
         DrainSimulationEvents();
 
-        if (!stopped && activeEnemies.Count == 0)
+        if (!stopped && activeEnemies.Count == 0 &&
+            encounterEnemies.Count == 0)
         {
             return false;
         }
@@ -1079,6 +1185,7 @@ public sealed class WaveDirector : MonoBehaviour, IWaveProgressSource
         }
 
         activeEnemies.Clear();
+        ReleaseEncounterEnemies();
         spawnCooldown = 0f;
         cueRemaining = 0f;
         presentationCue = WavePresentationCue.None;

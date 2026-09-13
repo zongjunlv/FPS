@@ -355,6 +355,17 @@ namespace FPS.Tests.PlayMode
                     }
                 }
 
+                object encounterEnemies = directorType
+                    .GetProperty("EncounterEnemies").GetValue(director);
+                foreach (object pair in (IEnumerable)encounterEnemies)
+                {
+                    object handle = pair.GetType().GetProperty("Value")
+                        .GetValue(pair);
+                    Component controller = (Component)handle.GetType()
+                        .GetProperty("Controller").GetValue(handle);
+                    if (controller != null) controllers.Add(controller);
+                }
+
                 foreach (Component controller in controllers)
                 {
                     Component targetHealth =

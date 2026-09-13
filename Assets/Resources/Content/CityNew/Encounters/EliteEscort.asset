@@ -1,0 +1,39 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 7201cf1cad389482a81002e0f359cfc8, type: 3}
+  m_Name: EliteEscort
+  m_EditorClassIdentifier: FPS.Composition::EncounterDefinition
+  stableId: city_new.encounter.elite_escort
+  contentVersion: 1
+  kind: 1
+  displayName: "\u7CBE\u82F1\u62A4\u9001"
+  objectiveText: "\u7A81\u7834\u62A4\u536B\u5E76\u51FB\u6740\u88C5\u7532\u7CBE\u82F1"
+  triggerKind: 0
+  triggerWave: 2
+  triggerMissionState: 1
+  objectiveKind: 1
+  objectiveTarget: 1
+  mainFlowPolicy: 0
+  introSeconds: 1.25
+  timeLimitSeconds: 55
+  roster:
+  - archetype: {fileID: 11400000, guid: a360f0ad1bc3a473b8cda1c85cd06172, type: 2}
+    count: 1
+    signedDirectionDegrees: 0
+  - archetype: {fileID: 11400000, guid: cff52cf87864842138e601d2cde7383b, type: 2}
+    count: 1
+    signedDirectionDegrees: -35
+  - archetype: {fileID: 11400000, guid: a1331564b706c4f3ca02b9a8b6dc0903, type: 2}
+    count: 2
+    signedDirectionDegrees: 35
+  rewardItem: {fileID: 11400000, guid: 194265fc96be047a2a83df065c724782, type: 2}
+  rewardQuantity: 2

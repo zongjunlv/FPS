@@ -20,6 +20,7 @@ public sealed class CityNewContentCatalog : ScriptableObject
     [SerializeField] private List<UpgradeDefinition> upgrades = new();
     [SerializeField] private List<ItemDefinition> items = new();
     [SerializeField] private List<CombatBuildDefinition> combatBuilds = new();
+    [SerializeField] private EncounterSequenceDefinition encounterSequence;
 
     public string StableId => stableId;
     public EnemyDefinition DefaultEnemy => defaultEnemy;
@@ -30,6 +31,7 @@ public sealed class CityNewContentCatalog : ScriptableObject
     public IReadOnlyList<UpgradeDefinition> Upgrades => upgrades;
     public IReadOnlyList<ItemDefinition> Items => items;
     public IReadOnlyList<CombatBuildDefinition> CombatBuilds => combatBuilds;
+    public EncounterSequenceDefinition EncounterSequence => encounterSequence;
 
     public static CityNewContentCatalog LoadDefault()
     {
@@ -44,7 +46,8 @@ public sealed class CityNewContentCatalog : ScriptableObject
         LootDropTableDefinition drops,
         IEnumerable<UpgradeDefinition> upgradeDefinitions,
         IEnumerable<ItemDefinition> itemDefinitions,
-        IEnumerable<CombatBuildDefinition> buildDefinitions = null)
+        IEnumerable<CombatBuildDefinition> buildDefinitions = null,
+        EncounterSequenceDefinition configuredEncounters = null)
     {
         stableId = id?.Trim();
         defaultEnemy = enemy;
@@ -62,6 +65,7 @@ public sealed class CityNewContentCatalog : ScriptableObject
         combatBuilds = buildDefinitions != null
             ? new List<CombatBuildDefinition>(buildDefinitions)
             : new List<CombatBuildDefinition>();
+        encounterSequence = configuredEncounters;
     }
 
     public bool TryValidate(out string error)
@@ -196,6 +200,17 @@ public sealed class CityNewContentCatalog : ScriptableObject
         for (int index = 0; index < items.Count; index++)
         {
             itemIds.Add(items[index].StableId);
+        }
+
+        if (encounterSequence == null ||
+            !encounterSequence.TryValidate(
+                archetypeSet,
+                new HashSet<ItemDefinition>(items),
+                out error))
+        {
+            if (encounterSequence == null)
+                error = "CityNew content catalog requires an encounter sequence asset.";
+            return false;
         }
 
         for (int ruleIndex = 0;

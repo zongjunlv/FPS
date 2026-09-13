@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using FPS.GameplayEffects;
+using FPS.Simulation;
 using UnityEditor;
 using UnityEngine;
 
@@ -211,6 +212,9 @@ public static class Issue46ContentAssetBuilder
         LootDropTableDefinition loot = BuildLootTable();
         ItemDefinition[] items = BuildItems(medicalEffect, armorEffect);
         UpgradeDefinition[] upgrades = BuildUpgrades(vitalityEffect);
+        EncounterSequenceDefinition encounters = BuildEncounters(
+            archetypes,
+            items);
 
         CityNewContentCatalog catalog = Asset<CityNewContentCatalog>(
             "CityNewContentCatalog.asset");
@@ -222,12 +226,159 @@ public static class Issue46ContentAssetBuilder
             loot,
             upgrades,
             items,
-            new[] { emberBuild });
+            new[] { emberBuild },
+            encounters);
 
         MarkAllDirty();
         AssetDatabase.SaveAssets();
         AssetDatabase.Refresh(ImportAssetOptions.ForceSynchronousImport);
         Debug.Log("CityNew formal content assets rebuilt successfully.");
+    }
+
+    private static EncounterSequenceDefinition BuildEncounters(
+        IReadOnlyList<EnemyArchetypeDefinition> archetypes,
+        IReadOnlyList<ItemDefinition> items)
+    {
+        EnemyArchetypeDefinition raider = archetypes[0];
+        EnemyArchetypeDefinition suppressor = archetypes[1];
+        EnemyArchetypeDefinition support = archetypes[2];
+        EnemyArchetypeDefinition assault = archetypes[3];
+        EnemyArchetypeDefinition elite = archetypes[4];
+        ItemDefinition medical = Array.Find(
+            items as ItemDefinition[] ?? new List<ItemDefinition>(items).ToArray(),
+            item => item.StableId == "medical_kit");
+        ItemDefinition armor = Array.Find(
+            items as ItemDefinition[] ?? new List<ItemDefinition>(items).ToArray(),
+            item => item.StableId == "armor_pack");
+
+        EncounterDefinition ambush = Encounter(
+            "Encounters/Ambush.asset",
+            "city_new.encounter.ambush",
+            EncounterKind.Ambush,
+            "侧后伏击",
+            "击退从两翼突入的伏击单位",
+            EncounterTriggerKind.WaveReached,
+            1,
+            MissionFlowState.EliminateTargets,
+            EncounterObjectiveKind.EliminateEnemies,
+            2,
+            1.5f,
+            45f,
+            new[]
+            {
+                new EncounterRosterEntry(raider, 1, -145),
+                new EncounterRosterEntry(raider, 1, 145)
+            },
+            medical,
+            1);
+        EncounterDefinition escort = Encounter(
+            "Encounters/EliteEscort.asset",
+            "city_new.encounter.elite_escort",
+            EncounterKind.EliteEscort,
+            "精英护送",
+            "突破护卫并击杀装甲精英",
+            EncounterTriggerKind.WaveReached,
+            2,
+            MissionFlowState.EliminateTargets,
+            EncounterObjectiveKind.EliminateElite,
+            1,
+            1.25f,
+            55f,
+            new[]
+            {
+                new EncounterRosterEntry(elite, 1, 0),
+                new EncounterRosterEntry(support, 1, -35),
+                new EncounterRosterEntry(assault, 2, 35)
+            },
+            armor,
+            2);
+        EncounterDefinition hold = Encounter(
+            "Encounters/TimedHold.asset",
+            "city_new.encounter.timed_hold",
+            EncounterKind.TimedHold,
+            "终端守点",
+            "在终端附近坚守 8 秒，离开区域会重置进度",
+            EncounterTriggerKind.MissionStateReached,
+            1,
+            MissionFlowState.ActivateTerminal,
+            EncounterObjectiveKind.HoldArea,
+            8 * WaveDirector.SimulationTickRate,
+            1f,
+            30f,
+            new[]
+            {
+                new EncounterRosterEntry(suppressor, 1, 90),
+                new EncounterRosterEntry(assault, 2, -90)
+            },
+            medical,
+            2);
+        EncounterDefinition pursuit = Encounter(
+            "Encounters/ExtractionPursuit.asset",
+            "city_new.encounter.extraction_pursuit",
+            EncounterKind.ExtractionPursuit,
+            "撤离追击",
+            "在追击部队包围前抵达撤离区",
+            EncounterTriggerKind.MissionStateReached,
+            1,
+            MissionFlowState.ExtractionAvailable,
+            EncounterObjectiveKind.ReachExtraction,
+            1,
+            0.75f,
+            35f,
+            new[]
+            {
+                new EncounterRosterEntry(raider, 3, 180),
+                new EncounterRosterEntry(suppressor, 1, 135)
+            },
+            armor,
+            2);
+
+        EncounterSequenceDefinition sequence =
+            Asset<EncounterSequenceDefinition>(
+                "Encounters/CityNewEncounterSequence.asset");
+        sequence.Configure(
+            "city_new.encounters.default",
+            1,
+            new[] { ambush, escort, hold, pursuit });
+        return sequence;
+    }
+
+    private static EncounterDefinition Encounter(
+        string path,
+        string id,
+        EncounterKind kind,
+        string displayName,
+        string objectiveText,
+        EncounterTriggerKind triggerKind,
+        int triggerWave,
+        MissionFlowState triggerMission,
+        EncounterObjectiveKind objectiveKind,
+        int objectiveTarget,
+        float introSeconds,
+        float timeLimitSeconds,
+        IEnumerable<EncounterRosterEntry> roster,
+        ItemDefinition reward,
+        int rewardQuantity)
+    {
+        EncounterDefinition definition = Asset<EncounterDefinition>(path);
+        definition.Configure(
+            id,
+            1,
+            kind,
+            displayName,
+            objectiveText,
+            triggerKind,
+            triggerWave,
+            triggerMission,
+            objectiveKind,
+            objectiveTarget,
+            EncounterMainFlowPolicy.Parallel,
+            introSeconds,
+            timeLimitSeconds,
+            roster,
+            reward,
+            rewardQuantity);
+        return definition;
     }
 
     private static WaveDefinition Wave(
@@ -516,6 +667,11 @@ public static class Issue46ContentAssetBuilder
             return asset;
         }
 
+        if (AssetDatabase.LoadMainAssetAtPath(path) != null)
+        {
+            AssetDatabase.DeleteAsset(path);
+        }
+
         asset = ScriptableObject.CreateInstance<T>();
         asset.name = System.IO.Path.GetFileNameWithoutExtension(path);
         AssetDatabase.CreateAsset(asset, path);
@@ -535,6 +691,7 @@ public static class Issue46ContentAssetBuilder
             $"{Root}/Enemies/Affixes",
             $"{Root}/Enemies/Archetypes",
             $"{Root}/Waves",
+            $"{Root}/Encounters",
             $"{Root}/Loot",
             $"{Root}/Items",
             $"{Root}/Upgrades",

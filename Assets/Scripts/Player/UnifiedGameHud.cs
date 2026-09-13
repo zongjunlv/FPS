@@ -59,6 +59,11 @@ public sealed class UnifiedGameHud : MonoBehaviour
     private TMP_Text waveCueText;
     private TMP_Text rewardCueText;
     private TMP_Text combatWarningText;
+    private RectTransform encounterHudRoot;
+    private TMP_Text encounterTitleText;
+    private TMP_Text encounterObjectiveText;
+    private TMP_Text encounterProgressText;
+    private Image encounterProgressFill;
     private TMP_FontAsset runtimeRewardFontAsset;
     private readonly Queue<RewardCueNotice> rewardCueQueue = new();
     private Coroutine rewardCueRoutine;
@@ -109,6 +114,11 @@ public sealed class UnifiedGameHud : MonoBehaviour
         rewardCueText != null ? rewardCueText.text : string.Empty;
     public string CombatWarningText =>
         combatWarningText != null ? combatWarningText.text : string.Empty;
+    public string EncounterText => encounterTitleText != null
+        ? encounterTitleText.text
+        : string.Empty;
+    public bool IsEncounterVisible => encounterHudRoot != null &&
+        encounterHudRoot.gameObject.activeSelf;
     public string LevelText =>
         levelText != null ? levelText.text : string.Empty;
     public string ExperienceText =>
@@ -185,6 +195,32 @@ public sealed class UnifiedGameHud : MonoBehaviour
         combatWarningText.gameObject.SetActive(true);
         combatWarningRoutine = StartCoroutine(
             HideCombatWarningAfter(Mathf.Max(0.25f, durationSeconds)));
+    }
+
+    public void ShowEncounter(EncounterHudSnapshot snapshot)
+    {
+        if (encounterHudRoot == null) return;
+        encounterHudRoot.gameObject.SetActive(snapshot.Visible);
+        if (!snapshot.Visible) return;
+        encounterTitleText.text = "遭遇 · " + snapshot.DisplayName;
+        encounterObjectiveText.text = snapshot.Objective;
+        string phase = snapshot.Phase == FPS.Simulation.EncounterPhase.Intro
+            ? "部署中"
+            : "进行中";
+        encounterProgressText.text = snapshot.SecondsRemaining > 0
+            ? $"{phase}  {snapshot.Progress}/{snapshot.Target}  ·  {snapshot.SecondsRemaining}s"
+            : $"{phase}  {snapshot.Progress}/{snapshot.Target}";
+        RectTransform fill = encounterProgressFill.rectTransform;
+        Vector2 size = fill.sizeDelta;
+        size.x = 272f * (snapshot.Target > 0
+            ? Mathf.Clamp01(snapshot.Progress / (float)snapshot.Target)
+            : 0f);
+        fill.sizeDelta = size;
+    }
+
+    public void ShowEncounterOutcome(string message, bool warning)
+    {
+        ShowCombatWarning(message, warning ? 2.6f : 2f);
     }
 
     private IEnumerator HideCombatWarningAfter(float seconds)
@@ -677,6 +713,7 @@ public sealed class UnifiedGameHud : MonoBehaviour
         BuildWaveHud();
         BuildRewardCue();
         BuildCombatWarning();
+        BuildEncounterHud();
         BuildCrosshair();
         BuildDamageOverlay();
     }
@@ -848,6 +885,70 @@ public sealed class UnifiedGameHud : MonoBehaviour
         combatWarningText.fontStyle = FontStyles.Bold;
         combatWarningText.color = new Color(1f, 0.48f, 0.16f, 1f);
         combatWarningText.gameObject.SetActive(false);
+    }
+
+    private void BuildEncounterHud()
+    {
+        Color panel = profile != null
+            ? profile.PanelColor
+            : new Color(0.02f, 0.03f, 0.04f, 0.82f);
+        panel.a = Mathf.Min(panel.a, 0.78f);
+        Color accent = new Color(1f, 0.48f, 0.16f, 1f);
+        encounterHudRoot = CreatePanel(
+            "EncounterHud",
+            HudLayer,
+            panel,
+            Vector2.one,
+            Vector2.one,
+            Vector2.one,
+            new Vector2(320f, 112f),
+            new Vector2(-28f, -152f));
+        Image strip = CreateImage("EncounterAccent", encounterHudRoot, accent);
+        SetBottomLeftRect(
+            strip.rectTransform,
+            new Vector2(0f, 109f),
+            new Vector2(320f, 3f));
+        encounterTitleText = CreateText(
+            "EncounterTitle",
+            encounterHudRoot,
+            17f,
+            TextAlignmentOptions.MidlineLeft,
+            new Vector2(18f, 72f),
+            new Vector2(284f, 28f));
+        encounterTitleText.color = accent;
+        encounterTitleText.fontStyle = FontStyles.Bold;
+        encounterObjectiveText = CreateText(
+            "EncounterObjective",
+            encounterHudRoot,
+            12f,
+            TextAlignmentOptions.MidlineLeft,
+            new Vector2(18f, 45f),
+            new Vector2(284f, 24f));
+        CreateBarBackground(
+            encounterHudRoot,
+            new Vector2(24f, 29f),
+            new Vector2(272f, 7f));
+        encounterProgressFill = CreateFilledBar(
+            "EncounterProgressFill",
+            encounterHudRoot,
+            accent,
+            new Vector2(24f, 29f),
+            new Vector2(0f, 7f));
+        encounterProgressText = CreateText(
+            "EncounterProgress",
+            encounterHudRoot,
+            10f,
+            TextAlignmentOptions.MidlineRight,
+            new Vector2(18f, 6f),
+            new Vector2(284f, 18f));
+        encounterProgressText.color = new Color(0.8f, 0.86f, 0.88f, 1f);
+        if (runtimeRewardFontAsset != null)
+        {
+            encounterTitleText.font = runtimeRewardFontAsset;
+            encounterObjectiveText.font = runtimeRewardFontAsset;
+            encounterProgressText.font = runtimeRewardFontAsset;
+        }
+        encounterHudRoot.gameObject.SetActive(false);
     }
 
     private static TMP_FontAsset CreateRewardFontAsset()

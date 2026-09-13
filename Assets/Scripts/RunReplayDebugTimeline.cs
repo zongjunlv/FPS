@@ -125,6 +125,7 @@ public sealed class RunReplayDebugTimeline : MonoBehaviour
         DrawFilter("精英", ReplayTimelineEventKind.Elite);
         DrawFilter("AI决策", ReplayTimelineEventKind.AiDecision);
         DrawFilter("导演", ReplayTimelineEventKind.CombatDirector);
+        DrawFilter("遭遇", ReplayTimelineEventKind.Encounter);
         DrawFilter("偏差", ReplayTimelineEventKind.ChecksumDivergence);
         GUILayout.EndHorizontal();
     }

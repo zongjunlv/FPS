@@ -44,8 +44,8 @@ namespace FPS.Tests.PlayMode
             Assert.That(Get<int>(pool, "PooledObjectCount"), Is.EqualTo(expectedPrewarm));
             int instantiatedBefore = Get<int>(pool, "InstantiateCount");
             int reusedBefore = Get<int>(pool, "ReuseCount");
-            List<object> firstWaveHandles = ActiveHandles(director);
-            HashSet<string> firstWaveInstances = InstanceIds(director);
+            List<object> firstWaveHandles = AllActiveHandles(director);
+            HashSet<string> firstWaveInstances = InstanceIds(firstWaveHandles);
 
             KillAllActive(director);
             yield return WaitForWave(director, 2, 12f);
@@ -146,7 +146,9 @@ namespace FPS.Tests.PlayMode
                 Component pool = Find(RuntimeType("PooledEnemyFactory"));
 
                 if (director != null && pool != null &&
-                    ActiveEnemies(director).Count > 0)
+                    ActiveEnemies(director).Count > 0 &&
+                    AllActiveHandles(director).Count >
+                    ActiveHandles(director).Count)
                 {
                     yield break;
                 }
@@ -189,8 +191,10 @@ namespace FPS.Tests.PlayMode
 
         private static void KillAllActive(Component director)
         {
-            foreach (Component enemy in ActiveEnemies(director))
+            foreach (object handle in AllActiveHandles(director))
             {
+                Component enemy = (Component)handle.GetType()
+                    .GetProperty("Controller").GetValue(handle);
                 ApplyLethalDamage(enemy.GetComponent(RuntimeType("Health")));
             }
         }
@@ -237,6 +241,16 @@ namespace FPS.Tests.PlayMode
             return result;
         }
 
+        private static List<object> AllActiveHandles(Component director)
+        {
+            List<object> result = ActiveHandles(director);
+            object encounters = director.GetType()
+                .GetProperty("EncounterEnemies").GetValue(director);
+            foreach (object item in (IEnumerable)encounters)
+                result.Add(item.GetType().GetProperty("Value").GetValue(item));
+            return result;
+        }
+
         private static HashSet<string> InstanceIds(Component director)
         {
             var ids = new HashSet<string>();
@@ -246,6 +260,18 @@ namespace FPS.Tests.PlayMode
                 ids.Add(enemy.GetEntityId().ToString());
             }
 
+            return ids;
+        }
+
+        private static HashSet<string> InstanceIds(IEnumerable<object> handles)
+        {
+            var ids = new HashSet<string>();
+            foreach (object handle in handles)
+            {
+                Component enemy = (Component)handle.GetType()
+                    .GetProperty("Controller").GetValue(handle);
+                ids.Add(enemy.GetEntityId().ToString());
+            }
             return ids;
         }
 

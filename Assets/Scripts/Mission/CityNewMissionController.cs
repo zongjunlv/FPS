@@ -209,6 +209,9 @@ public sealed class CityNewMissionController : MonoBehaviour
             return false;
         }
 
+        GetComponent<EncounterRuntimeController>()
+            ?.NotifyExtractionReached();
+
         EndRunSystems();
         ApplyOutcome();
         return true;

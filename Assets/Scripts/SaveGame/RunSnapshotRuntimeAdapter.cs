@@ -467,6 +467,34 @@ public sealed class RunSnapshotRuntimeAdapter : MonoBehaviour
             PlayerArmor = authoritative.PlayerArmor
         };
         snapshot.CombatDirector = ToSaveCombatDirector(runtime.Director);
+        EncounterRuntimeController encounter =
+            GetComponent<EncounterRuntimeController>();
+        if (encounter != null && encounter.IsConfigured)
+        {
+            EncounterRuntimeRestoreSnapshot encounterRuntime =
+                encounter.CaptureRuntimeState();
+            EncounterRuntimeSnapshot state = encounterRuntime.Sequence;
+            snapshot.Encounter = new EncounterSaveSnapshot
+            {
+                SequenceContentVersion =
+                    encounterRuntime.SequenceContentVersion,
+                NextIndex = state.NextIndex,
+                ActiveEncounterId = state.ActiveEncounterId,
+                ActiveDefinitionVersion = state.ActiveDefinitionVersion,
+                Phase = (int)state.Phase,
+                StartedTick = state.StartedTick,
+                ActiveTick = state.ActiveTick,
+                DeadlineTick = state.DeadlineTick,
+                CurrentTick = encounterRuntime.CurrentTick,
+                Progress = state.Progress,
+                ResolvedEncounterIds = new List<string>(
+                    state.ResolvedEncounterIds),
+                RewardedEncounterIds = new List<string>(
+                    state.RewardedEncounterIds),
+                ActiveRosterTokens = new List<int>(
+                    encounterRuntime.ActiveRosterTokens)
+            };
+        }
         snapshot.Enemies.Clear();
         foreach (EnemyRuntimeSnapshot enemy in runtime.Enemies)
         {
@@ -709,6 +737,27 @@ public sealed class RunSnapshotRuntimeAdapter : MonoBehaviour
                     current.SignedDirectionDegrees,
                     current.SelectedScore,
                     current.Reason));
+    }
+
+    internal static EncounterRuntimeRestoreSnapshot ToRuntimeEncounter(
+        EncounterSaveSnapshot saved)
+    {
+        if (saved == null) return null;
+        return new EncounterRuntimeRestoreSnapshot(
+            saved.SequenceContentVersion,
+            new EncounterRuntimeSnapshot(
+                saved.NextIndex,
+                saved.ActiveEncounterId,
+                saved.ActiveDefinitionVersion,
+                (EncounterPhase)saved.Phase,
+                saved.StartedTick,
+                saved.ActiveTick,
+                saved.DeadlineTick,
+                saved.Progress,
+                saved.ResolvedEncounterIds,
+                saved.RewardedEncounterIds),
+            saved.CurrentTick,
+            saved.ActiveRosterTokens);
     }
 
     internal static CombatRuleRuntimeSnapshot ToRuntimeCombatBuild(

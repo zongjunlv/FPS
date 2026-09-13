@@ -111,6 +111,7 @@ public sealed class RunReplayRuntimeAdapter : MonoBehaviour, IRunReplayAdapter
 
         CaptureWaveState(fields);
         CaptureCombatDirectorState(fields);
+        CaptureEncounterState(fields);
         CaptureCombatBuildState(fields);
         return ReplayStateSnapshot.Create(fields);
     }
@@ -181,6 +182,36 @@ public sealed class RunReplayRuntimeAdapter : MonoBehaviour, IRunReplayAdapter
             fields.Add(ReplayStateField.Number(prefix + "/armor",
                 Quantize(enemyHealth != null ? enemyHealth.CurrentArmor : 0f)));
         }
+        foreach (KeyValuePair<int, EnemySpawnHandle> pair in
+                 waves.EncounterEnemies)
+        {
+            EnemySpawnHandle handle = pair.Value;
+            string prefix = "encounterEnemy/" +
+                pair.Key.ToString(CultureInfo.InvariantCulture);
+            fields.Add(ReplayStateField.Flag(
+                prefix + "/alive",
+                handle.Controller != null));
+            fields.Add(ReplayStateField.Text(
+                prefix + "/type",
+                handle.EnemyTypeId));
+            if (handle.Controller == null) continue;
+            Health enemyHealth = handle.Controller.GetComponent<Health>();
+            Vector3 position = handle.Controller.transform.position;
+            fields.Add(ReplayStateField.Number(
+                prefix + "/position/x",
+                Quantize(position.x)));
+            fields.Add(ReplayStateField.Number(
+                prefix + "/position/y",
+                Quantize(position.y)));
+            fields.Add(ReplayStateField.Number(
+                prefix + "/position/z",
+                Quantize(position.z)));
+            fields.Add(ReplayStateField.Number(
+                prefix + "/health",
+                Quantize(enemyHealth != null
+                    ? enemyHealth.CurrentHealth
+                    : 0f)));
+        }
     }
 
     private void CaptureCombatBuildState(List<ReplayStateField> fields)
@@ -220,6 +251,50 @@ public sealed class RunReplayRuntimeAdapter : MonoBehaviour, IRunReplayAdapter
                 index.ToString(CultureInfo.InvariantCulture),
                 snapshot.ProcessedEventIds[index]));
         }
+    }
+
+    private void CaptureEncounterState(List<ReplayStateField> fields)
+    {
+        EncounterRuntimeController encounters =
+            GetComponent<EncounterRuntimeController>();
+        if (encounters == null || !encounters.IsConfigured) return;
+        EncounterRuntimeRestoreSnapshot runtime =
+            encounters.CaptureRuntimeState();
+        FPS.Simulation.EncounterRuntimeSnapshot snapshot = runtime.Sequence;
+        fields.Add(ReplayStateField.Number(
+            "encounter/sequenceVersion",
+            runtime.SequenceContentVersion));
+        fields.Add(ReplayStateField.Number(
+            "encounter/nextIndex",
+            snapshot.NextIndex));
+        fields.Add(ReplayStateField.Text(
+            "encounter/active/id",
+            snapshot.ActiveEncounterId));
+        fields.Add(ReplayStateField.Number(
+            "encounter/active/version",
+            snapshot.ActiveDefinitionVersion));
+        fields.Add(ReplayStateField.Number(
+            "encounter/phase",
+            (int)snapshot.Phase));
+        fields.Add(ReplayStateField.Number(
+            "encounter/progress",
+            snapshot.Progress));
+        fields.Add(ReplayStateField.Number(
+            "encounter/deadlineTick",
+            snapshot.DeadlineTick));
+        fields.Add(ReplayStateField.Number(
+            "encounter/currentTick",
+            runtime.CurrentTick));
+        fields.Add(ReplayStateField.Number(
+            "encounter/activeEnemies",
+            runtime.ActiveRosterTokens.Count));
+        for (int index = 0;
+             index < snapshot.RewardedEncounterIds.Count;
+             index++)
+            fields.Add(ReplayStateField.Text(
+                "encounter/rewarded/" +
+                index.ToString(CultureInfo.InvariantCulture),
+                snapshot.RewardedEncounterIds[index]));
     }
 
     private void CaptureCombatDirectorState(List<ReplayStateField> fields)

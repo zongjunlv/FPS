@@ -277,6 +277,32 @@ public static class RunSnapshotSession
         return restored;
     }
 
+    public static bool TryRestoreEncounter(
+        EncounterRuntimeController encounters,
+        out string error)
+    {
+        if (pendingWorld == null)
+        {
+            error = string.Empty;
+            return false;
+        }
+        if (pendingWorld.Encounter == null)
+        {
+            // Pre-Issue-61 schema-v2 saves start encounters from current triggers.
+            error = string.Empty;
+            return true;
+        }
+        if (encounters == null || !encounters.IsConfigured)
+        {
+            error = "遭遇系统尚未准备完成。";
+            return false;
+        }
+        return encounters.TryRestoreRuntimeState(
+            RunSnapshotRuntimeAdapter.ToRuntimeEncounter(
+                pendingWorld.Encounter),
+            out error);
+    }
+
     public static bool HasPendingWorldRestore => pendingWorld != null;
 
     public static void ReloadSnapshot(

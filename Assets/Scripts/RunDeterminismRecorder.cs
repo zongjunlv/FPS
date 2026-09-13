@@ -299,6 +299,26 @@ public sealed class RunDeterminismRecorder : MonoBehaviour
         return true;
     }
 
+    public bool RecordEncounterTransition(
+        FPS.Simulation.EncounterTransition transition,
+        FPS.Simulation.EncounterKind kind)
+    {
+        if (run == null || transition.Signal ==
+            FPS.Simulation.EncounterSignal.None)
+            return false;
+        run.RecordEvent(
+            RunEventType.EncounterTransition,
+            StableEventPayload.Create(
+                RunPayloadField.Text("id", transition.EncounterId),
+                RunPayloadField.Number("kind", (int)kind),
+                RunPayloadField.Number("phase", (int)transition.Phase),
+                RunPayloadField.Number("progress", transition.Progress),
+                RunPayloadField.Number("signal", (int)transition.Signal),
+                RunPayloadField.Number("target", transition.Target),
+                RunPayloadField.Number("deadlineTick", transition.DeadlineTick)));
+        return true;
+    }
+
     private void HandleShotResolved(ShotResult result)
     {
         RecordShot(result);

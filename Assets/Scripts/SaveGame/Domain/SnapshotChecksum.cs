@@ -54,6 +54,7 @@ namespace FPS.SaveGame
                 WriteSimulationClock(writer, snapshot.Simulation);
                 WriteCombatBuild(writer, snapshot.CombatBuild);
                 WriteCombatDirector(writer, snapshot.CombatDirector);
+                WriteEncounter(writer, snapshot.Encounter);
                 writer.Flush();
                 using (var sha = SHA256.Create())
                 {
@@ -286,6 +287,33 @@ namespace FPS.SaveGame
             writer.Write(value.CurrentEvent.Reason ?? string.Empty);
         }
 
+        private static void WriteEncounter(
+            BinaryWriter writer,
+            EncounterSaveSnapshot value)
+        {
+            if (value == null) return;
+            writer.Write("FPS.Encounter.v1");
+            writer.Write(value.SequenceContentVersion);
+            writer.Write(value.NextIndex);
+            writer.Write(value.ActiveEncounterId ?? string.Empty);
+            writer.Write(value.ActiveDefinitionVersion);
+            writer.Write(value.Phase);
+            writer.Write(value.StartedTick);
+            writer.Write(value.ActiveTick);
+            writer.Write(value.DeadlineTick);
+            writer.Write(value.CurrentTick);
+            writer.Write(value.Progress);
+            writer.Write(value.ResolvedEncounterIds?.Count ?? -1);
+            if (value.ResolvedEncounterIds != null)
+                foreach (string id in value.ResolvedEncounterIds)
+                    writer.Write(id ?? string.Empty);
+            writer.Write(value.RewardedEncounterIds?.Count ?? -1);
+            if (value.RewardedEncounterIds != null)
+                foreach (string id in value.RewardedEncounterIds)
+                    writer.Write(id ?? string.Empty);
+            WriteIntegers(writer, value.ActiveRosterTokens);
+        }
+
         private static void WriteFloat(BinaryWriter writer, float value)
         {
             // JSON does not preserve IEEE-754's signed zero. Canonicalize both
@@ -350,6 +378,8 @@ namespace FPS.SaveGame
             else if (!ValidateCombatDirector(
                          snapshot.CombatDirector,
                          out error))
+                return false;
+            else if (!ValidateEncounter(snapshot.Encounter, out error))
                 return false;
             if (error != null) return false;
 
@@ -505,6 +535,61 @@ namespace FPS.SaveGame
                 error = "动态战斗导演事件状态无效。";
                 return false;
             }
+            return true;
+        }
+
+        private static bool ValidateEncounter(
+            EncounterSaveSnapshot value,
+            out string error)
+        {
+            error = null;
+            if (value == null) return true;
+            if (value.SequenceContentVersion < 1 || value.NextIndex < 0 ||
+                value.NextIndex > 64 || value.Phase < 0 || value.Phase > 7 ||
+                value.StartedTick < 0 || value.ActiveTick < 0 ||
+                value.DeadlineTick < 0 || value.CurrentTick < 0 ||
+                value.CurrentTick < value.StartedTick || value.Progress < 0 ||
+                value.ResolvedEncounterIds == null ||
+                value.RewardedEncounterIds == null ||
+                value.ActiveRosterTokens == null ||
+                value.ResolvedEncounterIds.Count > 64 ||
+                value.RewardedEncounterIds.Count > 64 ||
+                value.ActiveRosterTokens.Count > 256)
+            {
+                error = "遭遇事件存档阶段或容量无效。";
+                return false;
+            }
+            bool hasActive = !string.IsNullOrEmpty(value.ActiveEncounterId);
+            if (hasActive != (value.Phase == 1 || value.Phase == 2) ||
+                hasActive && (!ValidId(value.ActiveEncounterId) ||
+                              value.ActiveDefinitionVersion < 1) ||
+                !hasActive && (value.ActiveDefinitionVersion != 0 ||
+                               value.ActiveRosterTokens.Count > 0))
+            {
+                error = "遭遇事件活动标识与阶段不一致。";
+                return false;
+            }
+            var resolved = new HashSet<string>(StringComparer.Ordinal);
+            foreach (string id in value.ResolvedEncounterIds)
+                if (!ValidId(id) || !resolved.Add(id))
+                {
+                    error = "遭遇事件结算账本包含无效或重复标识。";
+                    return false;
+                }
+            var rewarded = new HashSet<string>(StringComparer.Ordinal);
+            foreach (string id in value.RewardedEncounterIds)
+                if (!resolved.Contains(id) || !rewarded.Add(id))
+                {
+                    error = "遭遇奖励账本包含未结算或重复标识。";
+                    return false;
+                }
+            var tokens = new HashSet<int>();
+            foreach (int token in value.ActiveRosterTokens)
+                if (token < 0 || !tokens.Add(token))
+                {
+                    error = "遭遇活动敌人槽位无效或重复。";
+                    return false;
+                }
             return true;
         }
 

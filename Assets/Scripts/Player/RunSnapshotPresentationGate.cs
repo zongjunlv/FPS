@@ -107,7 +107,13 @@ public sealed class RunSnapshotPresentationGate : MonoBehaviour
             if (bootstrap != null && bootstrap.IsInitialized)
             {
                 Canvas.ForceUpdateCanvases();
-                yield return new WaitForEndOfFrame();
+                // WaitForEndOfFrame is not guaranteed to resume in a
+                // headless test player. A normal frame is sufficient there;
+                // rendered players still wait for the actual presented frame.
+                if (Application.isBatchMode)
+                    yield return null;
+                else
+                    yield return new WaitForEndOfFrame();
                 HideImmediately();
                 yield break;
             }

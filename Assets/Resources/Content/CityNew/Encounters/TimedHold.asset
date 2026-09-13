@@ -1,0 +1,36 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 7201cf1cad389482a81002e0f359cfc8, type: 3}
+  m_Name: TimedHold
+  m_EditorClassIdentifier: FPS.Composition::EncounterDefinition
+  stableId: city_new.encounter.timed_hold
+  contentVersion: 1
+  kind: 2
+  displayName: "\u7EC8\u7AEF\u5B88\u70B9"
+  objectiveText: "\u5728\u7EC8\u7AEF\u9644\u8FD1\u575A\u5B88 8 \u79D2\uFF0C\u79BB\u5F00\u533A\u57DF\u4F1A\u91CD\u7F6E\u8FDB\u5EA6"
+  triggerKind: 1
+  triggerWave: 1
+  triggerMissionState: 0
+  objectiveKind: 2
+  objectiveTarget: 240
+  mainFlowPolicy: 0
+  introSeconds: 1
+  timeLimitSeconds: 30
+  roster:
+  - archetype: {fileID: 11400000, guid: ed75343c3618a481c8a583be241537bb, type: 2}
+    count: 1
+    signedDirectionDegrees: 90
+  - archetype: {fileID: 11400000, guid: a1331564b706c4f3ca02b9a8b6dc0903, type: 2}
+    count: 2
+    signedDirectionDegrees: -90
+  rewardItem: {fileID: 11400000, guid: d06328fa7041b4102b9603c4a99bf952, type: 2}
+  rewardQuantity: 2

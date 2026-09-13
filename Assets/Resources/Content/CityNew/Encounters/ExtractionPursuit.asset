@@ -1,0 +1,36 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 7201cf1cad389482a81002e0f359cfc8, type: 3}
+  m_Name: ExtractionPursuit
+  m_EditorClassIdentifier: FPS.Composition::EncounterDefinition
+  stableId: city_new.encounter.extraction_pursuit
+  contentVersion: 1
+  kind: 3
+  displayName: "\u64A4\u79BB\u8FFD\u51FB"
+  objectiveText: "\u5728\u8FFD\u51FB\u90E8\u961F\u5305\u56F4\u524D\u62B5\u8FBE\u64A4\u79BB\u533A"
+  triggerKind: 1
+  triggerWave: 1
+  triggerMissionState: 2
+  objectiveKind: 3
+  objectiveTarget: 1
+  mainFlowPolicy: 0
+  introSeconds: 0.75
+  timeLimitSeconds: 35
+  roster:
+  - archetype: {fileID: 11400000, guid: d3724ec406bf647faa5f2e202ea3ce7d, type: 2}
+    count: 3
+    signedDirectionDegrees: 180
+  - archetype: {fileID: 11400000, guid: ed75343c3618a481c8a583be241537bb, type: 2}
+    count: 1
+    signedDirectionDegrees: 135
+  rewardItem: {fileID: 11400000, guid: 194265fc96be047a2a83df065c724782, type: 2}
+  rewardQuantity: 2

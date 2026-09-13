@@ -98,7 +98,9 @@ public static class ContentAssetValidator
         asset is WaveSequenceDefinition || asset is LootDropTableDefinition || asset is ItemDefinition ||
         asset is UpgradeDefinition || asset is GameplayEffectDefinition ||
         asset is CombatBuildDefinition || asset is CombatRuleDefinition ||
-        asset is CombatRuleEffectDefinition;
+        asset is CombatRuleEffectDefinition ||
+        asset is EncounterDefinition ||
+        asset is EncounterSequenceDefinition;
 
     private static void ValidateAsset(ScriptableObject asset, SerializedObject data,
         ContentValidationReport report, AddressableAssetSettings settings, HashSet<string> knownTags)
@@ -165,6 +167,36 @@ public static class ContentAssetValidator
                 Require(data, $"stages.Array.data[{i}].wave", report);
         }
         if (asset is WaveDefinition wave) ValidateWave(wave, data, report);
+        if (asset is EncounterSequenceDefinition)
+        {
+            SerializedProperty encounters = data.FindProperty("encounters");
+            if (encounters == null || encounters.arraySize != 4)
+                report.Add(
+                    "REFERENCE_MISSING",
+                    "遭遇序列必须包含四种事件。",
+                    asset);
+            else
+                for (int index = 0; index < encounters.arraySize; index++)
+                    Require(
+                        data,
+                        $"encounters.Array.data[{index}]",
+                        report);
+        }
+        if (asset is EncounterDefinition)
+        {
+            SerializedProperty roster = data.FindProperty("roster");
+            if (roster == null || roster.arraySize == 0)
+                report.Add(
+                    "REFERENCE_MISSING",
+                    "遭遇事件必须配置敌人阵容。",
+                    asset);
+            else
+                for (int index = 0; index < roster.arraySize; index++)
+                    Require(
+                        data,
+                        $"roster.Array.data[{index}].archetype",
+                        report);
+        }
         if (asset is LootDropTableDefinition)
         {
             SerializedProperty rules = data.FindProperty("rules");

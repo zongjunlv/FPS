@@ -27,6 +27,9 @@ public sealed class Issue46ContentAssetTests
         Assert.That(catalog.LootDropTable.StableId,
             Is.EqualTo("city_new.loot.default"));
         Assert.That(catalog.WaveSequence.WaveCount, Is.EqualTo(3));
+        Assert.That(catalog.EncounterSequence, Is.Not.Null);
+        Assert.That(catalog.EncounterSequence.ContentVersion, Is.EqualTo(1));
+        Assert.That(catalog.EncounterSequence.Count, Is.EqualTo(4));
         Assert.That(catalog.EnemyArchetypes, Has.Count.EqualTo(5));
         Assert.That(catalog.Items, Has.Count.EqualTo(4));
         Assert.That(catalog.Upgrades, Has.Count.EqualTo(13));

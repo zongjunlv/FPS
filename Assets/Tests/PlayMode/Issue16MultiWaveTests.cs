@@ -480,10 +480,21 @@ namespace FPS.Tests.PlayMode
             Type directorType,
             Component director)
         {
-            object dictionary = directorType.GetProperty("ActiveEnemies")
-                .GetValue(director);
             var result = new List<Component>();
 
+            AppendControllers(
+                directorType.GetProperty("ActiveEnemies").GetValue(director),
+                result);
+            AppendControllers(
+                directorType.GetProperty("EncounterEnemies").GetValue(director),
+                result);
+            return result;
+        }
+
+        private static void AppendControllers(
+            object dictionary,
+            ICollection<Component> result)
+        {
             foreach (object pair in (IEnumerable)dictionary)
             {
                 object handle = pair.GetType().GetProperty("Value")
@@ -496,8 +507,6 @@ namespace FPS.Tests.PlayMode
                     result.Add(controller);
                 }
             }
-
-            return result;
         }
 
         private static void CompleteTerminal(
