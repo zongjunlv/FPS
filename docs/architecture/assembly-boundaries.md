@@ -13,13 +13,16 @@ FPS.Core
 ├── FPS.UI
 └── FPS.Composition
 
-FPS.Simulation ──> FPS.Composition
+FPS.Simulation
+├── FPS.GameplayEffects
+├── FPS.Combat
+└── FPS.Composition
 ```
 
 - `FPS.Core` 不依赖任何项目运行时程序集。
 - `FPS.Simulation` 是固定 Tick 的权威战局内核，不依赖 Unity 或其他项目运行时程序集。
-- `FPS.GameplayEffects` 只依赖 `FPS.Core`。
-- `FPS.Combat` 可以依赖 `FPS.Core` 与 `FPS.GameplayEffects`。
+- `FPS.GameplayEffects` 依赖 `FPS.Core` 与纯逻辑 `FPS.Simulation`，正式构筑与离线门禁共用确定性规则判定内核。
+- `FPS.Combat` 可以依赖 `FPS.Core`、`FPS.GameplayEffects` 与 `FPS.Simulation`，实机生命组件和离线模拟共用伤害结算规则。
 - `FPS.AI`、`FPS.Inventory` 可以依赖 Core、Combat 与 GameplayEffects，但不得相互依赖，也不得依赖 UI。
 - `FPS.UI` 可以读取各领域模块的公开状态，领域模块不得反向依赖 UI。
 - `FPS.Composition` 是唯一允许同时引用全部模块的装配层，不承载新的领域规则。

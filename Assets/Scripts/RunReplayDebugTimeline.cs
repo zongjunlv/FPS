@@ -1,4 +1,5 @@
 #if UNITY_EDITOR || DEVELOPMENT_BUILD
+using FPS.Balance;
 using FPS.Determinism;
 using UnityEngine;
 using UnityEngine.InputSystem;
@@ -19,6 +20,8 @@ public sealed class RunReplayDebugTimeline : MonoBehaviour
     private int pageIndex;
     private int lastEventCount = -1;
     private ReplayDivergence lastDivergence;
+    private OfflineBalanceReproVerification balanceReproduction;
+    private string balanceReproductionError = string.Empty;
     private bool visible;
     private CursorLockMode previousCursorLock;
     private bool previousCursorVisible;
@@ -95,8 +98,14 @@ public sealed class RunReplayDebugTimeline : MonoBehaviour
         GUILayout.BeginHorizontal();
         GUILayout.Label("REPLAY 调试时间轴 · F9 关闭", GUI.skin.box);
         GUILayout.FlexibleSpace();
+        if (GUILayout.Button("回放最近异常 Seed", GUILayout.Width(150)))
+            VerifyLatestBalanceReproduction();
         if (GUILayout.Button("首个偏差", GUILayout.Width(90))) JumpToDivergence();
         GUILayout.EndHorizontal();
+        GUILayout.Label(
+            "异常 Seed 入口只重跑权威离线规则，不驱动画面或物理，也不会改动当前战局/存档。",
+            GUI.skin.box);
+        DrawBalanceReproduction();
         if (timeline == null || page == null)
         {
             GUILayout.Label("当前没有可用战局记录。");
@@ -105,9 +114,15 @@ public sealed class RunReplayDebugTimeline : MonoBehaviour
         }
 
         DrawFilters();
+        float reproductionHeight = balanceReproduction != null
+            ? 112f
+            : string.IsNullOrEmpty(balanceReproductionError) ? 0f : 24f;
+        float panelHeight = Mathf.Max(
+            120f,
+            height - 150f - reproductionHeight);
         GUILayout.BeginHorizontal();
-        DrawEvents(width * 0.5f, height - 100f);
-        DrawDetails(width * 0.47f, height - 100f);
+        DrawEvents(width * 0.5f, panelHeight);
+        DrawDetails(width * 0.47f, panelHeight);
         GUILayout.EndHorizontal();
         GUILayout.EndArea();
     }
@@ -199,6 +214,60 @@ public sealed class RunReplayDebugTimeline : MonoBehaviour
         RefreshPage();
         selected = location.Item;
         details = timeline.Describe(selected);
+    }
+
+    private void VerifyLatestBalanceReproduction()
+    {
+        balanceReproduction = null;
+        if (!OfflineBalanceReproRuntime.TryVerifyLatest(
+                out balanceReproduction,
+                out balanceReproductionError))
+        {
+            return;
+        }
+        balanceReproductionError = string.Empty;
+    }
+
+    private void DrawBalanceReproduction()
+    {
+        if (!string.IsNullOrEmpty(balanceReproductionError))
+        {
+            GUILayout.Label("异常 Seed：" + balanceReproductionError);
+            return;
+        }
+        if (balanceReproduction == null) return;
+
+        OfflineBalanceReproBundle bundle = balanceReproduction.Bundle;
+        GUILayout.BeginVertical(GUI.skin.box);
+        GUILayout.Label(
+            $"异常 Seed {bundle.Seed} · 内容 v{bundle.ContentVersion} · " +
+            $"规则 {bundle.RulesVersion}");
+        GUILayout.Label(
+            $"策略 {bundle.PolicyVersion} · 内容指纹 " +
+            ShortDigest(bundle.ContentFingerprint));
+        GUILayout.Label(
+            "异常原因：" +
+            (bundle.AnomalyCodes == null || bundle.AnomalyCodes.Length == 0
+                ? "未提供"
+                : string.Join("、", bundle.AnomalyCodes)));
+        GUILayout.Label(
+            "确定性验证：" +
+            (balanceReproduction.IsMatch
+                ? "通过（同 Seed 权威重跑结果一致）"
+                : "失败（当前结果与导出基准不同）"));
+        OfflineBalanceReproDivergenceData divergence =
+            balanceReproduction.FirstDivergence;
+        GUILayout.Label(divergence == null
+            ? "首个真实分歧：无（稳定重跑允许为空）"
+            : $"首个真实分歧：命令 #{divergence.CommandIndex} / " +
+              $"Tick {divergence.Tick} / {divergence.Reason}");
+        GUILayout.EndVertical();
+    }
+
+    private static string ShortDigest(string value)
+    {
+        if (string.IsNullOrEmpty(value)) return "未提供";
+        return value.Length <= 16 ? value : value.Substring(0, 16) + "…";
     }
 
     private static string StateLabel(ReplayTimelineStateSummary state) =>

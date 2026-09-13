@@ -1,5 +1,6 @@
 using System;
 using FPS.GameplayEffects;
+using FPS.Simulation;
 using UnityEngine;
 
 public sealed class Health : MonoBehaviour, IDamageable,
@@ -53,24 +54,17 @@ public sealed class Health : MonoBehaviour, IDamageable,
             return DamageResult.None;
         }
 
-        float armorBeforeDamage = CurrentArmor;
-        float absorbedDamage = Mathf.Min(
+        CombatDamageResolution resolution = CombatDamageRules.Apply(
+            CurrentHealth,
             CurrentArmor,
             damage.Amount);
-        CurrentArmor -= absorbedDamage;
-        float healthDamage = damage.Amount - absorbedDamage;
-        float healthBeforeDamage = CurrentHealth;
-        CurrentHealth = Mathf.Max(
-            0f,
-            CurrentHealth - healthDamage);
-        float appliedAmount =
-            armorBeforeDamage - CurrentArmor +
-            healthBeforeDamage - CurrentHealth;
-        bool wasKilled = CurrentHealth <= 0f;
+        CurrentHealth = resolution.RemainingHealth;
+        CurrentArmor = resolution.RemainingArmor;
+        bool wasKilled = resolution.WasKilled;
         var result = new DamageResult(
             true,
             wasKilled,
-            appliedAmount,
+            resolution.AppliedDamage,
             HitRegion.Generic);
         LastAppliedDamage = damage;
         HasLastAppliedDamage = true;

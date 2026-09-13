@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using FPS.Simulation;
 
 namespace FPS.GameplayEffects
 {
@@ -135,7 +136,6 @@ namespace FPS.GameplayEffects
 
     public sealed class CombatRuleEngine
     {
-        private const int MaximumRememberedEvents = 256;
         private const int MaximumEffectChainDepth = 16;
 
         private readonly int seed;
@@ -145,16 +145,14 @@ namespace FPS.GameplayEffects
             new(StringComparer.Ordinal);
         private readonly SortedSet<string> installedBuildIds =
             new(StringComparer.Ordinal);
-        private readonly Dictionary<string, long> readyTicks =
-            new(StringComparer.Ordinal);
-        private readonly HashSet<long> processedEvents = new();
-        private readonly Queue<long> processedOrder = new();
+        private CombatRuleDecisionKernel decisionKernel;
 
         public CombatRuleEngine(
             int runSeed,
             IReadOnlyList<CombatBuildDefinition> availableBuilds)
         {
             seed = runSeed;
+            decisionKernel = new CombatRuleDecisionKernel(runSeed);
             if (availableBuilds == null)
             {
                 return;
@@ -190,7 +188,10 @@ namespace FPS.GameplayEffects
                 CombatRuleDefinition rule = build.Rules[index];
                 if (rule != null && !string.IsNullOrWhiteSpace(rule.StableId))
                 {
-                    activeRules.TryAdd(rule.StableId, rule);
+                    if (activeRules.TryAdd(rule.StableId, rule))
+                    {
+                        decisionKernel.AddRule(ToDecisionSpec(rule));
+                    }
                 }
             }
 
@@ -200,23 +201,14 @@ namespace FPS.GameplayEffects
         public IReadOnlyList<CombatRuleExecution> Process(
             CombatTriggerContext context)
         {
-            if (context.EventId <= 0 || context.Tick < 0 ||
-                !RememberEvent(context.EventId))
-            {
-                return Array.Empty<CombatRuleExecution>();
-            }
-
-            var ruleIds = new List<string>(activeRules.Keys);
-            ruleIds.Sort(StringComparer.Ordinal);
+            IReadOnlyList<CombatRuleDecision> decisions =
+                decisionKernel.Process(ToDecisionContext(context));
             var executions = new List<CombatRuleExecution>();
-
-            for (int index = 0; index < ruleIds.Count; index++)
+            for (int index = 0; index < decisions.Count; index++)
             {
-                CombatRuleDefinition rule = activeRules[ruleIds[index]];
-                if (!Matches(rule, context) ||
-                    (readyTicks.TryGetValue(rule.StableId, out long ready) &&
-                     context.Tick < ready) ||
-                    !Roll(rule, context.EventId))
+                if (!activeRules.TryGetValue(
+                        decisions[index].RuleId,
+                        out CombatRuleDefinition rule))
                 {
                     continue;
                 }
@@ -234,11 +226,6 @@ namespace FPS.GameplayEffects
                         executions);
                 }
 
-                if (executions.Count > 0 && rule.CooldownTicks > 0)
-                {
-                    readyTicks[rule.StableId] =
-                        context.Tick + rule.CooldownTicks;
-                }
             }
 
             return executions.Count > 0
@@ -248,27 +235,25 @@ namespace FPS.GameplayEffects
 
         public CombatRuleRuntimeSnapshot CaptureSnapshot(long nextEventId = 0)
         {
+            CombatRuleDecisionSnapshot decision =
+                decisionKernel.CaptureSnapshot(nextEventId);
             var cooldowns = new List<CombatRuleCooldownSnapshot>(
-                readyTicks.Count);
-            foreach (KeyValuePair<string, long> pair in readyTicks)
+                decision.Cooldowns.Count);
+            for (int index = 0;
+                 index < decision.Cooldowns.Count;
+                 index++)
             {
+                CombatRuleDecisionCooldown value =
+                    decision.Cooldowns[index];
                 cooldowns.Add(new CombatRuleCooldownSnapshot(
-                    pair.Key,
-                    pair.Value));
-            }
-            cooldowns.Sort((left, right) => string.CompareOrdinal(
-                left.RuleId,
-                right.RuleId));
-            long capturedEventId = Math.Max(0L, nextEventId);
-            foreach (long eventId in processedOrder)
-            {
-                capturedEventId = Math.Max(capturedEventId, eventId);
+                    value.RuleId,
+                    value.ReadyTick));
             }
             return new CombatRuleRuntimeSnapshot(
                 new List<string>(installedBuildIds),
                 cooldowns,
-                processedOrder.ToArray(),
-                capturedEventId);
+                decision.ProcessedEventIds,
+                decision.NextEventId);
         }
 
         public bool TryRestore(
@@ -297,9 +282,8 @@ namespace FPS.GameplayEffects
                 builds.Add(build);
             }
 
-            var cooldowns = new Dictionary<string, long>(
-                StringComparer.Ordinal);
             var availableRuleIds = new HashSet<string>(StringComparer.Ordinal);
+            var configuredRules = new List<CombatRuleDecisionSpec>();
             for (int buildIndex = 0; buildIndex < builds.Count; buildIndex++)
             {
                 IReadOnlyList<CombatRuleDefinition> rules =
@@ -308,171 +292,97 @@ namespace FPS.GameplayEffects
                 {
                     if (rules[ruleIndex] != null)
                     {
-                        availableRuleIds.Add(rules[ruleIndex].StableId);
+                        CombatRuleDefinition rule = rules[ruleIndex];
+                        if (availableRuleIds.Add(rule.StableId))
+                        {
+                            configuredRules.Add(ToDecisionSpec(rule));
+                        }
                     }
                 }
             }
+            var cooldowns = new CombatRuleDecisionCooldown[
+                snapshot.Cooldowns.Count];
             for (int index = 0; index < snapshot.Cooldowns.Count; index++)
             {
                 CombatRuleCooldownSnapshot cooldown =
                     snapshot.Cooldowns[index];
                 if (string.IsNullOrWhiteSpace(cooldown.RuleId) ||
                     cooldown.ReadyTick < 0 ||
-                    !availableRuleIds.Contains(cooldown.RuleId) ||
-                    !cooldowns.TryAdd(cooldown.RuleId, cooldown.ReadyTick))
+                    !availableRuleIds.Contains(cooldown.RuleId))
                 {
                     error = "构筑冷却快照无效。";
                     return false;
                 }
+                cooldowns[index] = new CombatRuleDecisionCooldown(
+                    cooldown.RuleId,
+                    cooldown.ReadyTick);
             }
-
-            var events = new HashSet<long>();
-            if (snapshot.ProcessedEventIds.Count > MaximumRememberedEvents)
+            var restoredKernel = new CombatRuleDecisionKernel(
+                seed,
+                configuredRules);
+            if (!restoredKernel.TryRestore(
+                    new CombatRuleDecisionSnapshot(
+                        cooldowns,
+                        snapshot.ProcessedEventIds,
+                        snapshot.NextEventId),
+                    out error))
             {
-                error = "构筑事件去重窗口超出上限。";
                 return false;
-            }
-            for (int index = 0;
-                 index < snapshot.ProcessedEventIds.Count;
-                 index++)
-            {
-                long eventId = snapshot.ProcessedEventIds[index];
-                if (eventId <= 0 || eventId > snapshot.NextEventId ||
-                    !events.Add(eventId))
-                {
-                    error = "构筑事件去重快照无效。";
-                    return false;
-                }
             }
 
             activeRules.Clear();
             installedBuildIds.Clear();
-            readyTicks.Clear();
-            processedEvents.Clear();
-            processedOrder.Clear();
             for (int index = 0; index < builds.Count; index++)
             {
-                Install(builds[index]);
+                CombatBuildDefinition build = builds[index];
+                installedBuildIds.Add(build.StableId);
+                for (int ruleIndex = 0;
+                     ruleIndex < build.Rules.Count;
+                     ruleIndex++)
+                {
+                    CombatRuleDefinition rule = build.Rules[ruleIndex];
+                    if (rule != null &&
+                        !string.IsNullOrWhiteSpace(rule.StableId))
+                    {
+                        activeRules.TryAdd(rule.StableId, rule);
+                    }
+                }
             }
-            foreach (KeyValuePair<string, long> pair in cooldowns)
-            {
-                readyTicks.Add(pair.Key, pair.Value);
-            }
-            for (int index = 0;
-                 index < snapshot.ProcessedEventIds.Count;
-                 index++)
-            {
-                long eventId = snapshot.ProcessedEventIds[index];
-                processedEvents.Add(eventId);
-                processedOrder.Enqueue(eventId);
-            }
+            decisionKernel = restoredKernel;
 
             error = string.Empty;
             return true;
         }
 
-        private bool RememberEvent(long eventId)
+        private static CombatRuleDecisionSpec ToDecisionSpec(
+            CombatRuleDefinition rule)
         {
-            if (!processedEvents.Add(eventId))
-            {
-                return false;
-            }
-
-            processedOrder.Enqueue(eventId);
-            while (processedOrder.Count > MaximumRememberedEvents)
-            {
-                processedEvents.Remove(processedOrder.Dequeue());
-            }
-            return true;
+            bool hasEffect = false;
+            for (int index = 0; index < rule.Effects.Count; index++)
+                hasEffect |= rule.Effects[index] != null;
+            return new CombatRuleDecisionSpec(
+                rule.StableId,
+                (CombatRuleDecisionTrigger)rule.Trigger,
+                rule.RequiredSourceTags,
+                rule.RequiredTargetTags,
+                rule.ExcludedTargetTags,
+                rule.MinimumHealthNormalized,
+                rule.MaximumHealthNormalized,
+                rule.CooldownTicks,
+                rule.ProbabilityBasisPoints,
+                hasEffect);
         }
 
-        private static bool Matches(
-            CombatRuleDefinition rule,
+        private static CombatRuleDecisionContext ToDecisionContext(
             CombatTriggerContext context)
         {
-            return rule != null && rule.Trigger == context.Trigger &&
-                   context.TargetHealthNormalized >=
-                       rule.MinimumHealthNormalized &&
-                   context.TargetHealthNormalized <=
-                       rule.MaximumHealthNormalized &&
-                   ContainsAll(context.SourceTags, rule.RequiredSourceTags) &&
-                   ContainsAll(context.TargetTags, rule.RequiredTargetTags) &&
-                   ContainsNone(context.TargetTags, rule.ExcludedTargetTags);
-        }
-
-        private bool Roll(CombatRuleDefinition rule, long eventId)
-        {
-            int probability = rule.ProbabilityBasisPoints;
-            if (probability <= 0)
-            {
-                return false;
-            }
-            if (probability >= 10000)
-            {
-                return true;
-            }
-
-            uint hash = 2166136261u;
-            Mix(ref hash, unchecked((uint)seed));
-            Mix(ref hash, unchecked((uint)eventId));
-            Mix(ref hash, unchecked((uint)(eventId >> 32)));
-            string id = rule.StableId;
-            for (int index = 0; index < id.Length; index++)
-            {
-                Mix(ref hash, id[index]);
-            }
-            return hash % 10000u < probability;
-        }
-
-        private static void Mix(ref uint hash, uint value)
-        {
-            hash ^= value;
-            hash *= 16777619u;
-        }
-
-        private static bool ContainsAll(
-            IReadOnlyList<string> actual,
-            IReadOnlyList<string> required)
-        {
-            for (int index = 0; index < required.Count; index++)
-            {
-                if (!Contains(actual, required[index]))
-                {
-                    return false;
-                }
-            }
-            return true;
-        }
-
-        private static bool ContainsNone(
-            IReadOnlyList<string> actual,
-            IReadOnlyList<string> excluded)
-        {
-            for (int index = 0; index < excluded.Count; index++)
-            {
-                if (Contains(actual, excluded[index]))
-                {
-                    return false;
-                }
-            }
-            return true;
-        }
-
-        private static bool Contains(
-            IReadOnlyList<string> values,
-            string expected)
-        {
-            for (int index = 0; index < values.Count; index++)
-            {
-                if (string.Equals(
-                        values[index],
-                        expected,
-                        StringComparison.Ordinal))
-                {
-                    return true;
-                }
-            }
-            return false;
+            return new CombatRuleDecisionContext(
+                context.EventId,
+                context.Tick,
+                (CombatRuleDecisionTrigger)context.Trigger,
+                context.SourceTags,
+                context.TargetTags,
+                context.TargetHealthNormalized);
         }
 
         private static void CollectEffect(

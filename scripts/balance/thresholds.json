@@ -1,0 +1,13 @@
+{
+  "minimumSeedCount": 1000,
+  "minimumVictoryRate": 0.8,
+  "maximumResourceExhaustionRate": 0.1,
+  "maximumDurationP99Ticks": 18000,
+  "maximumTtkP95Ticks": 1800,
+  "maximumVictoryRateDrop": 0.03,
+  "maximumResourceExhaustionIncrease": 0.02,
+  "maximumDurationP99Multiplier": 1.2,
+  "maximumTtkP95Multiplier": 1.15,
+  "maximumDistributionJensenShannon": 0.05,
+  "maximumCategoryShareShift": 0.05
+}

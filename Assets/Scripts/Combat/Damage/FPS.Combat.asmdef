@@ -3,7 +3,8 @@
   "rootNamespace": "FPS.Combat",
   "references": [
     "FPS.Core",
-    "FPS.GameplayEffects"
+    "FPS.GameplayEffects",
+    "FPS.Simulation"
   ],
   "includePlatforms": [],
   "excludePlatforms": [],

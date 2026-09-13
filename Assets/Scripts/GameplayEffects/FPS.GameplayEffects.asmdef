@@ -2,7 +2,8 @@
   "name": "FPS.GameplayEffects",
   "rootNamespace": "FPS.GameplayEffects",
   "references": [
-    "FPS.Core"
+    "FPS.Core",
+    "FPS.Simulation"
   ],
   "includePlatforms": [],
   "excludePlatforms": [],

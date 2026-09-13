@@ -21,11 +21,13 @@ namespace FPS.Tests.Architecture
                     ["FPS.Combat"] = new[]
                     {
                         "FPS.Core",
-                        "FPS.GameplayEffects"
+                        "FPS.GameplayEffects",
+                        "FPS.Simulation"
                     },
                     ["FPS.GameplayEffects"] = new[]
                     {
-                        "FPS.Core"
+                        "FPS.Core",
+                        "FPS.Simulation"
                     },
                     ["FPS.AI"] = new[]
                     {
