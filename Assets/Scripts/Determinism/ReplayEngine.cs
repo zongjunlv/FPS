@@ -286,7 +286,9 @@ namespace FPS.Determinism
         {
             if (status != RunReplayStatus.Ready) return;
             RunEvent[] configuration = record.Events
-                .Where(value => value.Tick == 0 && value.Type == RunEventType.WaveGenerated)
+                .Where(value => value.Tick == 0 &&
+                    (value.Type == RunEventType.LayoutGenerated ||
+                     value.Type == RunEventType.WaveGenerated))
                 .ToArray();
             adapter.Begin(record.RunSeed, configuration);
             status = RunReplayStatus.Running;

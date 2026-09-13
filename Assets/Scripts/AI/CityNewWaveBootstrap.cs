@@ -21,7 +21,7 @@ public sealed class CityNewWaveBootstrap : MonoBehaviour
     private IEnemyFactory factory;
     private PooledEnemyFactory pooledFactory;
     private SceneEnemyFactory sceneFactory;
-    private NavMeshEnemySpawnPointResolver resolver;
+    private IEnemySpawnPointResolver resolver;
     private WaveDirector director;
     private AddressableEnemyFactory addressableFactory;
     private Font preparationFont;
@@ -53,9 +53,11 @@ public sealed class CityNewWaveBootstrap : MonoBehaviour
 
         instance = this;
         sceneTemplate = FindSceneTemplate();
-        resolver = GetComponent<NavMeshEnemySpawnPointResolver>();
-        resolver ??=
+        NavMeshEnemySpawnPointResolver fallbackResolver =
+            GetComponent<NavMeshEnemySpawnPointResolver>();
+        fallbackResolver ??=
             gameObject.AddComponent<NavMeshEnemySpawnPointResolver>();
+        resolver = fallbackResolver;
         director = GetComponent<WaveDirector>();
         director ??= gameObject.AddComponent<WaveDirector>();
     }
@@ -78,6 +80,16 @@ public sealed class CityNewWaveBootstrap : MonoBehaviour
         if (!TryResolveContent())
         {
             yield break;
+        }
+
+        if (CityNewModularLayoutBootstrap.Active != null &&
+            !CityNewModularLayoutBootstrap.Active.IsUsingFallback)
+        {
+            ModuleEnemySpawnPointResolver moduleResolver =
+                GetComponent<ModuleEnemySpawnPointResolver>();
+            moduleResolver ??=
+                gameObject.AddComponent<ModuleEnemySpawnPointResolver>();
+            resolver = moduleResolver;
         }
 
         sceneTemplate ??= FindSceneTemplate();
@@ -330,7 +342,8 @@ public sealed class CityNewWaveBootstrap : MonoBehaviour
             playerObject.GetComponent<PlayerUpgradeController>(),
             configuredDirector,
             playerObject.GetComponent<PlayerLootRewardController>(),
-            contentCatalog.WaveSequence);
+            contentCatalog.WaveSequence,
+            CityNewModularLayoutBootstrap.Active?.CurrentPlan);
         RunReplayRuntimeAdapter replayAdapter =
             playerObject.GetComponent<RunReplayRuntimeAdapter>();
         replayAdapter ??= playerObject.AddComponent<RunReplayRuntimeAdapter>();

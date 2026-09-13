@@ -100,7 +100,9 @@ public static class ContentAssetValidator
         asset is CombatBuildDefinition || asset is CombatRuleDefinition ||
         asset is CombatRuleEffectDefinition ||
         asset is EncounterDefinition ||
-        asset is EncounterSequenceDefinition;
+        asset is EncounterSequenceDefinition ||
+        asset is CombatAreaModuleDefinition ||
+        asset is ModularCombatLayoutSet;
 
     private static void ValidateAsset(ScriptableObject asset, SerializedObject data,
         ContentValidationReport report, AddressableAssetSettings settings, HashSet<string> knownTags)
@@ -109,6 +111,19 @@ public static class ContentAssetValidator
         ValidateNumericFields(asset, data, report);
         if (asset is CityNewContentCatalog catalog && !catalog.TryValidate(out string error))
             report.Add("CATALOG_INVALID", error, asset);
+        if (asset is CombatAreaModuleDefinition module)
+        {
+            if (!module.TryValidate(out string moduleError))
+                report.Add("LAYOUT_MODULE_INVALID", moduleError, asset);
+            string path = "Assets/Resources/" + module.ResourceAddress + ".prefab";
+            if (AssetDatabase.LoadAssetAtPath<GameObject>(path) == null)
+                report.Add("LAYOUT_RESOURCE_MISSING",
+                    $"布局模块资源地址 '{module.ResourceAddress}' 未指向 Resources 中的 GameObject 预制体。",
+                    asset);
+        }
+        if (asset is ModularCombatLayoutSet layoutSet &&
+            !layoutSet.TryValidate(out string layoutError))
+            report.Add("LAYOUT_SET_INVALID", layoutError, asset);
         if (asset is ItemDefinition item)
         {
             Require(data, "icon", report, "ICON_MISSING");

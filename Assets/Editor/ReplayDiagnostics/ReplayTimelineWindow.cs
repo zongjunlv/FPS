@@ -18,6 +18,7 @@ public sealed class ReplayTimelineWindow : EditorWindow
         ReplayTimelineEventKind.Wave,
         ReplayTimelineEventKind.EnemySpawn,
         ReplayTimelineEventKind.Elite,
+        ReplayTimelineEventKind.Layout,
         ReplayTimelineEventKind.ChecksumDivergence
     };
 
@@ -266,6 +267,7 @@ public sealed class ReplayTimelineWindow : EditorWindow
             case ReplayTimelineEventKind.Wave: return "波次";
             case ReplayTimelineEventKind.EnemySpawn: return "出生";
             case ReplayTimelineEventKind.Elite: return "精英";
+            case ReplayTimelineEventKind.Layout: return "布局";
             case ReplayTimelineEventKind.ChecksumDivergence: return "偏差";
             default: return kind.ToString();
         }

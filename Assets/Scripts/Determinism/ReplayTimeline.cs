@@ -24,9 +24,10 @@ namespace FPS.Determinism
         AiDecision = 1 << 9,
         CombatDirector = 1 << 10,
         Encounter = 1 << 11,
+        Layout = 1 << 12,
         All = Input | Shot | EnemyKilled | Upgrade | Loot | Wave |
               EnemySpawn | Elite | ChecksumDivergence | AiDecision |
-              CombatDirector | Encounter
+              CombatDirector | Encounter | Layout
     }
 
     public readonly struct ReplayTimelineFilter
@@ -377,6 +378,8 @@ namespace FPS.Determinism
                     return ReplayTimelineEventKind.CombatDirector;
                 case RunEventType.EncounterTransition:
                     return ReplayTimelineEventKind.Encounter;
+                case RunEventType.LayoutGenerated:
+                    return ReplayTimelineEventKind.Layout;
                 default: throw new ArgumentOutOfRangeException(nameof(type), type, null);
             }
         }
@@ -396,6 +399,7 @@ namespace FPS.Determinism
                 case ReplayTimelineEventKind.AiDecision: return "AI 决策";
                 case ReplayTimelineEventKind.CombatDirector: return "战斗导演";
                 case ReplayTimelineEventKind.Encounter: return "遭遇事件";
+                case ReplayTimelineEventKind.Layout: return "布局生成";
                 default: return kind.ToString();
             }
         }

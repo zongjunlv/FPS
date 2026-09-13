@@ -30,6 +30,11 @@ public sealed class Issue46ContentAssetTests
         Assert.That(catalog.EncounterSequence, Is.Not.Null);
         Assert.That(catalog.EncounterSequence.ContentVersion, Is.EqualTo(1));
         Assert.That(catalog.EncounterSequence.Count, Is.EqualTo(4));
+        Assert.That(catalog.LayoutSet, Is.Not.Null);
+        Assert.That(catalog.LayoutSet.ContentVersion, Is.EqualTo(1));
+        Assert.That(catalog.LayoutSet.Modules, Has.Count.EqualTo(7));
+        Assert.That(catalog.LayoutSet.TryValidate(out string layoutError),
+            Is.True, layoutError);
         Assert.That(catalog.EnemyArchetypes, Has.Count.EqualTo(5));
         Assert.That(catalog.Items, Has.Count.EqualTo(4));
         Assert.That(catalog.Upgrades, Has.Count.EqualTo(13));

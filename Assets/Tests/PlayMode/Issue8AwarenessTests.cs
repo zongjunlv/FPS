@@ -674,10 +674,17 @@ namespace FPS.Tests.PlayMode
                 LoadSceneMode.Single);
             yield return null;
 
-            Component perception =
-                FindFirstComponent("EnemyPerceptionController");
-            Component navigation =
-                FindFirstComponent("EnemyNavigationController");
+            Component perception = null;
+            Component navigation = null;
+            float navigationDeadline = Time.realtimeSinceStartup + 20f;
+            while (Time.realtimeSinceStartup < navigationDeadline)
+            {
+                if (TryFindNavigatingEnemy(out perception, out navigation))
+                {
+                    break;
+                }
+                yield return null;
+            }
             Assert.That(perception, Is.Not.Null);
             Assert.That(navigation, Is.Not.Null);
             perception.GetType().GetMethod("SetTarget")
@@ -693,14 +700,6 @@ namespace FPS.Tests.PlayMode
                 });
             PropertyInfo usesNavMesh =
                 navigation.GetType().GetProperty("UsesNavMesh");
-
-            for (int frame = 0;
-                 frame < 120 &&
-                 !(bool)usesNavMesh.GetValue(navigation);
-                 frame++)
-            {
-                yield return null;
-            }
 
             Assert.That(
                 usesNavMesh.GetValue(navigation),
@@ -747,6 +746,37 @@ namespace FPS.Tests.PlayMode
             }
 
             return null;
+        }
+
+        private static bool TryFindNavigatingEnemy(
+            out Component perception,
+            out Component navigation)
+        {
+            MonoBehaviour[] behaviours =
+                UnityEngine.Object.FindObjectsByType<MonoBehaviour>(
+                    FindObjectsInactive.Include,
+                    FindObjectsSortMode.None);
+            foreach (MonoBehaviour behaviour in behaviours)
+            {
+                if (behaviour == null ||
+                    behaviour.GetType().Name != "EnemyPerceptionController")
+                {
+                    continue;
+                }
+                Component candidate =
+                    behaviour.GetComponent("EnemyNavigationController");
+                if (candidate != null &&
+                    (bool)candidate.GetType().GetProperty("UsesNavMesh")
+                        .GetValue(candidate))
+                {
+                    perception = behaviour;
+                    navigation = candidate;
+                    return true;
+                }
+            }
+            perception = null;
+            navigation = null;
+            return false;
         }
     }
 }

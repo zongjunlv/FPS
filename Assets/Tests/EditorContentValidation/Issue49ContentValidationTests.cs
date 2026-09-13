@@ -174,6 +174,27 @@ public sealed class Issue49ContentValidationTests
     }
 
     [Test]
+    public void MissingLayoutPrefabAddressIsReportedAtModule()
+    {
+        var module = Create<CombatAreaModuleDefinition>("MissingLayoutPrefab");
+        module.Configure(
+            "test.module.missing_prefab",
+            CombatAreaModuleKind.Combat,
+            "Content/Test/DoesNotExist",
+            Vector2Int.one,
+            new[]
+            {
+                new LayoutConnectorDefinition(
+                    "north",
+                    LayoutConnectorDirection.North,
+                    CombatAreaModuleKindMask.All)
+            },
+            new[] { new LayoutPointDefinition("combat_center", Vector3.zero) },
+            new[] { new LayoutPointDefinition("enemy", Vector3.right) });
+        AssertIssue(Validate(), "LAYOUT_RESOURCE_MISSING", module);
+    }
+
+    [Test]
     public void WrongAddressableGroupIsRejectedWithoutChangingProjectSettings()
     {
         var archetype = CreateArchetype();

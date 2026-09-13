@@ -15,6 +15,18 @@ public static class RunSnapshotSession
     public static string LastMessage { get; private set; } = "新战局已开始；按 ESC 打开暂停与存档菜单。";
     public static string DefaultPath => Path.Combine(Application.persistentDataPath, "run-snapshot.json");
 
+    public static void PeekLayoutBootstrap(
+        int fallbackSeed,
+        out int seed,
+        out LayoutSaveSnapshot layout)
+    {
+        seed = pending?.Seed ?? newSeed ?? fallbackSeed;
+        layout = pending?.Layout;
+    }
+
+    public static int PeekSeed(int fallbackSeed) =>
+        pending?.Seed ?? newSeed ?? fallbackSeed;
+
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
     private static void ResetSession()
     {
@@ -330,7 +342,8 @@ public static class RunSnapshotSession
         RunSnapshotPresentationGate.HideImmediately();
         pending = null;
         pendingWorld = null;
-        newSeed = Guid.NewGuid().GetHashCode();
+        newSeed = CityNewModularLayoutBootstrap.SelectNewRunSeed(
+            Guid.NewGuid().GetHashCode());
         pendingLoadNotice = null;
         pendingOriginalSchemaVersion = 0;
         LastMessage = "新战局已开始，原存档未删除。";

@@ -21,6 +21,7 @@ public sealed class CityNewContentCatalog : ScriptableObject
     [SerializeField] private List<ItemDefinition> items = new();
     [SerializeField] private List<CombatBuildDefinition> combatBuilds = new();
     [SerializeField] private EncounterSequenceDefinition encounterSequence;
+    [SerializeField] private ModularCombatLayoutSet layoutSet;
 
     public string StableId => stableId;
     public EnemyDefinition DefaultEnemy => defaultEnemy;
@@ -32,6 +33,7 @@ public sealed class CityNewContentCatalog : ScriptableObject
     public IReadOnlyList<ItemDefinition> Items => items;
     public IReadOnlyList<CombatBuildDefinition> CombatBuilds => combatBuilds;
     public EncounterSequenceDefinition EncounterSequence => encounterSequence;
+    public ModularCombatLayoutSet LayoutSet => layoutSet;
 
     public static CityNewContentCatalog LoadDefault()
     {
@@ -47,7 +49,8 @@ public sealed class CityNewContentCatalog : ScriptableObject
         IEnumerable<UpgradeDefinition> upgradeDefinitions,
         IEnumerable<ItemDefinition> itemDefinitions,
         IEnumerable<CombatBuildDefinition> buildDefinitions = null,
-        EncounterSequenceDefinition configuredEncounters = null)
+        EncounterSequenceDefinition configuredEncounters = null,
+        ModularCombatLayoutSet configuredLayouts = null)
     {
         stableId = id?.Trim();
         defaultEnemy = enemy;
@@ -66,6 +69,7 @@ public sealed class CityNewContentCatalog : ScriptableObject
             ? new List<CombatBuildDefinition>(buildDefinitions)
             : new List<CombatBuildDefinition>();
         encounterSequence = configuredEncounters;
+        layoutSet = configuredLayouts;
     }
 
     public bool TryValidate(out string error)
@@ -210,6 +214,13 @@ public sealed class CityNewContentCatalog : ScriptableObject
         {
             if (encounterSequence == null)
                 error = "CityNew content catalog requires an encounter sequence asset.";
+            return false;
+        }
+
+        if (layoutSet == null || !layoutSet.TryValidate(out error))
+        {
+            if (layoutSet == null)
+                error = "CityNew content catalog requires a modular layout set asset.";
             return false;
         }
 

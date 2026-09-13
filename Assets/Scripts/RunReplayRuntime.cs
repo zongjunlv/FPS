@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
 using FPS.Determinism;
 using FPS.GameplayEffects;
 using UnityEngine;
@@ -113,6 +114,7 @@ public sealed class RunReplayRuntimeAdapter : MonoBehaviour, IRunReplayAdapter
         CaptureCombatDirectorState(fields);
         CaptureEncounterState(fields);
         CaptureCombatBuildState(fields);
+        CaptureLayoutState(fields);
         return ReplayStateSnapshot.Create(fields);
     }
 
@@ -350,10 +352,54 @@ public sealed class RunReplayRuntimeAdapter : MonoBehaviour, IRunReplayAdapter
             throw new InvalidOperationException("回放运行时依赖尚未配置完成。");
     }
 
+    private static void CaptureLayoutState(List<ReplayStateField> fields)
+    {
+        CombatLayoutPlan layout =
+            CityNewModularLayoutBootstrap.Active?.CurrentPlan;
+        if (layout == null) return;
+        fields.Add(ReplayStateField.Text("layout/id", layout.LayoutId));
+        fields.Add(ReplayStateField.Number("layout/contentVersion", layout.ContentVersion));
+        fields.Add(ReplayStateField.Number("layout/generatorVersion", layout.GeneratorVersion));
+        fields.Add(ReplayStateField.Text("layout/fingerprint", layout.Fingerprint));
+        fields.Add(ReplayStateField.Flag("layout/fallback", layout.UsedFallback));
+        fields.Add(ReplayStateField.Number("layout/module/count", layout.Placements.Count));
+        for (int index = 0; index < layout.Placements.Count; index++)
+        {
+            CombatLayoutPlacement placement = layout.Placements[index];
+            string prefix = "layout/module/" + placement.InstanceId;
+            fields.Add(ReplayStateField.Text(prefix + "/definition", placement.DefinitionId));
+            fields.Add(ReplayStateField.Number(prefix + "/gridX", placement.GridX));
+            fields.Add(ReplayStateField.Number(prefix + "/gridZ", placement.GridZ));
+            fields.Add(ReplayStateField.Number(prefix + "/rotation", placement.QuarterTurns));
+        }
+        fields.Add(ReplayStateField.Number(
+            "layout/connection/count", layout.Connections.Count));
+    }
+
     private void ValidateConfiguration(IReadOnlyList<RunEvent> recorded)
     {
+        RunEvent[] layouts = recorded
+            .Where(value => value.Type == RunEventType.LayoutGenerated)
+            .ToArray();
+        CombatLayoutPlan currentLayout =
+            CityNewModularLayoutBootstrap.Active?.CurrentPlan;
+        if (currentLayout != null)
+        {
+            if (layouts.Length != 1)
+                throw new InvalidOperationException("回放记录缺少唯一的布局配置。");
+            IReadOnlyDictionary<string, string> payload =
+                StableEventPayload.Parse(layouts[0].Payload);
+            if (!payload.TryGetValue("id", out string layoutId) ||
+                !payload.TryGetValue("fingerprint", out string fingerprint) ||
+                layoutId != currentLayout.LayoutId ||
+                fingerprint != currentLayout.Fingerprint)
+                throw new InvalidOperationException("回放记录与当前模块化布局不一致。");
+        }
         if (sequence == null) return;
-        if (recorded.Count != sequence.WaveCount)
+        RunEvent[] waves = recorded
+            .Where(value => value.Type == RunEventType.WaveGenerated)
+            .ToArray();
+        if (waves.Length != sequence.WaveCount)
             throw new InvalidOperationException("回放记录与当前战局的波次数量不一致。");
         for (int index = 0; index < sequence.WaveCount; index++)
         {
@@ -367,7 +413,7 @@ public sealed class RunReplayRuntimeAdapter : MonoBehaviour, IRunReplayAdapter
                 RunPayloadField.Number("mode", (int)wave.CompositionMode),
                 RunPayloadField.Number("threat", wave.ResolvedThreatCost),
                 RunPayloadField.Number("wave", index + 1));
-            if (!string.Equals(recorded[index].Payload, expected, StringComparison.Ordinal))
+            if (!string.Equals(waves[index].Payload, expected, StringComparison.Ordinal))
                 throw new InvalidOperationException(
                     $"回放记录与当前战局第 {index + 1} 波配置不一致。");
         }

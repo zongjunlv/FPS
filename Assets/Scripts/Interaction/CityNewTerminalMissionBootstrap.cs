@@ -24,7 +24,9 @@ public sealed class CityNewTerminalMissionBootstrap : MonoBehaviour
             return;
         }
 
-        GameObject terminalObject = GameObject.Find("controlunit");
+        GameObject terminalObject =
+            CityNewModularLayoutBootstrap.Active?.TerminalObject ??
+            GameObject.Find("controlunit");
 
         if (terminalObject == null)
         {
@@ -63,9 +65,13 @@ public sealed class CityNewTerminalMissionBootstrap : MonoBehaviour
         yield return null;
         Vector3 extractionPosition =
             new Vector3(48.414f, 0.05f, 41.41f);
+        if (CityNewModularLayoutBootstrap.Active != null)
+            extractionPosition =
+                CityNewModularLayoutBootstrap.Active.ExtractionPoint;
         GameObject extractionAnchor = GameObject.Find("Point light (1)");
 
-        if (extractionAnchor != null)
+        if (CityNewModularLayoutBootstrap.Active == null &&
+            extractionAnchor != null)
         {
             extractionPosition.x = extractionAnchor.transform.position.x;
             extractionPosition.z = extractionAnchor.transform.position.z;

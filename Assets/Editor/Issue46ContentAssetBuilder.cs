@@ -215,6 +215,7 @@ public static class Issue46ContentAssetBuilder
         EncounterSequenceDefinition encounters = BuildEncounters(
             archetypes,
             items);
+        ModularCombatLayoutSet layouts = Issue62LayoutContentBuilder.Build();
 
         CityNewContentCatalog catalog = Asset<CityNewContentCatalog>(
             "CityNewContentCatalog.asset");
@@ -227,7 +228,8 @@ public static class Issue46ContentAssetBuilder
             upgrades,
             items,
             new[] { emberBuild },
-            encounters);
+            encounters,
+            layouts);
 
         MarkAllDirty();
         AssetDatabase.SaveAssets();

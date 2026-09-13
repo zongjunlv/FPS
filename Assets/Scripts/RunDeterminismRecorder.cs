@@ -52,7 +52,8 @@ public sealed class RunDeterminismRecorder : MonoBehaviour
         PlayerUpgradeController upgradeSource,
         WaveDirector waveSource,
         PlayerLootRewardController lootSource,
-        WaveSequenceDefinition sequence)
+        WaveSequenceDefinition sequence,
+        CombatLayoutPlan layout = null)
     {
         Unbind();
         run = new DeterministicRun(runSeed);
@@ -75,6 +76,7 @@ public sealed class RunDeterminismRecorder : MonoBehaviour
         if (loot != null) loot.RewardSettled += HandleLootSettled;
         if (combat != null) combat.ShotResolved += HandleShotResolved;
 
+        RecordPreparedLayout(layout);
         RecordPreparedWaves(sequence);
     }
 
@@ -429,6 +431,25 @@ public sealed class RunDeterminismRecorder : MonoBehaviour
                 RunPayloadField.Number("threat", wave.ResolvedThreatCost),
                 RunPayloadField.Number("wave", index + 1)));
         }
+    }
+
+    private void RecordPreparedLayout(CombatLayoutPlan layout)
+    {
+        if (layout == null) return;
+        var modules = new List<string>(layout.Placements.Count);
+        for (int index = 0; index < layout.Placements.Count; index++)
+        {
+            CombatLayoutPlacement placement = layout.Placements[index];
+            modules.Add($"{placement.InstanceId}:{placement.DefinitionId}:" +
+                $"{placement.GridX},{placement.GridZ},{placement.QuarterTurns}");
+        }
+        run.RecordEvent(RunEventType.LayoutGenerated, StableEventPayload.Create(
+            RunPayloadField.Number("contentVersion", layout.ContentVersion),
+            RunPayloadField.Flag("fallback", layout.UsedFallback),
+            RunPayloadField.Text("fingerprint", layout.Fingerprint),
+            RunPayloadField.Number("generatorVersion", layout.GeneratorVersion),
+            RunPayloadField.Text("id", layout.LayoutId),
+            RunPayloadField.Text("modules", string.Join(";", modules))));
     }
 
     private static int Quantize(float value)

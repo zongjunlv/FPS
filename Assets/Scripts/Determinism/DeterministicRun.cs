@@ -15,7 +15,8 @@ namespace FPS.Determinism
         Loot,
         Wave,
         Elite,
-        Director
+        Director,
+        Layout
     }
 
     public enum RunEventType
@@ -31,7 +32,8 @@ namespace FPS.Determinism
         WaveTransition,
         AiDecision,
         CombatDirectorDecision,
-        EncounterTransition
+        EncounterTransition,
+        LayoutGenerated
     }
 
     public readonly struct RunPayloadField

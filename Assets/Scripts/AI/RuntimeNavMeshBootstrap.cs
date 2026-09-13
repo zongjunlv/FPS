@@ -23,16 +23,42 @@ public sealed class RuntimeNavMeshBootstrap : MonoBehaviour
 
         GameObject root = new GameObject("Runtime NavMesh");
         instance = root.AddComponent<RuntimeNavMeshBootstrap>();
+        CityNewModularLayoutBootstrap.EnsureForActiveScene();
     }
 
     private IEnumerator Start()
     {
-        yield return null;
+        CityNewModularLayoutBootstrap layout =
+            CityNewModularLayoutBootstrap.EnsureForActiveScene();
+        for (int frame = 0;
+             frame < 600 && layout != null && !layout.GeometryReady;
+             frame++)
+            yield return null;
+        if (layout != null && !layout.GeometryReady)
+            layout.ActivateLegacyFallback("布局生成超时。");
+
         surface = gameObject.AddComponent<NavMeshSurface>();
         surface.collectObjects = CollectObjects.All;
         surface.useGeometry = NavMeshCollectGeometry.PhysicsColliders;
         surface.layerMask = Physics.DefaultRaycastLayers;
-        surface.BuildNavMesh();
+        try
+        {
+            surface.BuildNavMesh();
+        }
+        catch (System.Exception exception)
+        {
+            if (layout == null || layout.IsUsingFallback) throw;
+            layout.ActivateLegacyFallback("导航构建异常：" + exception.Message);
+            surface.RemoveData();
+            surface.BuildNavMesh();
+        }
+        if (layout != null && !layout.TryFinalizeNavigation(out string error))
+        {
+            layout.ActivateLegacyFallback(error);
+            surface.RemoveData();
+            surface.BuildNavMesh();
+            layout.MarkFallbackNavigationReady();
+        }
         EnemyNavigationController[] navigators =
             FindObjectsByType<EnemyNavigationController>(
                 FindObjectsInactive.Exclude);

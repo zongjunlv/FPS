@@ -44,3 +44,4 @@ MonoBehaviour:
   combatBuilds:
   - {fileID: 11400000, guid: 1093ef0e1203546d098b31e09700fae2, type: 2}
   encounterSequence: {fileID: 11400000, guid: eaea671a92ad1414ca975966fa78ed5c, type: 2}
+  layoutSet: {fileID: 11400000, guid: 0daed8de247c44b19889c6377d04509d, type: 2}

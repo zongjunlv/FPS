@@ -44,6 +44,43 @@ namespace FPS.SaveGame
         // Optional so saves created before the encounter system remain loadable.
         [DataMember(Order = 24, IsRequired = false, EmitDefaultValue = false)]
         public EncounterSaveSnapshot Encounter;
+        // Optional so schema-v2 saves created before modular layouts remain loadable.
+        [DataMember(Order = 25, IsRequired = false, EmitDefaultValue = false)]
+        public LayoutSaveSnapshot Layout;
+    }
+
+    [Serializable, DataContract]
+    public sealed class LayoutSaveSnapshot
+    {
+        [DataMember(Order = 0, IsRequired = true)] public string LayoutId;
+        [DataMember(Order = 1, IsRequired = true)] public int ContentVersion;
+        [DataMember(Order = 2, IsRequired = true)] public int GeneratorVersion;
+        [DataMember(Order = 3, IsRequired = true)] public string Fingerprint;
+        [DataMember(Order = 4, IsRequired = true)] public bool UsedFallback;
+        [DataMember(Order = 5, IsRequired = true)]
+        public List<LayoutModuleSaveSnapshot> Modules = new List<LayoutModuleSaveSnapshot>();
+        [DataMember(Order = 6, IsRequired = true)]
+        public List<LayoutConnectionSaveSnapshot> Connections = new List<LayoutConnectionSaveSnapshot>();
+    }
+
+    [Serializable, DataContract]
+    public sealed class LayoutModuleSaveSnapshot
+    {
+        [DataMember(Order = 0, IsRequired = true)] public string InstanceId;
+        [DataMember(Order = 1, IsRequired = true)] public string DefinitionId;
+        [DataMember(Order = 2, IsRequired = true)] public int Kind;
+        [DataMember(Order = 3, IsRequired = true)] public int GridX;
+        [DataMember(Order = 4, IsRequired = true)] public int GridZ;
+        [DataMember(Order = 5, IsRequired = true)] public int QuarterTurns;
+    }
+
+    [Serializable, DataContract]
+    public sealed class LayoutConnectionSaveSnapshot
+    {
+        [DataMember(Order = 0, IsRequired = true)] public string FromInstanceId;
+        [DataMember(Order = 1, IsRequired = true)] public string FromSocketId;
+        [DataMember(Order = 2, IsRequired = true)] public string ToInstanceId;
+        [DataMember(Order = 3, IsRequired = true)] public string ToSocketId;
     }
 
     [Serializable, DataContract]

@@ -427,6 +427,15 @@ public sealed class RunSnapshotRuntimeAdapter : MonoBehaviour
 
     private void CaptureWorld(RunSnapshot snapshot)
     {
+        CityNewModularLayoutBootstrap layout =
+            CityNewModularLayoutBootstrap.Active;
+        if (layout == null || !layout.IsReady || layout.CurrentPlan == null)
+        {
+            throw new InvalidOperationException(
+                "模块化战斗区域尚未准备完成。");
+        }
+        snapshot.Layout = layout.CaptureSnapshot();
+
         WaveDirector director = WaveDirector.Active;
         CityNewMissionController mission =
             GetComponent<CityNewMissionController>();

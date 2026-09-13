@@ -1,0 +1,27 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 1bca9dfdd9c0b4eadb0885250c02fb3e, type: 3}
+  m_Name: CityNewModularLayoutSet
+  m_EditorClassIdentifier: FPS.Composition::ModularCombatLayoutSet
+  stableId: city_new.layouts.default
+  contentVersion: 1
+  generatorVersion: 1
+  tileSize: 16
+  combatModuleCount: 3
+  modules:
+  - {fileID: 11400000, guid: fb972c2e61f0c472780023d4a7f94350, type: 2}
+  - {fileID: 11400000, guid: 220392531fba24a83a27a8066196427b, type: 2}
+  - {fileID: 11400000, guid: 1d2c4606e5f1544e3ae71ec20526cd78, type: 2}
+  - {fileID: 11400000, guid: 992ed18fc99864d5b863d530e0ecc4df, type: 2}
+  - {fileID: 11400000, guid: 83a31965d67b24f5290ce6d6692ffbc7, type: 2}
+  - {fileID: 11400000, guid: 8594c1419bc4b483aa2be7d24a859cdd, type: 2}
+  - {fileID: 11400000, guid: 3b36a314b6e9840958655765393cfff7, type: 2}

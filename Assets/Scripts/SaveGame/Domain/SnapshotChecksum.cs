@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
 
@@ -55,6 +56,7 @@ namespace FPS.SaveGame
                 WriteCombatBuild(writer, snapshot.CombatBuild);
                 WriteCombatDirector(writer, snapshot.CombatDirector);
                 WriteEncounter(writer, snapshot.Encounter);
+                WriteLayout(writer, snapshot.Layout);
                 writer.Flush();
                 using (var sha = SHA256.Create())
                 {
@@ -314,6 +316,43 @@ namespace FPS.SaveGame
             WriteIntegers(writer, value.ActiveRosterTokens);
         }
 
+        private static void WriteLayout(
+            BinaryWriter writer,
+            LayoutSaveSnapshot value)
+        {
+            if (value == null) return;
+            writer.Write("FPS.Layout.v1");
+            writer.Write(value.LayoutId ?? string.Empty);
+            writer.Write(value.ContentVersion);
+            writer.Write(value.GeneratorVersion);
+            writer.Write(value.Fingerprint ?? string.Empty);
+            writer.Write(value.UsedFallback);
+            writer.Write(value.Modules?.Count ?? -1);
+            if (value.Modules != null)
+                foreach (LayoutModuleSaveSnapshot module in value.Modules)
+                {
+                    writer.Write(module != null);
+                    if (module == null) continue;
+                    writer.Write(module.InstanceId ?? string.Empty);
+                    writer.Write(module.DefinitionId ?? string.Empty);
+                    writer.Write(module.Kind);
+                    writer.Write(module.GridX);
+                    writer.Write(module.GridZ);
+                    writer.Write(module.QuarterTurns);
+                }
+            writer.Write(value.Connections?.Count ?? -1);
+            if (value.Connections != null)
+                foreach (LayoutConnectionSaveSnapshot connection in value.Connections)
+                {
+                    writer.Write(connection != null);
+                    if (connection == null) continue;
+                    writer.Write(connection.FromInstanceId ?? string.Empty);
+                    writer.Write(connection.FromSocketId ?? string.Empty);
+                    writer.Write(connection.ToInstanceId ?? string.Empty);
+                    writer.Write(connection.ToSocketId ?? string.Empty);
+                }
+        }
+
         private static void WriteFloat(BinaryWriter writer, float value)
         {
             // JSON does not preserve IEEE-754's signed zero. Canonicalize both
@@ -334,6 +373,8 @@ namespace FPS.SaveGame
         public const int MaximumCombatBuilds = 128;
         public const int MaximumCombatRuleCooldowns = 1024;
         public const int MaximumCombatRuleEvents = 256;
+        public const int MaximumLayoutModules = 32;
+        public const int MaximumLayoutConnections = 64;
 
         public static bool TryValidate(RunSnapshot snapshot, out string error)
         {
@@ -380,6 +421,8 @@ namespace FPS.SaveGame
                          out error))
                 return false;
             else if (!ValidateEncounter(snapshot.Encounter, out error))
+                return false;
+            else if (!ValidateLayout(snapshot.Layout, out error))
                 return false;
             if (error != null) return false;
 
@@ -590,6 +633,87 @@ namespace FPS.SaveGame
                     error = "遭遇活动敌人槽位无效或重复。";
                     return false;
                 }
+            return true;
+        }
+
+        private static bool ValidateLayout(
+            LayoutSaveSnapshot value,
+            out string error)
+        {
+            error = null;
+            if (value == null) return true;
+            if (!ValidId(value.LayoutId) || value.ContentVersion < 1 ||
+                value.GeneratorVersion < 1 ||
+                string.IsNullOrWhiteSpace(value.Fingerprint) ||
+                value.Fingerprint.Length != 16 || value.Modules == null ||
+                value.Connections == null ||
+                value.Modules.Count > MaximumLayoutModules ||
+                value.Connections.Count > MaximumLayoutConnections)
+            {
+                error = "模块化布局标识、版本、指纹或容量无效。";
+                return false;
+            }
+            if (value.UsedFallback && value.LayoutId != "city_new.layout.safe")
+            {
+                error = "安全回退布局标识无效。";
+                return false;
+            }
+            if (!value.UsedFallback && value.Modules.Count < 5)
+            {
+                error = "模块化布局缺少完成任务所需的区域。";
+                return false;
+            }
+
+            var instances = new HashSet<string>(StringComparer.Ordinal);
+            var cells = new HashSet<string>(StringComparer.Ordinal);
+            var kinds = new int[4];
+            foreach (LayoutModuleSaveSnapshot module in value.Modules)
+            {
+                string cell = module == null ? null : module.GridX + ":" + module.GridZ;
+                if (module == null || !ValidId(module.InstanceId) ||
+                    !ValidId(module.DefinitionId) ||
+                    module.Kind < 0 || module.Kind > 3 ||
+                    module.QuarterTurns < 0 || module.QuarterTurns > 3 ||
+                    !instances.Add(module.InstanceId) || !cells.Add(cell))
+                {
+                    error = "模块化布局包含无效、重复或重叠的模块。";
+                    return false;
+                }
+                kinds[module.Kind]++;
+            }
+            if (!value.UsedFallback &&
+                (kinds[0] != 1 || kinds[1] < 2 || kinds[2] != 1 || kinds[3] != 1))
+            {
+                error = "模块化布局的出生、战斗、事件或撤离区域数量无效。";
+                return false;
+            }
+            var sockets = new HashSet<string>(StringComparer.Ordinal);
+            foreach (LayoutConnectionSaveSnapshot connection in value.Connections)
+            {
+                if (connection == null ||
+                    !instances.Contains(connection.FromInstanceId) ||
+                    !instances.Contains(connection.ToInstanceId) ||
+                    !ValidId(connection.FromSocketId) ||
+                    !ValidId(connection.ToSocketId) ||
+                    !sockets.Add(connection.FromInstanceId + "/" + connection.FromSocketId) ||
+                    !sockets.Add(connection.ToInstanceId + "/" + connection.ToSocketId))
+                {
+                    error = "模块化布局连接引用无效或连接口重复使用。";
+                    return false;
+                }
+            }
+            string expected = LayoutSaveFingerprint.Compute(value);
+            if (!string.Equals(expected, value.Fingerprint, StringComparison.Ordinal))
+            {
+                error = "模块化布局指纹与模块清单不一致。";
+                return false;
+            }
+            if (!value.UsedFallback &&
+                value.LayoutId != "city_new.layout." + expected.Substring(0, 12))
+            {
+                error = "模块化布局 ID 与指纹不一致。";
+                return false;
+            }
             return true;
         }
 
@@ -869,6 +993,47 @@ namespace FPS.SaveGame
             double lengthSquared = (double)value.X * value.X + (double)value.Y * value.Y +
                                    (double)value.Z * value.Z + (double)value.W * value.W;
             return lengthSquared > 0.000001d && lengthSquared < 4d;
+        }
+    }
+
+    public static class LayoutSaveFingerprint
+    {
+        public static string Compute(LayoutSaveSnapshot value)
+        {
+            if (value == null) throw new ArgumentNullException(nameof(value));
+            var text = new StringBuilder();
+            text.Append(value.ContentVersion).Append('|')
+                .Append(value.GeneratorVersion).Append('|')
+                .Append(value.UsedFallback ? 1 : 0);
+            if (value.Modules != null)
+                foreach (LayoutModuleSaveSnapshot module in value.Modules
+                             .FindAll(item => item != null)
+                             .OrderBy(item => item.InstanceId, StringComparer.Ordinal))
+                {
+                    text.Append('|').Append(module.InstanceId).Append(':')
+                        .Append(module.DefinitionId).Append(':')
+                        .Append(module.Kind).Append(':')
+                        .Append(module.GridX).Append(':').Append(module.GridZ)
+                        .Append(':').Append(module.QuarterTurns);
+                }
+            if (value.Connections != null)
+                foreach (LayoutConnectionSaveSnapshot connection in value.Connections
+                             .FindAll(item => item != null)
+                             .OrderBy(item => item.FromInstanceId, StringComparer.Ordinal)
+                             .ThenBy(item => item.ToInstanceId, StringComparer.Ordinal))
+                {
+                    text.Append('|').Append(connection.FromInstanceId).Append(':')
+                        .Append(connection.FromSocketId).Append('>')
+                        .Append(connection.ToInstanceId).Append(':')
+                        .Append(connection.ToSocketId);
+                }
+            ulong hash = 14695981039346656037UL;
+            foreach (byte octet in Encoding.UTF8.GetBytes(text.ToString()))
+            {
+                hash ^= octet;
+                hash *= 1099511628211UL;
+            }
+            return hash.ToString("x16");
         }
     }
 }
