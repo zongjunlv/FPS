@@ -9,6 +9,9 @@
     "FPS.Combat",
     "FPS.GameplayEffects",
     "FPS.AI",
+    "FPS.AI.Hybrid.Shared",
+    "FPS.AI.HybridEcs",
+    "FPS.Performance.HybridAi",
     "FPS.Inventory",
     "FPS.UI",
     "Unity.InputSystem",
@@ -18,6 +21,8 @@
     "Unity.TextMeshPro",
     "Unity.Burst",
     "Unity.Collections",
+    "Unity.Entities",
+    "Unity.Mathematics",
     "Unity.Addressables",
     "Unity.ResourceManager"
   ],

@@ -1,20 +1,13 @@
 {
-  "name": "FPS.ArchitectureTests",
-  "rootNamespace": "FPS.Tests.Architecture",
+  "name": "FPS.Issue64Ecs.Tests",
+  "rootNamespace": "FPS.Tests.Issue64Ecs",
   "references": [
-    "FPS.Simulation",
-    "FPS.Determinism",
-    "FPS.Core",
-    "FPS.SaveGame",
-    "FPS.Combat",
-    "FPS.GameplayEffects",
     "FPS.AI",
     "FPS.AI.Hybrid.Shared",
     "FPS.AI.HybridEcs",
     "FPS.Performance.HybridAi",
-    "FPS.Inventory",
-    "FPS.UI",
     "FPS.Composition",
+    "Unity.Core",
     "Unity.Entities",
     "Unity.Collections",
     "Unity.Mathematics"

@@ -1,0 +1,14 @@
+{
+  "name": "FPS.Performance.HybridAi",
+  "rootNamespace": "FPS.Performance.HybridAi",
+  "references": [],
+  "includePlatforms": [],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": true,
+  "defineConstraints": [],
+  "versionDefines": [],
+  "noEngineReferences": true
+}

@@ -35,6 +35,17 @@ namespace FPS.Tests.Architecture
                         "FPS.Combat",
                         "FPS.GameplayEffects"
                     },
+                    ["FPS.AI.Hybrid.Shared"] = new[]
+                    {
+                        "FPS.AI"
+                    },
+                    ["FPS.AI.HybridEcs"] = new[]
+                    {
+                        "FPS.AI",
+                        "FPS.AI.Hybrid.Shared",
+                        "FPS.Performance.HybridAi"
+                    },
+                    ["FPS.Performance.HybridAi"] = Array.Empty<string>(),
                     ["FPS.Inventory"] = new[]
                     {
                         "FPS.Core",
@@ -57,6 +68,9 @@ namespace FPS.Tests.Architecture
                         "FPS.Combat",
                         "FPS.GameplayEffects",
                         "FPS.AI",
+                        "FPS.AI.Hybrid.Shared",
+                        "FPS.AI.HybridEcs",
+                        "FPS.Performance.HybridAi",
                         "FPS.Inventory",
                         "FPS.SaveGame",
                         "FPS.UI",
