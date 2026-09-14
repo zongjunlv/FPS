@@ -14,7 +14,8 @@ public readonly struct EnemyRuntimeSnapshot
         Quaternion rotation,
         float health,
         float armor,
-        GameplayEffectRuntimeSnapshot effects = null)
+        GameplayEffectRuntimeSnapshot effects = null,
+        string archetypeStableId = null)
     {
         WaveNumber = waveNumber;
         SpawnId = spawnId;
@@ -23,6 +24,9 @@ public readonly struct EnemyRuntimeSnapshot
         Rotation = rotation;
         Health = health;
         Armor = armor;
+        ArchetypeStableId = string.IsNullOrWhiteSpace(archetypeStableId)
+            ? string.Empty
+            : archetypeStableId.Trim();
         Effects = effects ?? new GameplayEffectRuntimeSnapshot(
             Array.Empty<GameplayEffectInstanceSnapshot>());
     }
@@ -34,6 +38,7 @@ public readonly struct EnemyRuntimeSnapshot
     public Quaternion Rotation { get; }
     public float Health { get; }
     public float Armor { get; }
+    public string ArchetypeStableId { get; }
     public GameplayEffectRuntimeSnapshot Effects { get; }
 }
 

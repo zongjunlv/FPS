@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
 using UnityEditor;
 using UnityEditor.AddressableAssets;
@@ -37,6 +36,10 @@ public static class Issue66EnemyModelBuilder
         public bool UsesLargeTextures;
         public float Height;
         public float Hover;
+        public Vector3 BodyCenterNormalized;
+        public Vector3 BodySizeNormalized;
+        public Vector3 HeadCenterNormalized;
+        public Vector3 HeadSizeNormalized;
     }
 
     private static readonly VisualSpec[] Specs =
@@ -54,7 +57,13 @@ public static class Issue66EnemyModelBuilder
             Tint = new Color(1f, 0.78f, 0.68f, 1f),
             Emission = new Color(1f, 0.16f, 0.03f, 1f),
             Height = 1.05f,
-            Hover = 0.02f
+            Hover = 0.02f,
+            // 四肢会随 Idle/Run 大幅摆动，身体判定只覆盖中央甲壳，
+            // 避免不同动画采样帧把腿部之间的空气当作有效命中。
+            BodyCenterNormalized = new Vector3(0f, -0.03f, 0f),
+            BodySizeNormalized = new Vector3(0.7f, 0.46f, 0.66f),
+            HeadCenterNormalized = new Vector3(0f, 0.31f, -0.04f),
+            HeadSizeNormalized = new Vector3(0.62f, 0.28f, 0.62f)
         },
         new()
         {
@@ -68,7 +77,11 @@ public static class Issue66EnemyModelBuilder
             Tint = new Color(0.42f, 0.2f, 1f, 1f),
             Emission = new Color(0.72f, 0.08f, 1f, 1f),
             Height = 0.82f,
-            Hover = 0.48f
+            Hover = 0.48f,
+            BodyCenterNormalized = new Vector3(0f, -0.08f, 0f),
+            BodySizeNormalized = new Vector3(0.94f, 0.7f, 0.9f),
+            HeadCenterNormalized = new Vector3(0f, 0.27f, -0.06f),
+            HeadSizeNormalized = new Vector3(0.58f, 0.3f, 0.58f)
         },
         new()
         {
@@ -82,7 +95,11 @@ public static class Issue66EnemyModelBuilder
             Tint = new Color(0.08f, 1f, 0.36f, 1f),
             Emission = new Color(0.04f, 1f, 0.55f, 1f),
             Height = 0.82f,
-            Hover = 0.58f
+            Hover = 0.58f,
+            BodyCenterNormalized = new Vector3(0f, -0.08f, 0f),
+            BodySizeNormalized = new Vector3(0.94f, 0.7f, 0.9f),
+            HeadCenterNormalized = new Vector3(0f, 0.27f, -0.06f),
+            HeadSizeNormalized = new Vector3(0.58f, 0.3f, 0.58f)
         },
         new()
         {
@@ -97,7 +114,13 @@ public static class Issue66EnemyModelBuilder
             Emission = new Color(1f, 0.18f, 0.02f, 1f),
             UsesLargeTextures = true,
             Height = 2.05f,
-            Hover = 0.02f
+            Hover = 0.02f,
+            // Quad Shell 的腿部在 Idle 中会明显内收；身体受击区只覆盖稳定的
+            // 装甲核心，避免用导入姿态的全包围盒把四肢间的空气也算作命中。
+            BodyCenterNormalized = new Vector3(0f, -0.04f, 0f),
+            BodySizeNormalized = new Vector3(0.72f, 0.52f, 0.7f),
+            HeadCenterNormalized = new Vector3(0f, 0.31f, -0.03f),
+            HeadSizeNormalized = new Vector3(0.56f, 0.28f, 0.58f)
         }
     };
 
@@ -176,100 +199,6 @@ public static class Issue66EnemyModelBuilder
         AssetDatabase.Refresh();
         Debug.Log(
             "Issue66: built four role-specific enemy prefabs from three CC0 animated models.");
-    }
-
-    [MenuItem("FPS/Content/Render Enemy Visual Preview")]
-    public static void RenderPreview()
-    {
-        string[] paths =
-        {
-            SpiderPrefabPath,
-            PrefabRoot + "/TrilobiteAssault.prefab",
-            PrefabRoot + "/EyeDroneSuppressor.prefab",
-            PrefabRoot + "/EyeDroneSupport.prefab",
-            PrefabRoot + "/QuadShellElite.prefab"
-        };
-        var previewRoot = new GameObject("Issue66 Enemy Preview");
-        var cameraObject = new GameObject("Preview Camera");
-        var lightObject = new GameObject("Preview Key Light");
-        var fillObject = new GameObject("Preview Fill Light");
-        var ground = GameObject.CreatePrimitive(PrimitiveType.Plane);
-        var target = new RenderTexture(1800, 700, 24, RenderTextureFormat.ARGB32);
-        Texture2D capture = null;
-        Material groundMaterial = null;
-
-        try
-        {
-            float[] positions = { -5.2f, -2.6f, -0.4f, 1.8f, 5f };
-
-            for (int index = 0; index < paths.Length; index++)
-            {
-                GameObject prefab = AssetDatabase.LoadAssetAtPath<GameObject>(paths[index]);
-
-                if (prefab == null)
-                {
-                    throw new InvalidOperationException($"Preview prefab is missing: {paths[index]}");
-                }
-
-                GameObject instance = (GameObject)PrefabUtility.InstantiatePrefab(prefab);
-                instance.transform.SetParent(previewRoot.transform, false);
-                instance.transform.position = new Vector3(positions[index], 0f, 0f);
-                instance.transform.rotation = Quaternion.Euler(0f, 180f, 0f);
-            }
-
-            ground.name = "Preview Ground";
-            ground.transform.position = new Vector3(0f, -0.02f, 0f);
-            ground.transform.localScale = new Vector3(1.4f, 1f, 0.42f);
-            groundMaterial = new Material(ResolveLitShader());
-            groundMaterial.color = new Color(0.09f, 0.11f, 0.14f, 1f);
-            groundMaterial.SetColor(
-                "_BaseColor",
-                new Color(0.09f, 0.11f, 0.14f, 1f));
-            ground.GetComponent<Renderer>().sharedMaterial = groundMaterial;
-
-            var camera = cameraObject.AddComponent<Camera>();
-            camera.transform.position = new Vector3(0f, 3.25f, -11.8f);
-            camera.transform.rotation = Quaternion.LookRotation(
-                new Vector3(0f, 1.05f, 0f) - camera.transform.position);
-            camera.fieldOfView = 42f;
-            camera.clearFlags = CameraClearFlags.SolidColor;
-            camera.backgroundColor = new Color(0.025f, 0.035f, 0.055f, 1f);
-            camera.targetTexture = target;
-
-            var key = lightObject.AddComponent<Light>();
-            key.type = LightType.Directional;
-            key.intensity = 1.4f;
-            key.color = new Color(0.82f, 0.9f, 1f, 1f);
-            lightObject.transform.rotation = Quaternion.Euler(35f, -35f, 0f);
-            var fill = fillObject.AddComponent<Light>();
-            fill.type = LightType.Directional;
-            fill.intensity = 0.75f;
-            fill.color = new Color(1f, 0.5f, 0.3f, 1f);
-            fillObject.transform.rotation = Quaternion.Euler(15f, 145f, 0f);
-
-            camera.Render();
-            RenderTexture previous = RenderTexture.active;
-            RenderTexture.active = target;
-            capture = new Texture2D(target.width, target.height, TextureFormat.RGB24, false);
-            capture.ReadPixels(new Rect(0f, 0f, target.width, target.height), 0, 0);
-            capture.Apply();
-            RenderTexture.active = previous;
-            File.WriteAllBytes(
-                "/tmp/fps-issue66-enemy-preview.png",
-                capture.EncodeToPNG());
-            Debug.Log("Issue66 preview: /tmp/fps-issue66-enemy-preview.png");
-        }
-        finally
-        {
-            UnityEngine.Object.DestroyImmediate(previewRoot);
-            UnityEngine.Object.DestroyImmediate(cameraObject);
-            UnityEngine.Object.DestroyImmediate(lightObject);
-            UnityEngine.Object.DestroyImmediate(fillObject);
-            UnityEngine.Object.DestroyImmediate(ground);
-            UnityEngine.Object.DestroyImmediate(target);
-            UnityEngine.Object.DestroyImmediate(capture);
-            UnityEngine.Object.DestroyImmediate(groundMaterial);
-        }
     }
 
     public static void BuildAddressableContent()
@@ -400,11 +329,6 @@ public static class Issue66EnemyModelBuilder
 
         AnimatorStateMachine stateMachine = controller.layers[0].stateMachine;
 
-        foreach (ChildAnimatorState child in stateMachine.states.ToArray())
-        {
-            stateMachine.RemoveState(child.state);
-        }
-
         AnimationClip[] clips = AssetDatabase.LoadAllAssetsAtPath(modelPath)
             .OfType<AnimationClip>()
             .Where(clip => !clip.name.StartsWith("__preview__", StringComparison.Ordinal))
@@ -421,15 +345,35 @@ public static class Issue66EnemyModelBuilder
                 $"No usable animations were imported from {modelPath}.");
         }
 
-        AnimatorState idleState = stateMachine.AddState("Idle");
+        // Reuse the existing states so rebuilding generated enemy content is
+        // idempotent and does not churn AnimatorState file IDs on every run.
+        AnimatorState idleState = GetOrCreateState(stateMachine, "Idle");
         idleState.motion = idle;
-        AnimatorState runState = stateMachine.AddState("Run");
+        AnimatorState runState = GetOrCreateState(stateMachine, "Run");
         runState.motion = run;
-        AnimatorState attackState = stateMachine.AddState("Attack");
+        AnimatorState attackState = GetOrCreateState(stateMachine, "Attack");
         attackState.motion = attack;
         stateMachine.defaultState = idleState;
         EditorUtility.SetDirty(controller);
         return controller;
+    }
+
+    private static AnimatorState GetOrCreateState(
+        AnimatorStateMachine stateMachine,
+        string stateName)
+    {
+        foreach (ChildAnimatorState child in stateMachine.states)
+        {
+            if (child.state != null && string.Equals(
+                    child.state.name,
+                    stateName,
+                    StringComparison.Ordinal))
+            {
+                return child.state;
+            }
+        }
+
+        return stateMachine.AddState(stateName);
     }
 
     private static void BuildEnemyPrefab(
@@ -504,12 +448,36 @@ public static class Issue66EnemyModelBuilder
             size.y = Mathf.Max(0.65f, size.y * 0.92f);
             size.z = Mathf.Max(0.5f, size.z * 0.9f);
             collider.size = size;
+            // The root collider is retained as a stable visual envelope for
+            // navigation and overhead UI placement. Damage is handled only by
+            // the explicit model-specific Body/Head children below.
+            collider.enabled = false;
 
             var agent = root.AddComponent<NavMeshAgent>();
             agent.radius = Mathf.Clamp(Mathf.Min(size.x, size.z) * 0.38f, 0.28f, 0.7f);
             agent.height = Mathf.Max(1.2f, bounds.max.y);
             agent.baseOffset = 0f;
             agent.obstacleAvoidanceType = ObstacleAvoidanceType.MedQualityObstacleAvoidance;
+
+            Health health = root.AddComponent<Health>();
+            CreateHitbox(
+                root,
+                health,
+                bounds,
+                "Body Hitbox",
+                spec.BodyCenterNormalized,
+                spec.BodySizeNormalized,
+                1f,
+                HitRegion.Body);
+            CreateHitbox(
+                root,
+                health,
+                bounds,
+                "Head Hitbox",
+                spec.HeadCenterNormalized,
+                spec.HeadSizeNormalized,
+                2f,
+                HitRegion.Head);
 
             var enemy = root.AddComponent<EnemyController>();
             SerializedObject serializedEnemy = new(enemy);
@@ -529,6 +497,11 @@ public static class Issue66EnemyModelBuilder
                         clip.name.IndexOf("Attack", StringComparison.OrdinalIgnoreCase) >= 0);
             EnemyVisualAnimator visualAnimator = root.AddComponent<EnemyVisualAnimator>();
             visualAnimator.Configure(attack != null ? attack.length : 0.6f);
+            visualAnimator.ConfigureProceduralLocomotion(
+                !HasLocomotionClip(spec.ModelPath),
+                0.035f,
+                4.5f,
+                4f);
             root.tag = "Enemy";
 
             if (PrefabUtility.SaveAsPrefabAsset(root, spec.PrefabPath) == null)
@@ -540,6 +513,58 @@ public static class Issue66EnemyModelBuilder
         {
             UnityEngine.Object.DestroyImmediate(root);
         }
+    }
+
+    private static void CreateHitbox(
+        GameObject root,
+        Health health,
+        Bounds visualBounds,
+        string hitboxName,
+        Vector3 normalizedCenter,
+        Vector3 normalizedSize,
+        float damageMultiplier,
+        HitRegion region)
+    {
+        Vector3 localBoundsCenter = root.transform.InverseTransformPoint(
+            visualBounds.center);
+        Vector3 localBoundsSize = Abs(
+            root.transform.InverseTransformVector(visualBounds.size));
+        Vector3 localCenter = localBoundsCenter + Vector3.Scale(
+            localBoundsSize,
+            normalizedCenter);
+        Vector3 localSize = Vector3.Max(
+            Vector3.one * 0.08f,
+            Vector3.Scale(localBoundsSize, normalizedSize));
+        var hitboxObject = new GameObject(hitboxName);
+        hitboxObject.layer = root.layer;
+        hitboxObject.transform.SetParent(root.transform, false);
+        hitboxObject.transform.localPosition = localCenter;
+        BoxCollider hitboxCollider =
+            hitboxObject.AddComponent<BoxCollider>();
+        hitboxCollider.center = Vector3.zero;
+        hitboxCollider.size = localSize;
+        DamageHitbox hitbox = hitboxObject.AddComponent<DamageHitbox>();
+        hitbox.ConfigureRegion(health, damageMultiplier, region);
+    }
+
+    private static Vector3 Abs(Vector3 value)
+    {
+        return new Vector3(
+            Mathf.Abs(value.x),
+            Mathf.Abs(value.y),
+            Mathf.Abs(value.z));
+    }
+
+    private static bool HasLocomotionClip(string modelPath)
+    {
+        AnimationClip[] clips = AssetDatabase.LoadAllAssetsAtPath(modelPath)
+            .OfType<AnimationClip>()
+            .Where(clip => !clip.name.StartsWith(
+                "__preview__",
+                StringComparison.Ordinal))
+            .ToArray();
+        return FindClip(clips, "Run") != null ||
+            FindClip(clips, "Walk") != null;
     }
 
     private static Bounds Encapsulate(IReadOnlyList<Renderer> renderers)

@@ -12,6 +12,7 @@ public sealed class EnemyBurnEffectController : MonoBehaviour
     [SerializeField, Min(0.05f)] private float defaultTickInterval = 1f;
     [SerializeField, Min(0.05f)] private float defaultDuration = 4f;
     [SerializeField, Min(1)] private int defaultMaximumStacks = 3;
+    [SerializeField, Min(0.05f)] private float overheadClearance = 0.28f;
     [SerializeField] private GameplayEffectStackRefreshPolicy
         defaultRefreshPolicy =
             GameplayEffectStackRefreshPolicy.RefreshAllDurations;
@@ -65,6 +66,11 @@ public sealed class EnemyBurnEffectController : MonoBehaviour
         presentationRoot != null
             ? presentationRoot.transform.localScale.x
             : 0f;
+    public float OverheadLocalHeight =>
+        presentationRoot != null
+            ? presentationRoot.transform.localPosition.y
+            : ResolveOverheadLocalHeight();
+    public float OverheadClearance => overheadClearance;
     public GameplayEffectDefinition Definition => EnsureDefinition();
     public bool WasBurningWhenKilled => wasBurningWhenKilled;
 
@@ -240,6 +246,12 @@ public sealed class EnemyBurnEffectController : MonoBehaviour
     public void SetOverheadPresentationEnabled(bool enabled)
     {
         overheadPresentationEnabled = enabled;
+
+        if (enabled)
+        {
+            RefreshOverheadAnchor();
+        }
+
         SyncPresentation();
     }
 
@@ -404,7 +416,7 @@ public sealed class EnemyBurnEffectController : MonoBehaviour
             typeof(RectTransform),
             typeof(Canvas));
         presentationRoot.transform.SetParent(transform, false);
-        presentationRoot.transform.localPosition = Vector3.up * 1.85f;
+        RefreshOverheadAnchor();
         presentationRoot.transform.localScale =
             Vector3.one * OverheadWorldScale;
         RectTransform infoRect =
@@ -475,6 +487,58 @@ public sealed class EnemyBurnEffectController : MonoBehaviour
             renderer.sharedMaterial = particleMaterial;
         }
 
+    }
+
+    public void RefreshOverheadAnchor()
+    {
+        if (presentationRoot == null)
+        {
+            return;
+        }
+
+        presentationRoot.transform.localPosition =
+            Vector3.up * ResolveOverheadLocalHeight();
+    }
+
+    private float ResolveOverheadLocalHeight()
+    {
+        BoxCollider rootBounds = GetComponent<BoxCollider>();
+
+        if (rootBounds != null)
+        {
+            float colliderTop = rootBounds.center.y +
+                Mathf.Abs(rootBounds.size.y) * 0.5f;
+            return Mathf.Max(0.5f, colliderTop + overheadClearance);
+        }
+
+        Renderer[] renderers = GetComponentsInChildren<Renderer>(true);
+        bool found = false;
+        float top = 0f;
+
+        for (int index = 0; index < renderers.Length; index++)
+        {
+            Renderer renderer = renderers[index];
+
+            if (renderer == null ||
+                (presentationRoot != null &&
+                 renderer.transform.IsChildOf(presentationRoot.transform)) ||
+                (burnVisualRoot != null &&
+                 renderer.transform.IsChildOf(burnVisualRoot.transform)))
+            {
+                continue;
+            }
+
+            Vector3 worldTop = new Vector3(
+                renderer.bounds.center.x,
+                renderer.bounds.max.y,
+                renderer.bounds.center.z);
+            float localTop = transform.InverseTransformPoint(worldTop).y;
+            top = found ? Mathf.Max(top, localTop) : localTop;
+            found = true;
+        }
+
+        return Mathf.Max(0.5f, (found ? top : 1.2f) +
+            overheadClearance);
     }
 
     private void DetachInheritedRuntimeChild(string childName)

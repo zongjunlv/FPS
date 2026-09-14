@@ -4,6 +4,10 @@ using UnityEngine.AI;
 
 public sealed class EnemyNavigationController : MonoBehaviour
 {
+    private const float DefaultAgentRadius = 0.35f;
+    private const float DefaultAgentHeight = 1.2f;
+    private const float DefaultAgentBaseOffset = 0f;
+
     [SerializeField, Min(0.5f)] private float patrolRadius = 5f;
     [SerializeField, Min(2)] private int generatedPatrolPointCount = 4;
     [SerializeField, Min(0.05f)] private float arrivalDistance = 0.45f;
@@ -84,6 +88,7 @@ public sealed class EnemyNavigationController : MonoBehaviour
         if (agent == null)
         {
             agent = gameObject.AddComponent<NavMeshAgent>();
+            ConfigureDefaultAgentGeometry();
         }
 
         ConfigureAgent();
@@ -146,8 +151,13 @@ public sealed class EnemyNavigationController : MonoBehaviour
         agent.angularSpeed = 420f;
         agent.acceleration = 12f;
         agent.stoppingDistance = 0.3f;
-        agent.radius = 0.35f;
-        agent.height = 1.2f;
+    }
+
+    private void ConfigureDefaultAgentGeometry()
+    {
+        agent.radius = DefaultAgentRadius;
+        agent.height = DefaultAgentHeight;
+        agent.baseOffset = DefaultAgentBaseOffset;
     }
 
     private void Update()

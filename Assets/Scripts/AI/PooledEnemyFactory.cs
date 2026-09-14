@@ -201,7 +201,7 @@ public sealed class PooledEnemyFactory : MonoBehaviour, IEnemyFactory
         instance.transform.SetPositionAndRotation(
             request.Position,
             request.Rotation);
-        instance.name = $"SPIDER_BOT WAVE {request.SpawnId:000}";
+        instance.name = $"{ResolveInstanceLabel(source)} WAVE {request.SpawnId:000}";
         instance.SetFactoryManaged(true);
         instance.ResetForSpawn(request.Target);
         instance.ApplyAffix(request.Entry?.Affix);
@@ -380,6 +380,25 @@ public sealed class PooledEnemyFactory : MonoBehaviour, IEnemyFactory
         var bucket = new Bucket { Template = template };
         buckets.Add(template, bucket);
         return bucket;
+    }
+
+    private static string ResolveInstanceLabel(EnemyController template)
+    {
+        if (template == null)
+        {
+            return "ENEMY";
+        }
+
+        string label = template.DisplayName;
+
+        if (string.IsNullOrWhiteSpace(label))
+        {
+            label = template.name;
+        }
+
+        return string.IsNullOrWhiteSpace(label)
+            ? "ENEMY"
+            : label.Trim();
     }
 
     private void EnsureRoot()

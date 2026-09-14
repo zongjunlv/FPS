@@ -19,6 +19,7 @@ public sealed class WaveDirector : MonoBehaviour, IWaveProgressSource
     public const int SimulationTickRate = 30;
 
     private readonly Dictionary<int, EnemySpawnHandle> activeEnemies = new();
+    private readonly Dictionary<int, string> activeEnemyArchetypeIds = new();
     private readonly Dictionary<int, EnemySpawnHandle> encounterEnemies = new();
     private readonly Dictionary<int, Action<EnemySpawnHandle, EnemyExitReason>>
         encounterCallbacks = new();
@@ -204,7 +205,12 @@ public sealed class WaveDirector : MonoBehaviour, IWaveProgressSource
                 handle.Controller.transform.rotation,
                 health.CurrentHealth,
                 health.CurrentArmor,
-                effects));
+                effects,
+                activeEnemyArchetypeIds.TryGetValue(
+                    handle.SpawnId,
+                    out string archetypeStableId)
+                    ? archetypeStableId
+                    : string.Empty));
         }
 
         enemies.Sort((left, right) => left.SpawnId.CompareTo(right.SpawnId));
@@ -233,6 +239,7 @@ public sealed class WaveDirector : MonoBehaviour, IWaveProgressSource
         }
 
         var staged = new List<EnemySpawnHandle>(snapshot.Enemies.Count);
+        var stagedArchetypeIds = new List<string>(snapshot.Enemies.Count);
         var stagedIds = new HashSet<int>();
         var expectedActiveIds = new HashSet<int>(
             snapshot.Flow.CurrentWaveState?.ActiveIds ?? Array.Empty<int>());
@@ -258,6 +265,7 @@ public sealed class WaveDirector : MonoBehaviour, IWaveProgressSource
                 enemy.WaveNumber < 1 || enemy.WaveNumber > stages.Count ||
                 !TryResolveEnemyEntry(
                     enemy.WaveNumber,
+                    enemy.ArchetypeStableId,
                     enemy.EnemyTypeId,
                     out WaveEnemyEntry entry))
             {
@@ -307,6 +315,7 @@ public sealed class WaveDirector : MonoBehaviour, IWaveProgressSource
             }
 
             staged.Add(handle);
+            stagedArchetypeIds.Add(ResolveArchetypeStableId(entry));
         }
 
         RunSimulationSnapshot simulationSnapshot = snapshot.Simulation ??
@@ -330,6 +339,9 @@ public sealed class WaveDirector : MonoBehaviour, IWaveProgressSource
         {
             EnemySpawnHandle handle = staged[index];
             activeEnemies.Add(handle.SpawnId, handle);
+            activeEnemyArchetypeIds.Add(
+                handle.SpawnId,
+                stagedArchetypeIds[index]);
         }
 
         nextSpawnId = snapshot.NextSpawnId;
@@ -339,6 +351,7 @@ public sealed class WaveDirector : MonoBehaviour, IWaveProgressSource
         {
             ReleaseStaged(staged);
             activeEnemies.Clear();
+            activeEnemyArchetypeIds.Clear();
             return false;
         }
         simulationTickAccumulator = 0f;
@@ -380,14 +393,33 @@ public sealed class WaveDirector : MonoBehaviour, IWaveProgressSource
 
     private bool TryResolveEnemyEntry(
         int waveNumber,
+        string archetypeStableId,
         string enemyTypeId,
         out WaveEnemyEntry entry)
     {
         entry = null;
-        if (waveNumber < 1 || waveNumber > stages.Count ||
-            string.IsNullOrWhiteSpace(enemyTypeId)) return false;
+        if (waveNumber < 1 || waveNumber > stages.Count) return false;
         IReadOnlyList<WaveEnemyEntry> entries =
             stages[waveNumber - 1].Wave.ResolvedEntries;
+
+        if (!string.IsNullOrWhiteSpace(archetypeStableId))
+        {
+            string normalized = archetypeStableId.Trim();
+            for (int index = 0; index < entries.Count; index++)
+            {
+                if (string.Equals(
+                        ResolveArchetypeStableId(entries[index]),
+                        normalized,
+                        StringComparison.Ordinal))
+                {
+                    entry = entries[index];
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        if (string.IsNullOrWhiteSpace(enemyTypeId)) return false;
         for (int index = 0; index < entries.Count; index++)
         {
             if (entries[index] != null && string.Equals(
@@ -400,6 +432,12 @@ public sealed class WaveDirector : MonoBehaviour, IWaveProgressSource
             }
         }
         return false;
+    }
+
+    private static string ResolveArchetypeStableId(WaveEnemyEntry entry)
+    {
+        string value = entry?.Archetype?.StableId;
+        return string.IsNullOrWhiteSpace(value) ? string.Empty : value.Trim();
     }
 
     private void ReleaseStaged(IReadOnlyList<EnemySpawnHandle> staged)
@@ -1011,6 +1049,9 @@ public sealed class WaveDirector : MonoBehaviour, IWaveProgressSource
             return false;
         }
         activeEnemies.Add(spawnId, handle);
+        activeEnemyArchetypeIds.Add(
+            spawnId,
+            ResolveArchetypeStableId(entry));
         DrainSimulationEvents();
         EnemySpawned?.Invoke(new EnemySpawnedEvent(request, handle));
         RecordSpawnClearances(spawnPoint);
@@ -1077,6 +1118,7 @@ public sealed class WaveDirector : MonoBehaviour, IWaveProgressSource
         }
 
         activeEnemies.Remove(handle.SpawnId);
+        activeEnemyArchetypeIds.Remove(handle.SpawnId);
         PublishEnemyDeath(handle, reason, endingWave);
         enemyFactory.Release(handle);
         DrainSimulationEvents();
@@ -1185,6 +1227,7 @@ public sealed class WaveDirector : MonoBehaviour, IWaveProgressSource
         }
 
         activeEnemies.Clear();
+        activeEnemyArchetypeIds.Clear();
         ReleaseEncounterEnemies();
         spawnCooldown = 0f;
         cueRemaining = 0f;

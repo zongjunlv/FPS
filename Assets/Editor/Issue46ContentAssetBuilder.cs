@@ -229,7 +229,8 @@ public static class Issue46ContentAssetBuilder
             items,
             new[] { emberBuild },
             encounters,
-            layouts);
+            layouts,
+            enableRuntimeModularLayout: false);
 
         MarkAllDirty();
         AssetDatabase.SaveAssets();

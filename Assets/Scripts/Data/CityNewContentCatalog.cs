@@ -22,6 +22,7 @@ public sealed class CityNewContentCatalog : ScriptableObject
     [SerializeField] private List<CombatBuildDefinition> combatBuilds = new();
     [SerializeField] private EncounterSequenceDefinition encounterSequence;
     [SerializeField] private ModularCombatLayoutSet layoutSet;
+    [SerializeField] private bool useRuntimeModularLayout;
 
     public string StableId => stableId;
     public EnemyDefinition DefaultEnemy => defaultEnemy;
@@ -34,6 +35,7 @@ public sealed class CityNewContentCatalog : ScriptableObject
     public IReadOnlyList<CombatBuildDefinition> CombatBuilds => combatBuilds;
     public EncounterSequenceDefinition EncounterSequence => encounterSequence;
     public ModularCombatLayoutSet LayoutSet => layoutSet;
+    public bool UseRuntimeModularLayout => useRuntimeModularLayout;
 
     public static CityNewContentCatalog LoadDefault()
     {
@@ -50,7 +52,8 @@ public sealed class CityNewContentCatalog : ScriptableObject
         IEnumerable<ItemDefinition> itemDefinitions,
         IEnumerable<CombatBuildDefinition> buildDefinitions = null,
         EncounterSequenceDefinition configuredEncounters = null,
-        ModularCombatLayoutSet configuredLayouts = null)
+        ModularCombatLayoutSet configuredLayouts = null,
+        bool enableRuntimeModularLayout = false)
     {
         stableId = id?.Trim();
         defaultEnemy = enemy;
@@ -70,6 +73,7 @@ public sealed class CityNewContentCatalog : ScriptableObject
             : new List<CombatBuildDefinition>();
         encounterSequence = configuredEncounters;
         layoutSet = configuredLayouts;
+        useRuntimeModularLayout = enableRuntimeModularLayout;
     }
 
     public bool TryValidate(out string error)

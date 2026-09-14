@@ -170,6 +170,27 @@ namespace FPS.SaveGame
                 writer.Write(value.AttackState);
                 WriteEffects(writer, value.Effects);
             }
+
+            // Append the optional identity extension only when it is present.
+            // This deliberately preserves the byte stream (and checksum) of
+            // schema-v2 saves written before archetype identity was persisted.
+            bool hasArchetypeIdentity = false;
+            for (int index = 0; index < values.Count; index++)
+            {
+                if (!string.IsNullOrEmpty(values[index]?.ArchetypeStableId))
+                {
+                    hasArchetypeIdentity = true;
+                    break;
+                }
+            }
+            if (!hasArchetypeIdentity) return;
+
+            writer.Write("enemy-archetype-identity:v1");
+            writer.Write(values.Count);
+            for (int index = 0; index < values.Count; index++)
+            {
+                writer.Write(values[index]?.ArchetypeStableId ?? string.Empty);
+            }
         }
 
         private static void WriteEffects(BinaryWriter writer, List<GameplayEffectSnapshot> values)
@@ -921,6 +942,7 @@ namespace FPS.SaveGame
                 string key = enemy == null ? null : enemy.WaveNumber + ":" + enemy.SpawnId;
                 if (enemy == null || enemy.WaveNumber != wave.CurrentWave || !active.Contains(enemy.SpawnId) ||
                     !enemyIds.Add(enemy.SpawnId) || !enemyKeys.Add(key) || !ValidId(enemy.EnemyTypeId) ||
+                    !OptionalId(enemy.ArchetypeStableId) ||
                     enemy.Position == null || enemy.Rotation == null || !FiniteVector(enemy.Position) ||
                     !FiniteRotation(enemy.Rotation) || !FiniteNonNegative(enemy.Health) || enemy.Health <= 0f ||
                     !FiniteNonNegative(enemy.Armor) || enemy.AwarenessState < 0 || enemy.AttackState < 0 ||

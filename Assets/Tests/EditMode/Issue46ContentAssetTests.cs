@@ -35,6 +35,8 @@ public sealed class Issue46ContentAssetTests
         Assert.That(catalog.LayoutSet.Modules, Has.Count.EqualTo(7));
         Assert.That(catalog.LayoutSet.TryValidate(out string layoutError),
             Is.True, layoutError);
+        Assert.That(catalog.UseRuntimeModularLayout, Is.False,
+            "正式 CityNew 不应被模块化测试区域覆盖。");
         Assert.That(catalog.EnemyArchetypes, Has.Count.EqualTo(5));
         Assert.That(catalog.Items, Has.Count.EqualTo(4));
         Assert.That(catalog.Upgrades, Has.Count.EqualTo(13));

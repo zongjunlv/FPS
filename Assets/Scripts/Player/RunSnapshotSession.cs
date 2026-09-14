@@ -211,7 +211,8 @@ public static class RunSnapshotSession
                 enemy.Health,
                 enemy.Armor,
                 RunSnapshotRuntimeAdapter.ToRuntimeEffects(
-                    enemy.Effects));
+                    enemy.Effects),
+                enemy.ArchetypeStableId);
         }
         if (!director.TryRestoreRuntimeState(
             new WaveRuntimeSnapshot(

@@ -262,6 +262,8 @@ namespace FPS.SaveGame
         [DataMember(Order = 7, IsRequired = true)] public int AwarenessState;
         [DataMember(Order = 8, IsRequired = true)] public int AttackState;
         [DataMember(Order = 9, IsRequired = true)] public List<GameplayEffectSnapshot> Effects = new List<GameplayEffectSnapshot>();
+        [DataMember(Order = 10, IsRequired = false, EmitDefaultValue = false)]
+        public string ArchetypeStableId;
     }
 
     [Serializable, DataContract]

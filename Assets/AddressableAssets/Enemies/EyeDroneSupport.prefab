@@ -1,5 +1,74 @@
 %YAML 1.1
 %TAG !u! tag:unity3d.com,2011:
+--- !u!1 &2585502486729696800
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 9174099861582232752}
+  - component: {fileID: 1745463297132186655}
+  - component: {fileID: 736989596800522729}
+  m_Layer: 0
+  m_Name: Body Hitbox
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &9174099861582232752
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2585502486729696800}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0.92440003, z: -0.04380522}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 2283846160320591239}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!65 &1745463297132186655
+BoxCollider:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2585502486729696800}
+  m_Material: {fileID: 0}
+  m_IncludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_ExcludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_LayerOverridePriority: 0
+  m_IsTrigger: 0
+  m_ProvidesContacts: 0
+  m_Enabled: 1
+  serializedVersion: 3
+  m_Size: {x: 0.82641137, y: 0.574, z: 0.6614774}
+  m_Center: {x: 0, y: 0, z: 0}
+--- !u!114 &736989596800522729
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2585502486729696800}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d3b815f446744d02b38944152928d48d, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: FPS.Combat::DamageHitbox
+  health: {fileID: 7162800156465719588}
+  damageMultiplier: 1
+  hitRegion: 1
 --- !u!1 &4648334986084033223
 GameObject:
   m_ObjectHideFlags: 0
@@ -90,6 +159,75 @@ MeshRenderer:
   m_SortingOrder: 0
   m_MaskInteraction: 0
   m_AdditionalVertexStreams: {fileID: 0}
+--- !u!1 &6994366923732920481
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1563956856397734519}
+  - component: {fileID: 7184583733584263840}
+  - component: {fileID: 2595935072711483356}
+  m_Layer: 0
+  m_Name: Head Hitbox
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &1563956856397734519
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6994366923732920481}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 1.2114, z: -0.08790371}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 2283846160320591239}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!65 &7184583733584263840
+BoxCollider:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6994366923732920481}
+  m_Material: {fileID: 0}
+  m_IncludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_ExcludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_LayerOverridePriority: 0
+  m_IsTrigger: 0
+  m_ProvidesContacts: 0
+  m_Enabled: 1
+  serializedVersion: 3
+  m_Size: {x: 0.5099134, y: 0.24600002, z: 0.42628542}
+  m_Center: {x: 0, y: 0, z: 0}
+--- !u!114 &2595935072711483356
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6994366923732920481}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d3b815f446744d02b38944152928d48d, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: FPS.Combat::DamageHitbox
+  health: {fileID: 7162800156465719588}
+  damageMultiplier: 2
+  hitRegion: 2
 --- !u!1 &8868473931864707156
 GameObject:
   m_ObjectHideFlags: 0
@@ -101,6 +239,7 @@ GameObject:
   - component: {fileID: 2283846160320591239}
   - component: {fileID: 7047298569509813736}
   - component: {fileID: 7255119410005749237}
+  - component: {fileID: 7162800156465719588}
   - component: {fileID: 967716937682732629}
   - component: {fileID: 7449252600016049753}
   m_Layer: 0
@@ -125,6 +264,8 @@ Transform:
   m_Children:
   - {fileID: 5450086916110926099}
   - {fileID: 380355889345709329}
+  - {fileID: 9174099861582232752}
+  - {fileID: 1563956856397734519}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!65 &7047298569509813736
@@ -144,7 +285,7 @@ BoxCollider:
   m_LayerOverridePriority: 0
   m_IsTrigger: 0
   m_ProvidesContacts: 0
-  m_Enabled: 1
+  m_Enabled: 0
   serializedVersion: 3
   m_Size: {x: 0.79124486, y: 0.7544001, z: 0.6614774}
   m_Center: {x: 0, y: 0.99, z: -0.04380522}
@@ -170,6 +311,20 @@ NavMeshAgent:
   m_BaseOffset: 0
   m_WalkableMask: 4294967295
   m_ObstacleAvoidanceType: 2
+--- !u!114 &7162800156465719588
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 8868473931864707156}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 73c1cca8fff714d64a7fd0ad502f9ee0, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: FPS.Combat::Health
+  maxHealth: 100
+  maxArmor: 0
 --- !u!114 &967716937682732629
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -202,6 +357,10 @@ MonoBehaviour:
   locomotionBlendDuration: 0.12
   attackBlendDuration: 0.06
   attackDuration: 0.6
+  useProceduralHoverLocomotion: 1
+  hoverBobAmplitude: 0.035
+  hoverBobFrequency: 4.5
+  hoverMoveTiltDegrees: 4
 --- !u!1001 &5487671681897375480
 PrefabInstance:
   m_ObjectHideFlags: 0

@@ -513,6 +513,10 @@ public sealed class RunSnapshotRuntimeAdapter : MonoBehaviour
                 WaveNumber = enemy.WaveNumber,
                 SpawnId = enemy.SpawnId,
                 EnemyTypeId = enemy.EnemyTypeId,
+                ArchetypeStableId = string.IsNullOrEmpty(
+                    enemy.ArchetypeStableId)
+                    ? null
+                    : enemy.ArchetypeStableId,
                 Position = new Float3Snapshot(
                     enemy.Position.x, enemy.Position.y, enemy.Position.z),
                 Rotation = new Float4Snapshot(

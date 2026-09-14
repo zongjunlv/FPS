@@ -29,7 +29,8 @@ public sealed class CityNewModularLayoutBootstrap : MonoBehaviour
 
     public static int SelectNewRunSeed(int proposedSeed)
     {
-        return instance != null && instance.layoutSet != null &&
+        return instance != null && !instance.IsUsingFallback &&
+               instance.layoutSet != null &&
                instance.CurrentPlan != null
             ? CombatLayoutReroll.SelectSeedForDifferentRoute(
                 instance.layoutSet,
@@ -76,6 +77,14 @@ public sealed class CityNewModularLayoutBootstrap : MonoBehaviour
         CityNewContentCatalog catalog = CityNewContentCatalog.LoadDefault();
         layoutSet = catalog != null ? catalog.LayoutSet : null;
         GameObject player = GameObject.FindGameObjectWithTag("Player");
+
+        if (catalog == null || !catalog.UseRuntimeModularLayout)
+        {
+            ActivateLegacyFallback(
+                "正式战局已停用模块化测试区域，使用 CityNew 原始场景。");
+            yield break;
+        }
+
         int sceneSeed = player != null &&
                         player.GetComponent<PlayerUpgradeController>() != null
             ? player.GetComponent<PlayerUpgradeController>().RunSeed
