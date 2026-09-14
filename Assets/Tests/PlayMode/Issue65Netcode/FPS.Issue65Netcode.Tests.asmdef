@@ -1,0 +1,23 @@
+{
+  "name": "FPS.Issue65Netcode.Tests",
+  "rootNamespace": "FPS.Tests.PlayMode.Issue65",
+  "references": [
+    "FPS.Networking.Domain",
+    "FPS.Networking.Netcode",
+    "FPS.Networking.Session",
+    "Unity.Netcode.Runtime",
+    "Unity.Networking.Transport"
+  ],
+  "includePlatforms": [],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": true,
+  "defineConstraints": [],
+  "versionDefines": [],
+  "noEngineReferences": false,
+  "optionalUnityReferences": [
+    "TestAssemblies"
+  ]
+}

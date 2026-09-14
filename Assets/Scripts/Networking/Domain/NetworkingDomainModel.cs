@@ -1,0 +1,466 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+
+namespace FPS.Networking.Domain
+{
+    public readonly struct NetVector3 : IEquatable<NetVector3>
+    {
+        public NetVector3(double x, double y, double z)
+        {
+            X = x;
+            Y = y;
+            Z = z;
+        }
+
+        public double X { get; }
+        public double Y { get; }
+        public double Z { get; }
+        public double SqrMagnitude => X * X + Y * Y + Z * Z;
+        public double Magnitude => Math.Sqrt(SqrMagnitude);
+        public bool IsFinite => IsFiniteNumber(X) && IsFiniteNumber(Y) &&
+            IsFiniteNumber(Z);
+
+        public NetVector3 Normalized
+        {
+            get
+            {
+                double magnitude = Magnitude;
+                return magnitude > 0.0000001d
+                    ? this / magnitude
+                    : new NetVector3(0d, 0d, 0d);
+            }
+        }
+
+        public static NetVector3 operator +(NetVector3 left, NetVector3 right) =>
+            new(left.X + right.X, left.Y + right.Y, left.Z + right.Z);
+        public static NetVector3 operator -(NetVector3 left, NetVector3 right) =>
+            new(left.X - right.X, left.Y - right.Y, left.Z - right.Z);
+        public static NetVector3 operator *(NetVector3 value, double scale) =>
+            new(value.X * scale, value.Y * scale, value.Z * scale);
+        public static NetVector3 operator /(NetVector3 value, double scale) =>
+            new(value.X / scale, value.Y / scale, value.Z / scale);
+
+        public static double Dot(NetVector3 left, NetVector3 right) =>
+            left.X * right.X + left.Y * right.Y + left.Z * right.Z;
+        public static double Distance(NetVector3 left, NetVector3 right) =>
+            (left - right).Magnitude;
+        public static NetVector3 Lerp(
+            NetVector3 from,
+            NetVector3 to,
+            double ratio)
+        {
+            double clamped = Math.Max(0d, Math.Min(1d, ratio));
+            return from + (to - from) * clamped;
+        }
+
+        public bool Equals(NetVector3 other) =>
+            X.Equals(other.X) && Y.Equals(other.Y) && Z.Equals(other.Z);
+        public override bool Equals(object obj) =>
+            obj is NetVector3 other && Equals(other);
+        public override int GetHashCode() => HashCode.Combine(X, Y, Z);
+        public override string ToString() => $"({X:R},{Y:R},{Z:R})";
+
+        private static bool IsFiniteNumber(double value) =>
+            !double.IsNaN(value) && !double.IsInfinity(value);
+    }
+
+    public sealed class CoopServerRules
+    {
+        public CoopServerRules(
+            int tickRate = 60,
+            int maximumPastCommandTicks = 12,
+            int maximumFutureCommandTicks = 1,
+            int historyCapacity = 32,
+            double maximumMoveSpeed = 6d,
+            double claimedPositionTolerance = 0.35d,
+            double maximumAimDegreesPerSecond = 1080d,
+            int fireCooldownTicks = 6,
+            double hitscanRange = 120d,
+            double shotDamage = 34d,
+            double predictionCorrectionThreshold = 0.15d,
+            double predictionSnapThreshold = 2d,
+            int nonceHistoryCapacity = 256)
+        {
+            if (tickRate < 1 || tickRate > 1000)
+                throw new ArgumentOutOfRangeException(nameof(tickRate));
+            if (maximumPastCommandTicks < 0)
+                throw new ArgumentOutOfRangeException(
+                    nameof(maximumPastCommandTicks));
+            if (maximumFutureCommandTicks < 0)
+                throw new ArgumentOutOfRangeException(
+                    nameof(maximumFutureCommandTicks));
+            if (historyCapacity < maximumPastCommandTicks + 1)
+                throw new ArgumentOutOfRangeException(nameof(historyCapacity));
+            if (!PositiveFinite(maximumMoveSpeed))
+                throw new ArgumentOutOfRangeException(nameof(maximumMoveSpeed));
+            if (!NonNegativeFinite(claimedPositionTolerance))
+                throw new ArgumentOutOfRangeException(
+                    nameof(claimedPositionTolerance));
+            if (!PositiveFinite(maximumAimDegreesPerSecond))
+                throw new ArgumentOutOfRangeException(
+                    nameof(maximumAimDegreesPerSecond));
+            if (fireCooldownTicks < 1)
+                throw new ArgumentOutOfRangeException(nameof(fireCooldownTicks));
+            if (!PositiveFinite(hitscanRange))
+                throw new ArgumentOutOfRangeException(nameof(hitscanRange));
+            if (!PositiveFinite(shotDamage))
+                throw new ArgumentOutOfRangeException(nameof(shotDamage));
+            if (!NonNegativeFinite(predictionCorrectionThreshold))
+                throw new ArgumentOutOfRangeException(
+                    nameof(predictionCorrectionThreshold));
+            if (!PositiveFinite(predictionSnapThreshold) ||
+                predictionSnapThreshold < predictionCorrectionThreshold)
+                throw new ArgumentOutOfRangeException(
+                    nameof(predictionSnapThreshold));
+            if (nonceHistoryCapacity < 8)
+                throw new ArgumentOutOfRangeException(
+                    nameof(nonceHistoryCapacity));
+
+            TickRate = tickRate;
+            MaximumPastCommandTicks = maximumPastCommandTicks;
+            MaximumFutureCommandTicks = maximumFutureCommandTicks;
+            HistoryCapacity = historyCapacity;
+            MaximumMoveSpeed = maximumMoveSpeed;
+            ClaimedPositionTolerance = claimedPositionTolerance;
+            MaximumAimDegreesPerSecond = maximumAimDegreesPerSecond;
+            FireCooldownTicks = fireCooldownTicks;
+            HitscanRange = hitscanRange;
+            ShotDamage = shotDamage;
+            PredictionCorrectionThreshold = predictionCorrectionThreshold;
+            PredictionSnapThreshold = predictionSnapThreshold;
+            NonceHistoryCapacity = nonceHistoryCapacity;
+        }
+
+        public int TickRate { get; }
+        public double FixedDeltaSeconds => 1d / TickRate;
+        public int MaximumPastCommandTicks { get; }
+        public int MaximumFutureCommandTicks { get; }
+        public int HistoryCapacity { get; }
+        public double MaximumMoveSpeed { get; }
+        public double ClaimedPositionTolerance { get; }
+        public double MaximumAimDegreesPerSecond { get; }
+        public int FireCooldownTicks { get; }
+        public double HitscanRange { get; }
+        public double ShotDamage { get; }
+        public double PredictionCorrectionThreshold { get; }
+        public double PredictionSnapThreshold { get; }
+        public int NonceHistoryCapacity { get; }
+
+        private static bool PositiveFinite(double value) =>
+            value > 0d && !double.IsNaN(value) && !double.IsInfinity(value);
+        private static bool NonNegativeFinite(double value) =>
+            value >= 0d && !double.IsNaN(value) && !double.IsInfinity(value);
+    }
+
+    public readonly struct CoopPlayerSpawn
+    {
+        public CoopPlayerSpawn(int playerId, NetVector3 position,
+            double health = 100d)
+        {
+            if (playerId <= 0) throw new ArgumentOutOfRangeException(nameof(playerId));
+            if (!position.IsFinite) throw new ArgumentOutOfRangeException(nameof(position));
+            if (health <= 0d || double.IsNaN(health) || double.IsInfinity(health))
+                throw new ArgumentOutOfRangeException(nameof(health));
+            PlayerId = playerId;
+            Position = position;
+            Health = health;
+        }
+
+        public int PlayerId { get; }
+        public NetVector3 Position { get; }
+        public double Health { get; }
+    }
+
+    public readonly struct CoopTargetSpawn
+    {
+        public CoopTargetSpawn(
+            int targetId,
+            NetVector3 position,
+            double radius,
+            double health,
+            string dropDefinitionId = "")
+        {
+            if (targetId <= 0) throw new ArgumentOutOfRangeException(nameof(targetId));
+            if (!position.IsFinite) throw new ArgumentOutOfRangeException(nameof(position));
+            if (radius <= 0d || double.IsNaN(radius) || double.IsInfinity(radius))
+                throw new ArgumentOutOfRangeException(nameof(radius));
+            if (health <= 0d || double.IsNaN(health) || double.IsInfinity(health))
+                throw new ArgumentOutOfRangeException(nameof(health));
+            TargetId = targetId;
+            Position = position;
+            Radius = radius;
+            Health = health;
+            DropDefinitionId = dropDefinitionId ?? string.Empty;
+        }
+
+        public int TargetId { get; }
+        public NetVector3 Position { get; }
+        public double Radius { get; }
+        public double Health { get; }
+        public string DropDefinitionId { get; }
+    }
+
+    public readonly struct PlayerInputCommand
+    {
+        public PlayerInputCommand(
+            int playerId,
+            uint sequence,
+            ulong nonce,
+            long clientTick,
+            double moveX,
+            double moveZ,
+            double aimYawDegrees,
+            double aimPitchDegrees,
+            bool fire,
+            NetVector3 claimedPosition)
+        {
+            PlayerId = playerId;
+            Sequence = sequence;
+            Nonce = nonce;
+            ClientTick = clientTick;
+            MoveX = moveX;
+            MoveZ = moveZ;
+            AimYawDegrees = aimYawDegrees;
+            AimPitchDegrees = aimPitchDegrees;
+            Fire = fire;
+            ClaimedPosition = claimedPosition;
+        }
+
+        public int PlayerId { get; }
+        public uint Sequence { get; }
+        public ulong Nonce { get; }
+        public long ClientTick { get; }
+        public double MoveX { get; }
+        public double MoveZ { get; }
+        public double AimYawDegrees { get; }
+        public double AimPitchDegrees { get; }
+        public bool Fire { get; }
+        public NetVector3 ClaimedPosition { get; }
+    }
+
+    public enum CommandRejectionReason
+    {
+        None,
+        UnknownPlayer,
+        InvalidSequence,
+        DuplicateNonce,
+        TimestampTooOld,
+        TimestampInFuture,
+        DuplicateClientTick,
+        InvalidMovement,
+        ImpossibleDisplacement,
+        InvalidAim,
+        AimRateExceeded,
+        FireRateExceeded
+    }
+
+    public enum ShotResolutionKind
+    {
+        NotRequested,
+        Miss,
+        Hit,
+        Killed
+    }
+
+    public readonly struct ShotResolution
+    {
+        public ShotResolution(
+            ShotResolutionKind kind,
+            long rewoundTick,
+            int targetId,
+            double appliedDamage)
+        {
+            Kind = kind;
+            RewoundTick = rewoundTick;
+            TargetId = targetId;
+            AppliedDamage = appliedDamage;
+        }
+
+        public ShotResolutionKind Kind { get; }
+        public long RewoundTick { get; }
+        public int TargetId { get; }
+        public double AppliedDamage { get; }
+        public bool DidHit => Kind == ShotResolutionKind.Hit ||
+            Kind == ShotResolutionKind.Killed;
+    }
+
+    public sealed class CommandResolution
+    {
+        public CommandResolution(
+            PlayerInputCommand command,
+            bool accepted,
+            CommandRejectionReason rejectionReason,
+            ShotResolution shot)
+        {
+            Command = command;
+            Accepted = accepted;
+            RejectionReason = rejectionReason;
+            Shot = shot;
+        }
+
+        public PlayerInputCommand Command { get; }
+        public bool Accepted { get; }
+        public CommandRejectionReason RejectionReason { get; }
+        public ShotResolution Shot { get; }
+    }
+
+    public enum AuthoritativeEventKind
+    {
+        PlayerMoved,
+        ShotMissed,
+        TargetDamaged,
+        TargetKilled,
+        LootDropped,
+        PlayerDamaged,
+        PlayerKilled,
+        WaveCompleted,
+        WaveFailed,
+        CommandRejected
+    }
+
+    public readonly struct AuthoritativeEvent
+    {
+        public AuthoritativeEvent(
+            long tick,
+            long sequence,
+            AuthoritativeEventKind kind,
+            int subjectId,
+            int targetId,
+            double value,
+            string definitionId,
+            CommandRejectionReason rejectionReason)
+        {
+            Tick = tick;
+            Sequence = sequence;
+            Kind = kind;
+            SubjectId = subjectId;
+            TargetId = targetId;
+            Value = value;
+            DefinitionId = definitionId ?? string.Empty;
+            RejectionReason = rejectionReason;
+        }
+
+        public long Tick { get; }
+        public long Sequence { get; }
+        public AuthoritativeEventKind Kind { get; }
+        public int SubjectId { get; }
+        public int TargetId { get; }
+        public double Value { get; }
+        public string DefinitionId { get; }
+        public CommandRejectionReason RejectionReason { get; }
+    }
+
+    public readonly struct AuthoritativePlayerState
+    {
+        public AuthoritativePlayerState(
+            int playerId,
+            NetVector3 position,
+            double health,
+            uint acknowledgedSequence,
+            double aimYawDegrees,
+            double aimPitchDegrees)
+        {
+            PlayerId = playerId;
+            Position = position;
+            Health = health;
+            AcknowledgedSequence = acknowledgedSequence;
+            AimYawDegrees = aimYawDegrees;
+            AimPitchDegrees = aimPitchDegrees;
+        }
+
+        public int PlayerId { get; }
+        public NetVector3 Position { get; }
+        public double Health { get; }
+        public uint AcknowledgedSequence { get; }
+        public double AimYawDegrees { get; }
+        public double AimPitchDegrees { get; }
+        public bool IsAlive => Health > 0d;
+    }
+
+    public readonly struct AuthoritativeTargetState
+    {
+        public AuthoritativeTargetState(
+            int targetId,
+            NetVector3 position,
+            double radius,
+            double health,
+            string dropDefinitionId)
+        {
+            TargetId = targetId;
+            Position = position;
+            Radius = radius;
+            Health = health;
+            DropDefinitionId = dropDefinitionId ?? string.Empty;
+        }
+
+        public int TargetId { get; }
+        public NetVector3 Position { get; }
+        public double Radius { get; }
+        public double Health { get; }
+        public string DropDefinitionId { get; }
+        public bool IsAlive => Health > 0d;
+    }
+
+    public enum AuthoritativeWaveStatus
+    {
+        Fighting,
+        Completed,
+        Failed
+    }
+
+    public sealed class AuthoritativeWorldSnapshot
+    {
+        private readonly AuthoritativePlayerState[] players;
+        private readonly AuthoritativeTargetState[] targets;
+
+        public AuthoritativeWorldSnapshot(
+            long tick,
+            IEnumerable<AuthoritativePlayerState> players,
+            IEnumerable<AuthoritativeTargetState> targets,
+            AuthoritativeWaveStatus waveStatus,
+            int killedTargets)
+        {
+            Tick = tick;
+            this.players = (players ?? throw new ArgumentNullException(nameof(players)))
+                .OrderBy(value => value.PlayerId).ToArray();
+            this.targets = (targets ?? throw new ArgumentNullException(nameof(targets)))
+                .OrderBy(value => value.TargetId).ToArray();
+            WaveStatus = waveStatus;
+            KilledTargets = Math.Max(0, killedTargets);
+        }
+
+        public long Tick { get; }
+        public IReadOnlyList<AuthoritativePlayerState> Players => players;
+        public IReadOnlyList<AuthoritativeTargetState> Targets => targets;
+        public AuthoritativeWaveStatus WaveStatus { get; }
+        public int KilledTargets { get; }
+        public AuthoritativePlayerState Player(int playerId) =>
+            players.Single(value => value.PlayerId == playerId);
+        public AuthoritativeTargetState Target(int targetId) =>
+            targets.Single(value => value.TargetId == targetId);
+    }
+
+    public sealed class AuthoritativeTickResult
+    {
+        private readonly CommandResolution[] commands;
+        private readonly AuthoritativeEvent[] events;
+
+        public AuthoritativeTickResult(
+            long tick,
+            IEnumerable<CommandResolution> commands,
+            IEnumerable<AuthoritativeEvent> events,
+            AuthoritativeWorldSnapshot snapshot)
+        {
+            Tick = tick;
+            this.commands = (commands ?? Array.Empty<CommandResolution>()).ToArray();
+            this.events = (events ?? Array.Empty<AuthoritativeEvent>()).ToArray();
+            Snapshot = snapshot ?? throw new ArgumentNullException(nameof(snapshot));
+        }
+
+        public long Tick { get; }
+        public IReadOnlyList<CommandResolution> Commands => commands;
+        public IReadOnlyList<AuthoritativeEvent> Events => events;
+        public AuthoritativeWorldSnapshot Snapshot { get; }
+    }
+}

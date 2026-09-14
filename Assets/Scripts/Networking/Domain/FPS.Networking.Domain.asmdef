@@ -1,0 +1,14 @@
+{
+  "name": "FPS.Networking.Domain",
+  "rootNamespace": "FPS.Networking.Domain",
+  "references": [],
+  "includePlatforms": [],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": true,
+  "defineConstraints": [],
+  "versionDefines": [],
+  "noEngineReferences": true
+}

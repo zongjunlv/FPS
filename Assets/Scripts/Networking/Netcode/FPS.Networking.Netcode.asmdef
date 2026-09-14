@@ -1,0 +1,19 @@
+{
+  "name": "FPS.Networking.Netcode",
+  "rootNamespace": "FPS.Networking.Netcode",
+  "references": [
+    "FPS.Networking.Domain",
+    "Unity.Netcode.Runtime",
+    "Unity.Networking.Transport",
+    "Unity.Collections"
+  ],
+  "includePlatforms": [],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": true,
+  "defineConstraints": [],
+  "versionDefines": [],
+  "noEngineReferences": false
+}

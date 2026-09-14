@@ -1,0 +1,22 @@
+{
+  "name": "FPS.Networking.Session",
+  "rootNamespace": "FPS.Networking.Session",
+  "references": [
+    "FPS.Networking.Domain",
+    "FPS.Networking.Netcode",
+    "Unity.Netcode.Runtime",
+    "Unity.InputSystem",
+    "Unity.Services.Core",
+    "Unity.Services.Authentication",
+    "Unity.Services.Multiplayer"
+  ],
+  "includePlatforms": [],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": true,
+  "defineConstraints": [],
+  "versionDefines": [],
+  "noEngineReferences": false
+}

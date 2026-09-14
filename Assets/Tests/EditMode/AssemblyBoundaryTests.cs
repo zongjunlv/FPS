@@ -46,6 +46,20 @@ namespace FPS.Tests.Architecture
                         "FPS.Performance.HybridAi"
                     },
                     ["FPS.Performance.HybridAi"] = Array.Empty<string>(),
+                    ["FPS.Networking.Domain"] = Array.Empty<string>(),
+                    ["FPS.Networking.Diagnostics"] = new[]
+                    {
+                        "FPS.Networking.Domain"
+                    },
+                    ["FPS.Networking.Netcode"] = new[]
+                    {
+                        "FPS.Networking.Domain"
+                    },
+                    ["FPS.Networking.Session"] = new[]
+                    {
+                        "FPS.Networking.Domain",
+                        "FPS.Networking.Netcode"
+                    },
                     ["FPS.Inventory"] = new[]
                     {
                         "FPS.Core",
@@ -71,6 +85,8 @@ namespace FPS.Tests.Architecture
                         "FPS.AI.Hybrid.Shared",
                         "FPS.AI.HybridEcs",
                         "FPS.Performance.HybridAi",
+                        "FPS.Networking.Netcode",
+                        "FPS.Networking.Session",
                         "FPS.Inventory",
                         "FPS.SaveGame",
                         "FPS.UI",

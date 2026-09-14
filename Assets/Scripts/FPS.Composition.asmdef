@@ -12,6 +12,8 @@
     "FPS.AI.Hybrid.Shared",
     "FPS.AI.HybridEcs",
     "FPS.Performance.HybridAi",
+    "FPS.Networking.Netcode",
+    "FPS.Networking.Session",
     "FPS.Inventory",
     "FPS.UI",
     "Unity.InputSystem",
@@ -23,6 +25,7 @@
     "Unity.Collections",
     "Unity.Entities",
     "Unity.Mathematics",
+    "Unity.Netcode.Runtime",
     "Unity.Addressables",
     "Unity.ResourceManager"
   ],
