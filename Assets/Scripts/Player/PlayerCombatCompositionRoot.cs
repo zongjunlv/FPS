@@ -176,13 +176,11 @@ public sealed class PlayerCombatCompositionRoot : MonoBehaviour
     {
         GetOrAdd<PlayerInteractionController>();
         GetOrAdd<PlayerWorldPickupController>();
-        GetOrAdd<CityNewTerminalMissionBootstrap>();
         GetOrAdd<PlayerRunProgression>();
         GetOrAdd<PlayerUpgradeController>();
         GetOrAdd<WorldItemFactory>();
         GetOrAdd<PlayerInventoryController>();
         GetOrAdd<PlayerLootRewardController>();
-        GetOrAdd<CityNewInventoryBootstrap>();
         GetOrAdd<PlayerFailureFlowController>();
     }
 
