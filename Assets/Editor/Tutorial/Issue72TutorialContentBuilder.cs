@@ -86,7 +86,7 @@ public static class Issue72TutorialContentBuilder
         definition.Configure(
             "tutorial.main",
             "新手训练",
-            2,
+            3,
             CreateDefaultSteps());
         if (!definition.TryValidate(out string error))
         {
@@ -110,11 +110,11 @@ public static class Issue72TutorialContentBuilder
             Step("tutorial.move.right", "第一章 · 基础移动", "向右移动",
                 "按住 D，向右实际移动 1 米", TutorialEvidenceType.MoveRightDistance, 1),
             Step("tutorial.move.jump", "第一章 · 基础移动", "跳跃",
-                "按空格键完成一次跳跃", TutorialEvidenceType.Jump, 1),
+                "按空格完成起跳、腾空并安全落地", TutorialEvidenceType.Jump, 1),
             Step("tutorial.move.sprint", "第一章 · 基础移动", "冲刺",
-                "按住 Shift 向前冲刺", TutorialEvidenceType.Sprint, 1),
+                "同时按住 W 与 Shift，向前冲刺 2 米", TutorialEvidenceType.Sprint, 2),
             Step("tutorial.move.crouch", "第一章 · 基础移动", "下蹲",
-                "按 C 完成一次下蹲", TutorialEvidenceType.Crouch, 1),
+                "按 C 下蹲，再按一次 C 恢复站立", TutorialEvidenceType.Crouch, 2),
             Step("tutorial.shoot.hip", "第二章 · 射击训练", "腰射命中",
                 "使用鼠标左键命中射击墙", TutorialEvidenceType.HipFireHit, 3),
             Step("tutorial.shoot.aim", "第二章 · 射击训练", "瞄准射击",

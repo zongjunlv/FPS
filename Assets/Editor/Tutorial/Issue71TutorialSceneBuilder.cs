@@ -180,6 +180,7 @@ public static class Issue71TutorialSceneBuilder
             ArenaBounds);
         Issue72TutorialContentBuilder.EnsureSceneContent(scene, environment);
         Issue73TutorialMovementBuilder.EnsureSceneContent(scene);
+        Issue74TutorialLocomotionBuilder.EnsureSceneContent(scene);
 
         EditorUtility.SetDirty(marker);
         EditorUtility.SetDirty(environment);
