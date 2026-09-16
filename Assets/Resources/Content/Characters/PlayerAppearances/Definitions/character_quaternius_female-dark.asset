@@ -1,0 +1,31 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 89470725fed8e4d489d530707eaddf50, type: 3}
+  m_Name: character_quaternius_female-dark
+  m_EditorClassIdentifier: FPS.Composition::PlayerAppearanceDefinition
+  stableId: character.quaternius.female-dark
+  displayName: "\u5148\u950B\xB7\u5973"
+  visualPrefab: {fileID: 4261298600861479238, guid: cd49693d9c60a4406aa8b284a7569b2b, type: 3}
+  avatar: {fileID: 9000000, guid: 3e9ec109f86f04c1db967c93362a3a19, type: 3}
+  animatorController: {fileID: 9100000, guid: f81fefd0e598245969e19d1e319f3434, type: 2}
+  materials:
+  - {fileID: 2100000, guid: 8970eae994d30499e9848fd3cad2602a, type: 2}
+  - {fileID: 2100000, guid: ef77118bbdbe2446bbca56aaed322780, type: 2}
+  collisionReference:
+    height: 1.8
+    radius: 0.4
+    center: {x: 0, y: 0.9, z: 0}
+  viewOffset: {x: 0, y: 1.65, z: 0}
+  lodConfiguration:
+    visibleHeight: 0.08
+    fadeMode: 1
+    crossFadeWidth: 0.12

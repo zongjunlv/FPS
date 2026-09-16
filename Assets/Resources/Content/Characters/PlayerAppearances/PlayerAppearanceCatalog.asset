@@ -1,0 +1,19 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a75cf9717e43849088816ddf701a19bb, type: 3}
+  m_Name: PlayerAppearanceCatalog
+  m_EditorClassIdentifier: FPS.Composition::PlayerAppearanceCatalog
+  defaultAppearanceId: character.quaternius.male-light
+  definitions:
+  - {fileID: 11400000, guid: 34f7e695386f143b99a50214925b1486, type: 2}
+  - {fileID: 11400000, guid: a7a4d8ab1e5074a978392f5febeffdd4, type: 2}
+  - {fileID: 11400000, guid: eb852a69f7c4d4d2787398e6ddeda0b2, type: 2}

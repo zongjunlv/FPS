@@ -91,6 +91,7 @@ public static class ContentAssetValidator
         }
         ThirdPartyAssetLicenseAuditor.AppendTo(report);
         HumanoidCharacterPipelineAuditor.AppendTo(report);
+        PlayerAppearanceCatalogAuditor.AppendTo(report);
         return report;
     }
 
