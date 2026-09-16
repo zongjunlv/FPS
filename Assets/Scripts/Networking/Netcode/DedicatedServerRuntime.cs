@@ -218,6 +218,13 @@ namespace FPS.Networking.Netcode
             network = OptionalNetworkBootstrap.CreateRuntime(endpoint,
                 "Dedicated Network Runtime");
             DontDestroyOnLoad(network.gameObject);
+            if (!CoopAdmissionEnvironment.TryCreateCodec(
+                    out CoopConnectionTicketCodec ticketCodec,
+                    out error))
+                return false;
+            network.ConfigureServerAdmission(
+                new CoopConnectionAdmissionService(ticketCodec,
+                    configuration.Version, configuration.MaximumPlayers));
             installer = network.gameObject.AddComponent<
                 CoopNetworkRuntimeInstaller>();
 

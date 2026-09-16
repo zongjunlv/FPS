@@ -295,6 +295,23 @@ namespace FPS.Networking.Netcode
                 SpawnPlayer(clientId, 1);
                 return;
             }
+
+            if (bootstrap.AdmissionService != null)
+            {
+                if (!bootstrap.TryGetApprovedIdentity(clientId,
+                        out CoopApprovedIdentity approved))
+                {
+                    bootstrap.NetworkManager.DisconnectClient(clientId,
+                        CoopAdmissionMessages.Describe(
+                            CoopAdmissionFailure.InvalidCredential));
+                    return;
+                }
+
+                sessionAuthority.RegisterPlayerClient(clientId,
+                    approved.SimulationPlayerId);
+                SpawnPlayer(clientId, approved.SimulationPlayerId);
+                return;
+            }
             if (playerObjects.Count >= maximumPlayers)
             {
                 bootstrap.NetworkManager.DisconnectClient(

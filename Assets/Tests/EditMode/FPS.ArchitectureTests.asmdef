@@ -19,6 +19,7 @@
     "FPS.Inventory",
     "FPS.UI",
     "FPS.Composition",
+    "Unity.Netcode.Runtime",
     "Unity.Entities",
     "Unity.Collections",
     "Unity.Mathematics"

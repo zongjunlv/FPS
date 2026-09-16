@@ -35,6 +35,7 @@ namespace FPS.Networking.Session
         private bool directSession;
         private bool modeExitRequested;
         private int operationGeneration;
+        private string pendingConnectionCredential = string.Empty;
 
         public event Action<CoopSessionState> StateChanged;
 
@@ -50,6 +51,20 @@ namespace FPS.Networking.Session
             State == CoopSessionState.Connected;
         public string LastFailure { get; private set; } = string.Empty;
         public ISession ActiveSession => activeSession;
+
+        /// <summary>
+        /// Receives a short-lived ticket from the trusted account backend.
+        /// Passwords and long-lived authentication tokens must never be supplied.
+        /// </summary>
+        public void ConfigureConnectionCredential(string credential)
+        {
+            if (networkBootstrap != null && networkBootstrap.IsListening)
+                throw new InvalidOperationException(
+                    "连接已开始，不能再替换身份凭证。");
+            pendingConnectionCredential = credential?.Trim() ?? string.Empty;
+            networkBootstrap?.ConfigureClientCredential(
+                pendingConnectionCredential);
+        }
 
         private void OnDestroy()
         {
@@ -328,6 +343,9 @@ namespace FPS.Networking.Session
                 NetworkEndpointSettings.Localhost,
                 "FPS Coop Network Runtime");
             DontDestroyOnLoad(networkBootstrap.gameObject);
+            if (!string.IsNullOrEmpty(pendingConnectionCredential))
+                networkBootstrap.ConfigureClientCredential(
+                    pendingConnectionCredential);
 
             GameObject authorityObject = Resources.Load<GameObject>(
                 "Networking/CoopSessionAuthority");

@@ -38,6 +38,7 @@ Tools/Networking/launch_local_cluster.sh
 - `FPS_MATCH_ID`
 - `FPS_SERVER_SEED`
 - `FPS_SERVER_VERSION`
+- `FPS_SERVER_AUTH_SECRET`（至少 32 字节；未提供时本地脚本会生成一次性密钥）
 
 服务器支持以下启动参数：
 
@@ -52,3 +53,9 @@ Tools/Networking/launch_local_cluster.sh
 
 服务器日志包含 `INITIALIZING`、`LISTENING`、`READY`、`FAILED` 和
 `SHUTDOWN` 状态。收到终止信号后会关闭网络并输出诊断 JSON。
+
+连接审批要求客户端携带由可信账号服务签发的短时凭证。服务器会校验签名、
+有效期、版本、重复账号、凭证重放和人数上限，再把账号身份绑定到 NGO 的
+`clientId` 与权威模拟玩家槽位。生产环境应由独立后台持有签名密钥；
+`launch_local_cluster.sh` 仅为本机联调，让服务器和两个测试客户端共享一次性
+环境变量密钥，密钥及完整凭证不会写入日志。

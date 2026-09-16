@@ -58,6 +58,20 @@ namespace FPS.Networking.Session
             NetworkEndpointSettings settings =
                 NetworkEndpointSettings.Localhost;
             settings.Port = port;
+            if (string.Equals(role, "client", StringComparison.OrdinalIgnoreCase))
+            {
+                string account = Argument("-issue86-account");
+                string version = Argument("-issue86-version");
+                if (string.IsNullOrWhiteSpace(version)) version = "local-dev";
+                if (!string.IsNullOrWhiteSpace(account) &&
+                    CoopAdmissionEnvironment.TryCreateCodec(
+                        out CoopConnectionTicketCodec codec, out _))
+                {
+                    string ticket = codec.Issue(account, version,
+                        DateTimeOffset.UtcNow.ToUnixTimeSeconds());
+                    controller.ConfigureConnectionCredential(ticket);
+                }
+            }
             controller.StartDirect(
                 string.Equals(role, "host",
                     StringComparison.OrdinalIgnoreCase),

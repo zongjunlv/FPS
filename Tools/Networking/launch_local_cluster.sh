@@ -9,6 +9,11 @@ port="${FPS_SERVER_PORT:-17777}"
 match_id="${FPS_MATCH_ID:-local-two-client}"
 seed="${FPS_SERVER_SEED:-18018}"
 version="${FPS_SERVER_VERSION:-local-dev}"
+auth_secret="${FPS_SERVER_AUTH_SECRET:-}"
+if [[ -z "${auth_secret}" ]]; then
+  auth_secret="$(openssl rand -hex 32)"
+fi
+export FPS_SERVER_AUTH_SECRET="${auth_secret}"
 log_dir="${project_dir}/Logs/LocalCluster"
 mkdir -p "${log_dir}"
 
@@ -83,6 +88,8 @@ for client_index in 1 2; do
   "${client_bin}" \
     -screen-fullscreen 0 -disable-audio \
     -issue65-role client -issue65-port "${port}" \
+    -issue86-account "local-player-${client_index}" \
+    -issue86-version "${version}" \
     -logFile "${log_dir}/client-${client_index}.log" &
   pids+=("$!")
 done

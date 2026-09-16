@@ -1,4 +1,5 @@
 using System;
+using System.Text;
 using Unity.Netcode;
 using Unity.Netcode.Transports.UTP;
 using UnityEngine;
@@ -66,6 +67,8 @@ namespace FPS.Networking.Netcode
         private NetworkManager networkManager;
         private UnityTransport transport;
         private bool callbacksBound;
+        private bool localClientConnected;
+        private CoopConnectionAdmissionService admissionService;
 
         public event Action<OptionalNetworkState> StateChanged;
         public event Action<ulong> ClientConnected;
@@ -85,6 +88,8 @@ namespace FPS.Networking.Netcode
         public bool IsListening => networkManager != null &&
             networkManager.IsListening;
         public bool IsOffline => !IsListening && State == OptionalNetworkState.Offline;
+        public CoopConnectionAdmissionService AdmissionService =>
+            admissionService;
 
         public static OptionalNetworkBootstrap CreateRuntime(
             NetworkEndpointSettings settings,
@@ -180,6 +185,42 @@ namespace FPS.Networking.Netcode
             networkManager.AddNetworkPrefab(prefab);
         }
 
+        public void ConfigureServerAdmission(
+            CoopConnectionAdmissionService service)
+        {
+            if (IsListening)
+                throw new InvalidOperationException(
+                    "Connection approval must be configured before startup.");
+            admissionService = service ?? throw new ArgumentNullException(
+                nameof(service));
+            ResolveComponents();
+            EnsureNetworkConfig();
+            networkManager.NetworkConfig.ConnectionApproval = true;
+            networkManager.ConnectionApprovalCallback = HandleConnectionApproval;
+        }
+
+        public void ConfigureClientCredential(string credential)
+        {
+            if (IsListening)
+                throw new InvalidOperationException(
+                    "Connection credentials must be configured before startup.");
+            ResolveComponents();
+            EnsureNetworkConfig();
+            networkManager.NetworkConfig.ConnectionData = string.IsNullOrEmpty(
+                credential)
+                ? Array.Empty<byte>()
+                : Encoding.UTF8.GetBytes(credential);
+        }
+
+        public bool TryGetApprovedIdentity(ulong clientId,
+            out CoopApprovedIdentity identity)
+        {
+            if (admissionService != null)
+                return admissionService.TryGetIdentity(clientId, out identity);
+            identity = default;
+            return false;
+        }
+
         public bool StartHost()
         {
             return TryStart(OptionalNetworkState.StartingHost, () =>
@@ -225,6 +266,7 @@ namespace FPS.Networking.Netcode
             }
 
             Configure(endpoint);
+            localClientConnected = false;
             SetState(startingState);
             try
             {
@@ -259,6 +301,7 @@ namespace FPS.Networking.Netcode
                 networkManager.Shutdown(discardMessageQueue);
             }
 
+            localClientConnected = false;
             SetState(OptionalNetworkState.Offline);
         }
 
@@ -316,17 +359,42 @@ namespace FPS.Networking.Netcode
 
         private void HandleClientConnected(ulong clientId)
         {
+            if (networkManager != null && !networkManager.IsServer &&
+                clientId == networkManager.LocalClientId)
+                localClientConnected = true;
             ClientConnected?.Invoke(clientId);
         }
 
         private void HandleClientDisconnected(ulong clientId)
         {
             ClientDisconnected?.Invoke(clientId);
+            if (networkManager != null && networkManager.IsServer)
+                admissionService?.Release(clientId);
             if (networkManager != null && !networkManager.IsServer &&
                 clientId == networkManager.LocalClientId)
             {
-                SetState(OptionalNetworkState.Offline);
+                string reason = networkManager.DisconnectReason;
+                if (!localClientConnected && !string.IsNullOrWhiteSpace(reason))
+                    Fail(reason);
+                else
+                    SetState(OptionalNetworkState.Offline);
+                localClientConnected = false;
             }
+        }
+
+        private void HandleConnectionApproval(
+            NetworkManager.ConnectionApprovalRequest request,
+            NetworkManager.ConnectionApprovalResponse response)
+        {
+            CoopAdmissionDecision decision = admissionService == null
+                ? CoopAdmissionDecision.Reject(
+                    CoopAdmissionFailure.InvalidCredential)
+                : admissionService.Approve(request.ClientNetworkId,
+                    request.Payload);
+            response.Approved = decision.Approved;
+            response.CreatePlayerObject = false;
+            response.Pending = false;
+            response.Reason = decision.Reason;
         }
 
         private void HandleTransportFailure()
