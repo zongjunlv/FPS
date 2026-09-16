@@ -1,0 +1,44 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d23ebc0146cf04bfab2d6bf48e3b0c4c, type: 3}
+  m_Name: HumanoidCharacterStandard
+  m_EditorClassIdentifier: FPS.Composition::HumanoidCharacterStandard
+  stableId: characters.humanoid.standard
+  version: 1
+  standardHeight: 1.8
+  forwardAxis: {x: 0, y: 0, z: 1}
+  upAxis: {x: 0, y: 1, z: 0}
+  sharedAnimatorController: {fileID: 9100000, guid: f81fefd0e598245969e19d1e319f3434, type: 2}
+  animationSet:
+    idle: {fileID: 7994627924475153551, guid: 37964aa05a4ce4d24a19f04b1e9a9b25, type: 3}
+    walk: {fileID: -7003542030617561338, guid: 37964aa05a4ce4d24a19f04b1e9a9b25, type: 3}
+    sprint: {fileID: -4950333804767787469, guid: 37964aa05a4ce4d24a19f04b1e9a9b25, type: 3}
+    crouch: {fileID: -7993625790543202706, guid: 37964aa05a4ce4d24a19f04b1e9a9b25, type: 3}
+    jumpStart: {fileID: -1862932125039169580, guid: 37964aa05a4ce4d24a19f04b1e9a9b25, type: 3}
+    jumpLoop: {fileID: -3659967873887649963, guid: 37964aa05a4ce4d24a19f04b1e9a9b25, type: 3}
+    land: {fileID: 4832780573735333345, guid: 37964aa05a4ce4d24a19f04b1e9a9b25, type: 3}
+    aim: {fileID: -718454725414175808, guid: 37964aa05a4ce4d24a19f04b1e9a9b25, type: 3}
+    shoot: {fileID: 2564068224262579217, guid: 37964aa05a4ce4d24a19f04b1e9a9b25, type: 3}
+    reload: {fileID: -4628965742493065687, guid: 37964aa05a4ce4d24a19f04b1e9a9b25, type: 3}
+  characters:
+  - stableId: character.quaternius.male-light
+    displayName: "\u5148\u950B\xB7\u7537"
+    prefab: {fileID: 536725019659040867, guid: ade68f63f561542b196e08d88e825a8c, type: 3}
+    expectedHeight: 1.8
+  - stableId: character.quaternius.male-dark
+    displayName: "\u5148\u950B\xB7\u7537\uFF08\u6DF1\u80A4\u8272\uFF09"
+    prefab: {fileID: 2592560334959238721, guid: 44f96595d82324d699d6408fb3a509ac, type: 3}
+    expectedHeight: 1.8
+  - stableId: character.quaternius.female-dark
+    displayName: "\u5148\u950B\xB7\u5973"
+    prefab: {fileID: 4261298600861479238, guid: cd49693d9c60a4406aa8b284a7569b2b, type: 3}
+    expectedHeight: 1.8

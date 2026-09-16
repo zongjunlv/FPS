@@ -91,16 +91,30 @@ public static class Issue80ThirdPartyLicenseBuilder
             "holding-both-shoot",
             "die");
 
-        manifest.Configure(
-            "content.third_party.character_intake",
-            new[] { source },
-            new[] { characterA, characterB, characterC, animations },
-            new[]
+        ThirdPartySourceRecord[] sources = manifest.Sources
+            .Where(record => record.StableId != SourceId)
+            .Prepend(source)
+            .ToArray();
+        ThirdPartyAssetRecord[] assets = manifest.Assets
+            .Where(record => record.SourceStableId != SourceId)
+            .Prepend(animations)
+            .Prepend(characterC)
+            .Prepend(characterB)
+            .Prepend(characterA)
+            .ToArray();
+        string[] formalCharacters = manifest.FormalCharacterStableIds.Count >= 3
+            ? manifest.FormalCharacterStableIds.ToArray()
+            : new[]
             {
                 characterA.StableId,
                 characterB.StableId,
                 characterC.StableId
-            });
+            };
+        manifest.Configure(
+            "content.third_party.character_intake",
+            sources,
+            assets,
+            formalCharacters);
         EditorUtility.SetDirty(manifest);
         AssetDatabase.SaveAssets();
         AssetDatabase.Refresh();

@@ -42,7 +42,7 @@ public sealed class Issue80ThirdPartyLicenseTests
     public void AnimationAuthorizationIsSeparateAndIncludesCoreClips()
     {
         ThirdPartyAssetRecord animation = manifest.Assets.SingleOrDefault(
-            asset => asset.Kind == ThirdPartyAssetKind.AnimationSet);
+            asset => asset.StableId == "animation.kenney.blocky.core");
         Assert.That(animation, Is.Not.Null);
         Assert.That(manifest.FormalCharacterStableIds,
             Does.Not.Contain(animation.StableId));

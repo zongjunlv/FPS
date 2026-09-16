@@ -33,6 +33,44 @@ MonoBehaviour:
     modificationAllowed: 1
     attributionRequired: 0
     verified: 1
+  - stableId: source.quaternius.universal-base-characters
+    displayName: Quaternius Universal Base Characters
+    author: Quaternius
+    version: Standard 2025-12-16
+    sourcePageUrl: https://quaternius.com/packs/universalbasecharacters.html
+    sourceDownloadUrl: https://quaternius.itch.io/universal-base-characters/purchase
+    licenseSpdxId: CC0-1.0
+    licenseUrl: https://creativecommons.org/publicdomain/zero/1.0/legalcode
+    bundledLicensePath: Assets/ThirdParty/Quaternius/UniversalBaseCharacters/License/License_Standard.txt
+    bundledLicenseSha256: 0f4beaf0fe360a7732e58bbe3dbf60a2422367fbea60cb9ea4add968f383268e
+    legalCodePath: Assets/ThirdParty/Kenney/BlockyCharacters/License/CC0-1.0-Legal-Code.txt
+    legalCodeSha256: a2010f343487d3f7618affe54f789f5487602331c0a8d03f49e9a7c547cf0499
+    downloadedOn: 2026-09-16
+    archiveSha256: fdbf1804c90dfc1ea03e992bff7da2dfd1a79318e13270a660180f9308455f40
+    commercialUseAllowed: 1
+    redistributionAllowed: 1
+    modificationAllowed: 1
+    attributionRequired: 0
+    verified: 1
+  - stableId: source.quaternius.universal-animation-library
+    displayName: Quaternius Universal Animation Library
+    author: Quaternius / Gonzalo Furnier
+    version: Standard v3.0
+    sourcePageUrl: https://quaternius.com/packs/universalanimationlibrary.html
+    sourceDownloadUrl: https://quaternius.itch.io/universal-animation-library/purchase
+    licenseSpdxId: CC0-1.0
+    licenseUrl: https://creativecommons.org/publicdomain/zero/1.0/legalcode
+    bundledLicensePath: Assets/ThirdParty/Quaternius/UniversalAnimationLibrary/License/License.txt
+    bundledLicenseSha256: 6d01f55c6e4c49a2c9963e147e561945ae2c83958c8ca667d90a6bffdbfac061
+    legalCodePath: Assets/ThirdParty/Kenney/BlockyCharacters/License/CC0-1.0-Legal-Code.txt
+    legalCodeSha256: a2010f343487d3f7618affe54f789f5487602331c0a8d03f49e9a7c547cf0499
+    downloadedOn: 2026-09-16
+    archiveSha256: cc73fc4e495b82958207316596317a3f40b9fa38065bde1027937452da537724
+    commercialUseAllowed: 1
+    redistributionAllowed: 1
+    modificationAllowed: 1
+    attributionRequired: 0
+    verified: 1
   assets:
   - stableId: model.kenney.blocky.a
     displayName: "Blocky Character A\uFF08\u80E1\u987B\u6210\u4EBA\uFF09"
@@ -72,7 +110,49 @@ MonoBehaviour:
     - holding-both
     - holding-both-shoot
     - die
+  - stableId: model.quaternius.superhero.male-light
+    displayName: "Universal Base Character \u7537\u6027\uFF08\u6D45\u80A4\u8272\uFF09"
+    kind: 0
+    sourceStableId: source.quaternius.universal-base-characters
+    assetPath: Assets/ThirdParty/Quaternius/UniversalBaseCharacters/Models/Superhero_Male_FullBody.fbx
+    fileSha256: 79344418d754a59730b79d1874752e9592143db34abe8adf138fa9a92a4768e9
+    approvedForProduction: 1
+    requiredSubAssets: []
+  - stableId: model.quaternius.superhero.male-dark
+    displayName: "Universal Base Character \u7537\u6027\uFF08\u6DF1\u80A4\u8272\uFF09"
+    kind: 0
+    sourceStableId: source.quaternius.universal-base-characters
+    assetPath: Assets/ThirdParty/Quaternius/UniversalBaseCharacters/Models/Superhero_Male_FullBody.fbx
+    fileSha256: 79344418d754a59730b79d1874752e9592143db34abe8adf138fa9a92a4768e9
+    approvedForProduction: 1
+    requiredSubAssets: []
+  - stableId: model.quaternius.superhero.female-dark
+    displayName: "Universal Base Character \u5973\u6027\uFF08\u6DF1\u80A4\u8272\uFF09"
+    kind: 0
+    sourceStableId: source.quaternius.universal-base-characters
+    assetPath: Assets/ThirdParty/Quaternius/UniversalBaseCharacters/Models/Superhero_Female_FullBody.fbx
+    fileSha256: 0727e7b236eeea4115531e07aeb2bb7690c1a58155f743bbf54282944fb97ea9
+    approvedForProduction: 1
+    requiredSubAssets: []
+  - stableId: animation.quaternius.ual1.standard
+    displayName: "Universal Animation Library \u6807\u51C6\u52A8\u4F5C\u96C6"
+    kind: 1
+    sourceStableId: source.quaternius.universal-animation-library
+    assetPath: Assets/ThirdParty/Quaternius/UniversalAnimationLibrary/Animations/UAL1_Standard.fbx
+    fileSha256: 21b32d912da3cb93426d974fb945e86f5b2e86970acd2ce89905e0fbf9f1dcc2
+    approvedForProduction: 1
+    requiredSubAssets:
+    - Idle_Loop
+    - Walk_Loop
+    - Sprint_Loop
+    - Crouch_Idle_Loop
+    - Jump_Start
+    - Jump_Loop
+    - Jump_Land
+    - Pistol_Aim_Neutral
+    - Pistol_Shoot
+    - Pistol_Reload
   formalCharacterStableIds:
-  - model.kenney.blocky.a
-  - model.kenney.blocky.b
-  - model.kenney.blocky.c
+  - model.quaternius.superhero.male-light
+  - model.quaternius.superhero.male-dark
+  - model.quaternius.superhero.female-dark
