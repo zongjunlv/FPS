@@ -1,6 +1,6 @@
 using System.Collections;
+using FPS.Core.GameModes;
 using UnityEngine;
-using UnityEngine.SceneManagement;
 
 public sealed class CityNewTerminalMissionBootstrap : MonoBehaviour
 {
@@ -19,7 +19,9 @@ public sealed class CityNewTerminalMissionBootstrap : MonoBehaviour
 
     private void Start()
     {
-        if (SceneManager.GetActiveScene().name != "CityNew")
+        if (!GameModeContext.IsActive(
+                GameModeId.SoloBattle,
+                GameModeStage.Battle))
         {
             return;
         }

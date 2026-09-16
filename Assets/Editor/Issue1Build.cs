@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Linq;
 using UnityEditor;
 using UnityEditor.Build.Reporting;
 using UnityEditor.SceneManagement;
@@ -79,7 +80,10 @@ public static class Issue1Build
 
         var options = new BuildPlayerOptions
         {
-            scenes = new[] { ScenePath },
+            scenes = EditorBuildSettings.scenes
+                .Where(scene => scene.enabled)
+                .Select(scene => scene.path)
+                .ToArray(),
             locationPathName = outputPath,
             target = BuildTarget.StandaloneOSX,
             options = BuildOptions.Development

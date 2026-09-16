@@ -1,0 +1,27 @@
+{
+  "name": "FPS.Issue69GameModes.Tests",
+  "rootNamespace": "FPS.Tests.PlayMode.Issue69",
+  "references": [
+    "FPS.Core",
+    "FPS.Composition",
+    "FPS.Networking.Netcode",
+    "FPS.Networking.Session",
+    "Unity.Netcode.Runtime",
+    "Unity.InputSystem",
+    "Unity.InputSystem.ForUI",
+    "Unity.InputSystem.TestFramework",
+    "UnityEngine.UI"
+  ],
+  "includePlatforms": [],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": true,
+  "defineConstraints": [],
+  "versionDefines": [],
+  "noEngineReferences": false,
+  "optionalUnityReferences": [
+    "TestAssemblies"
+  ]
+}

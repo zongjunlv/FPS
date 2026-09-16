@@ -1,8 +1,8 @@
 using System.Collections;
 using System.Collections.Generic;
+using FPS.Core.GameModes;
 using UnityEngine;
 using UnityEngine.AI;
-using UnityEngine.SceneManagement;
 
 [RequireComponent(typeof(EnemySquadCoordinator))]
 public sealed class CityNewEnemySquadBootstrap : MonoBehaviour
@@ -13,7 +13,9 @@ public sealed class CityNewEnemySquadBootstrap : MonoBehaviour
 
     private IEnumerator Start()
     {
-        if (SceneManager.GetActiveScene().name != "CityNew")
+        if (!GameModeContext.IsActive(
+                GameModeId.SoloBattle,
+                GameModeStage.Battle))
         {
             yield break;
         }

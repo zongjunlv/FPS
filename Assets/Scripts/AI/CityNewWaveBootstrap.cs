@@ -1,6 +1,6 @@
 using System.Collections;
+using FPS.Core.GameModes;
 using UnityEngine;
-using UnityEngine.SceneManagement;
 
 public enum EnemyFactoryBackend
 {
@@ -44,7 +44,9 @@ public sealed class CityNewWaveBootstrap : MonoBehaviour
 
     private void Awake()
     {
-        if (SceneManager.GetActiveScene().name != "CityNew" ||
+        if (!GameModeContext.IsActive(
+                GameModeId.SoloBattle,
+                GameModeStage.Battle) ||
             instance != null)
         {
             enabled = false;

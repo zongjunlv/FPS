@@ -33,6 +33,8 @@ namespace FPS.Networking.Session
         private OptionalNetworkBootstrap networkBootstrap;
         private bool operationInProgress;
         private bool directSession;
+        private bool modeExitRequested;
+        private int operationGeneration;
 
         public event Action<CoopSessionState> StateChanged;
 
@@ -51,12 +53,19 @@ namespace FPS.Networking.Session
 
         private void OnDestroy()
         {
+            modeExitRequested = true;
+            operationGeneration++;
             UnbindSession();
+            activeSession = null;
+            directSession = false;
+            networkBootstrap?.Shutdown();
         }
 
         public async Task<bool> HostAsync(string profile = null)
         {
             if (!CanBegin()) return false;
+            modeExitRequested = false;
+            int generation = ++operationGeneration;
             operationInProgress = true;
             SetState(CoopSessionState.Initializing);
 
@@ -64,6 +73,7 @@ namespace FPS.Networking.Session
             {
                 EnsureNetworkPrerequisite();
                 await EnsureServicesAsync(profile);
+                if (!IsCurrentOperation(generation)) return false;
                 SetState(CoopSessionState.Hosting);
                 SessionOptions options = new SessionOptions
                 {
@@ -71,20 +81,33 @@ namespace FPS.Networking.Session
                     MaxPlayers = MaximumPlayers,
                     IsPrivate = true
                 }.WithRelayNetwork();
-                BindSession(await MultiplayerService.Instance
-                    .CreateSessionAsync(options));
+                ISession created = await MultiplayerService.Instance
+                    .CreateSessionAsync(options);
+                if (!IsCurrentOperation(generation))
+                {
+                    await LeaveStaleSessionAsync(created);
+                    return false;
+                }
+
+                BindSession(created);
                 LastFailure = string.Empty;
                 SetState(CoopSessionState.Connected);
                 return true;
             }
             catch (Exception exception)
             {
-                Fail(exception);
+                if (IsCurrentOperation(generation))
+                {
+                    Fail(exception);
+                }
                 return false;
             }
             finally
             {
-                operationInProgress = false;
+                if (generation == operationGeneration)
+                {
+                    operationInProgress = false;
+                }
             }
         }
 
@@ -102,27 +125,73 @@ namespace FPS.Networking.Session
             }
 
             operationInProgress = true;
+            modeExitRequested = false;
+            int generation = ++operationGeneration;
             SetState(CoopSessionState.Initializing);
             try
             {
                 EnsureNetworkPrerequisite();
                 await EnsureServicesAsync(profile);
+                if (!IsCurrentOperation(generation)) return false;
                 SetState(CoopSessionState.Joining);
-                BindSession(await MultiplayerService.Instance
-                    .JoinSessionByCodeAsync(normalized));
+                ISession joined = await MultiplayerService.Instance
+                    .JoinSessionByCodeAsync(normalized);
+                if (!IsCurrentOperation(generation))
+                {
+                    await LeaveStaleSessionAsync(joined);
+                    return false;
+                }
+
+                BindSession(joined);
                 LastFailure = string.Empty;
                 SetState(CoopSessionState.Connected);
                 return true;
             }
             catch (Exception exception)
             {
-                Fail(exception);
+                if (IsCurrentOperation(generation))
+                {
+                    Fail(exception);
+                }
                 return false;
             }
             finally
             {
-                operationInProgress = false;
+                if (generation == operationGeneration)
+                {
+                    operationInProgress = false;
+                }
             }
+        }
+
+        public async Task ShutdownForModeExitAsync()
+        {
+            modeExitRequested = true;
+            operationGeneration++;
+            operationInProgress = false;
+            directSession = false;
+
+            ISession leaving = activeSession;
+            UnbindSession();
+            activeSession = null;
+
+            if (leaving != null)
+            {
+                try
+                {
+                    await leaving.LeaveAsync();
+                }
+                catch (Exception exception)
+                {
+                    Debug.LogWarning(
+                        $"合作战局退出时清理失败：{exception.Message}",
+                        this);
+                }
+            }
+
+            networkBootstrap?.Shutdown();
+            LastFailure = string.Empty;
+            SetState(CoopSessionState.Offline);
         }
 
         public async Task LeaveAsync()
@@ -169,6 +238,8 @@ namespace FPS.Networking.Session
             NetworkEndpointSettings endpoint)
         {
             if (!CanBegin()) return false;
+            modeExitRequested = false;
+            operationGeneration++;
             operationInProgress = true;
             try
             {
@@ -216,6 +287,26 @@ namespace FPS.Networking.Session
             }
 
             return true;
+        }
+
+        private bool IsCurrentOperation(int generation)
+        {
+            return !modeExitRequested &&
+                   generation == operationGeneration &&
+                   this != null;
+        }
+
+        private static async Task LeaveStaleSessionAsync(ISession session)
+        {
+            if (session == null) return;
+            try
+            {
+                await session.LeaveAsync();
+            }
+            catch (Exception)
+            {
+                // A newer mode owns the screen now. Cleanup is best effort.
+            }
         }
 
         private int ResolveDirectPlayerCount()

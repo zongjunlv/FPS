@@ -1,6 +1,6 @@
 using System.Collections.Generic;
+using FPS.Core.GameModes;
 using UnityEngine;
-using UnityEngine.SceneManagement;
 
 public sealed class CityNewInventoryBootstrap : MonoBehaviour
 {
@@ -18,7 +18,9 @@ public sealed class CityNewInventoryBootstrap : MonoBehaviour
 
     private void Start()
     {
-        if (SceneManager.GetActiveScene().name != "CityNew")
+        if (!GameModeContext.IsActive(
+                GameModeId.SoloBattle,
+                GameModeStage.Battle))
         {
             return;
         }

@@ -30,6 +30,11 @@ public static class RunSnapshotSession
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
     private static void ResetSession()
     {
+        ResetForModeTransition();
+    }
+
+    public static void ResetForModeTransition()
+    {
         RunSnapshotPresentationGate.HideImmediately();
         pending = null;
         pendingWorld = null;

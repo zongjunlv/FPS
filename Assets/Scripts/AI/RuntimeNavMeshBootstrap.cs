@@ -1,8 +1,8 @@
 using System.Collections;
+using FPS.Core.GameModes;
 using Unity.AI.Navigation;
 using UnityEngine;
 using UnityEngine.AI;
-using UnityEngine.SceneManagement;
 
 public sealed class RuntimeNavMeshBootstrap : MonoBehaviour
 {
@@ -16,7 +16,9 @@ public sealed class RuntimeNavMeshBootstrap : MonoBehaviour
     public static void EnsureForActiveScene()
     {
         if (instance != null ||
-            SceneManager.GetActiveScene().name != "CityNew")
+            !GameModeContext.IsActive(
+                GameModeId.SoloBattle,
+                GameModeStage.Battle))
         {
             return;
         }
@@ -104,6 +106,15 @@ public sealed class RuntimeNavMeshBootstrap : MonoBehaviour
             {
                 agent.Warp(hit.position);
             }
+        }
+    }
+
+    private void OnDestroy()
+    {
+        IsReady = false;
+        if (instance == this)
+        {
+            instance = null;
         }
     }
 }

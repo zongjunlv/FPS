@@ -1,0 +1,550 @@
+using System;
+using System.Collections.Generic;
+using FPS.Core.GameModes;
+using TMPro;
+using UnityEngine;
+using UnityEngine.EventSystems;
+using UnityEngine.InputSystem.UI;
+
+[DisallowMultipleComponent]
+public sealed class GameModeEntryButton : MonoBehaviour
+{
+    [SerializeField] private GameModeId mode;
+
+    public GameModeId Mode => mode;
+
+    public void Configure(GameModeId configuredMode)
+    {
+        mode = configuredMode;
+    }
+}
+
+[DisallowMultipleComponent]
+public sealed class ModeEntryView : MonoBehaviour
+{
+    private readonly List<UnityEngine.UI.Button> buttons = new();
+    private GameModeFlowController flow;
+    private TMP_FontAsset font;
+    private bool ownsFont;
+    private TMP_Text statusText;
+    private UnityEngine.UI.Image statusBackground;
+
+    public IReadOnlyList<UnityEngine.UI.Button> Buttons => buttons;
+    public string VisibleStatus => statusText != null
+        ? statusText.text
+        : string.Empty;
+
+    public static ModeEntryView Create(
+        GameModeFlowController configuredFlow,
+        GameModeCatalog catalog)
+    {
+        GameObject canvasObject = ModeUiFactory.CreateCanvas(
+            "Mode Entry Canvas",
+            200);
+        ModeEntryView view = canvasObject.AddComponent<ModeEntryView>();
+        view.Build(configuredFlow, catalog);
+        return view;
+    }
+
+    public UnityEngine.UI.Button GetButton(GameModeId mode)
+    {
+        for (int index = 0; index < buttons.Count; index++)
+        {
+            GameModeEntryButton tag =
+                buttons[index].GetComponent<GameModeEntryButton>();
+            if (tag != null && tag.Mode == mode)
+            {
+                return buttons[index];
+            }
+        }
+
+        return null;
+    }
+
+    private void Build(
+        GameModeFlowController configuredFlow,
+        GameModeCatalog catalog)
+    {
+        flow = configuredFlow;
+        font = ModeUiFactory.CreateChineseFont(out ownsFont);
+        RectTransform canvas = (RectTransform)transform;
+        ModeUiFactory.CreateImage(
+            "Background",
+            canvas,
+            new Color(0.018f, 0.035f, 0.05f, 1f),
+            true);
+        CreateAmbientAccent(canvas);
+
+        RectTransform panel = ModeUiFactory.CreateRect(
+            "Mode Selection",
+            canvas);
+        panel.anchorMin = panel.anchorMax = panel.pivot =
+            new Vector2(0.5f, 0.5f);
+        panel.sizeDelta = new Vector2(840f, 900f);
+        panel.anchoredPosition = Vector2.zero;
+
+        TMP_Text eyebrow = ModeUiFactory.CreateText(
+            "Eyebrow",
+            panel,
+            "TACTICAL SURVIVAL PROTOCOL",
+            18f,
+            TextAlignmentOptions.Center,
+            font,
+            new Color(0.28f, 0.86f, 0.82f, 1f));
+        ModeUiFactory.SetRect(
+            eyebrow.rectTransform,
+            new Vector2(0.5f, 1f),
+            new Vector2(0.5f, 1f),
+            new Vector2(0.5f, 1f),
+            new Vector2(760f, 34f),
+            new Vector2(0f, -24f));
+
+        TMP_Text title = ModeUiFactory.CreateText(
+            "Title",
+            panel,
+            "FPS 生存行动",
+            54f,
+            TextAlignmentOptions.Center,
+            font,
+            Color.white);
+        title.fontStyle = FontStyles.Bold;
+        ModeUiFactory.SetRect(
+            title.rectTransform,
+            new Vector2(0.5f, 1f),
+            new Vector2(0.5f, 1f),
+            new Vector2(0.5f, 1f),
+            new Vector2(800f, 80f),
+            new Vector2(0f, -66f));
+
+        TMP_Text subtitle = ModeUiFactory.CreateText(
+            "Subtitle",
+            panel,
+            "选择行动模式",
+            23f,
+            TextAlignmentOptions.Center,
+            font,
+            new Color(0.68f, 0.75f, 0.78f, 1f));
+        ModeUiFactory.SetRect(
+            subtitle.rectTransform,
+            new Vector2(0.5f, 1f),
+            new Vector2(0.5f, 1f),
+            new Vector2(0.5f, 1f),
+            new Vector2(700f, 42f),
+            new Vector2(0f, -146f));
+
+        RectTransform list = ModeUiFactory.CreateRect(
+            "Mode List",
+            panel);
+        ModeUiFactory.SetRect(
+            list,
+            new Vector2(0.5f, 0.5f),
+            new Vector2(0.5f, 0.5f),
+            new Vector2(0.5f, 0.5f),
+            new Vector2(760f, 456f),
+            new Vector2(0f, 18f));
+        UnityEngine.UI.VerticalLayoutGroup layout =
+            list.gameObject.AddComponent<UnityEngine.UI.VerticalLayoutGroup>();
+        layout.spacing = 18f;
+        layout.padding = new RectOffset(0, 0, 0, 0);
+        layout.childAlignment = TextAnchor.UpperCenter;
+        layout.childControlWidth = true;
+        layout.childControlHeight = true;
+        layout.childForceExpandWidth = true;
+        layout.childForceExpandHeight = false;
+
+        for (int index = 0; index < catalog.Modes.Count; index++)
+        {
+            GameModeDefinition definition = catalog.Modes[index];
+            UnityEngine.UI.Button button = CreateModeButton(list, definition);
+            buttons.Add(button);
+        }
+
+        LinkNavigation();
+
+        TMP_Text help = ModeUiFactory.CreateText(
+            "Input Help",
+            panel,
+            "W / S 或方向键选择    Enter 确认    鼠标点击",
+            17f,
+            TextAlignmentOptions.Center,
+            font,
+            new Color(0.55f, 0.64f, 0.68f, 1f));
+        ModeUiFactory.SetRect(
+            help.rectTransform,
+            new Vector2(0.5f, 0f),
+            new Vector2(0.5f, 0f),
+            new Vector2(0.5f, 0f),
+            new Vector2(760f, 40f),
+            new Vector2(0f, 76f));
+
+        RectTransform status = ModeUiFactory.CreateRect(
+            "Transition Status",
+            panel);
+        ModeUiFactory.SetRect(
+            status,
+            new Vector2(0.5f, 0f),
+            new Vector2(0.5f, 0f),
+            new Vector2(0.5f, 0f),
+            new Vector2(760f, 54f),
+            new Vector2(0f, 12f));
+        statusBackground = status.gameObject.AddComponent<
+            UnityEngine.UI.Image>();
+        statusBackground.color = new Color(0.04f, 0.12f, 0.15f, 0.92f);
+        statusBackground.raycastTarget = false;
+        statusText = ModeUiFactory.CreateText(
+            "Message",
+            status,
+            string.Empty,
+            18f,
+            TextAlignmentOptions.Center,
+            font,
+            Color.white);
+        ModeUiFactory.Stretch(statusText.rectTransform, 14f, 0f);
+
+        ModeUiFactory.EnsureEventSystem();
+        if (buttons.Count > 0)
+        {
+            EventSystem.current.SetSelectedGameObject(buttons[0].gameObject);
+        }
+
+        flow.StateChanged += Refresh;
+        Refresh();
+    }
+
+    private UnityEngine.UI.Button CreateModeButton(
+        RectTransform parent,
+        GameModeDefinition definition)
+    {
+        GameObject buttonObject = new GameObject(
+            definition.DisplayName,
+            typeof(RectTransform),
+            typeof(CanvasRenderer),
+            typeof(UnityEngine.UI.Image),
+            typeof(UnityEngine.UI.Button),
+            typeof(UnityEngine.UI.LayoutElement),
+            typeof(GameModeEntryButton));
+        buttonObject.transform.SetParent(parent, false);
+        UnityEngine.UI.LayoutElement element =
+            buttonObject.GetComponent<UnityEngine.UI.LayoutElement>();
+        element.preferredHeight = 140f;
+        element.minHeight = 140f;
+        UnityEngine.UI.Image image =
+            buttonObject.GetComponent<UnityEngine.UI.Image>();
+        image.color = new Color(0.045f, 0.085f, 0.11f, 0.98f);
+        image.raycastTarget = true;
+        UnityEngine.UI.Button button =
+            buttonObject.GetComponent<UnityEngine.UI.Button>();
+        UnityEngine.UI.ColorBlock colors = button.colors;
+        colors.normalColor = new Color(0.045f, 0.085f, 0.11f, 1f);
+        colors.highlightedColor = new Color(0.075f, 0.18f, 0.2f, 1f);
+        colors.selectedColor = new Color(0.075f, 0.24f, 0.25f, 1f);
+        colors.pressedColor = new Color(0.04f, 0.34f, 0.32f, 1f);
+        colors.disabledColor = new Color(0.035f, 0.05f, 0.06f, 0.8f);
+        colors.colorMultiplier = 1f;
+        colors.fadeDuration = 0.1f;
+        button.colors = colors;
+        button.transition = UnityEngine.UI.Selectable.Transition.ColorTint;
+        button.onClick.AddListener(() => flow.TryEnterMode(definition.Mode));
+        buttonObject.GetComponent<GameModeEntryButton>()
+            .Configure(definition.Mode);
+
+        RectTransform accent = ModeUiFactory.CreateRect(
+            "Accent",
+            buttonObject.transform);
+        ModeUiFactory.SetRect(
+            accent,
+            new Vector2(0f, 0f),
+            new Vector2(0f, 1f),
+            new Vector2(0f, 0.5f),
+            new Vector2(5f, 0f),
+            Vector2.zero);
+        UnityEngine.UI.Image accentImage =
+            accent.gameObject.AddComponent<UnityEngine.UI.Image>();
+        accentImage.color = new Color(0.28f, 0.9f, 0.84f, 1f);
+        accentImage.raycastTarget = false;
+
+        TMP_Text name = ModeUiFactory.CreateText(
+            "Mode Name",
+            buttonObject.transform,
+            definition.DisplayName,
+            29f,
+            TextAlignmentOptions.Left,
+            font,
+            Color.white);
+        name.fontStyle = FontStyles.Bold;
+        ModeUiFactory.SetRect(
+            name.rectTransform,
+            new Vector2(0f, 0.5f),
+            new Vector2(0f, 0.5f),
+            new Vector2(0f, 0.5f),
+            new Vector2(620f, 42f),
+            new Vector2(34f, 23f));
+
+        TMP_Text description = ModeUiFactory.CreateText(
+            "Description",
+            buttonObject.transform,
+            definition.Description,
+            17f,
+            TextAlignmentOptions.Left,
+            font,
+            new Color(0.66f, 0.73f, 0.76f, 1f));
+        ModeUiFactory.SetRect(
+            description.rectTransform,
+            new Vector2(0f, 0.5f),
+            new Vector2(0f, 0.5f),
+            new Vector2(0f, 0.5f),
+            new Vector2(660f, 44f),
+            new Vector2(34f, -28f));
+
+        TMP_Text arrow = ModeUiFactory.CreateText(
+            "Arrow",
+            buttonObject.transform,
+            "›",
+            42f,
+            TextAlignmentOptions.Center,
+            font,
+            new Color(0.28f, 0.9f, 0.84f, 1f));
+        ModeUiFactory.SetRect(
+            arrow.rectTransform,
+            new Vector2(1f, 0.5f),
+            new Vector2(1f, 0.5f),
+            new Vector2(1f, 0.5f),
+            new Vector2(54f, 70f),
+            new Vector2(-20f, 0f));
+        return button;
+    }
+
+    private void LinkNavigation()
+    {
+        for (int index = 0; index < buttons.Count; index++)
+        {
+            UnityEngine.UI.Navigation navigation =
+                new UnityEngine.UI.Navigation
+                {
+                    mode = UnityEngine.UI.Navigation.Mode.Explicit,
+                    selectOnUp = buttons[(index - 1 + buttons.Count) % buttons.Count],
+                    selectOnDown = buttons[(index + 1) % buttons.Count]
+                };
+            buttons[index].navigation = navigation;
+        }
+    }
+
+    private void Refresh()
+    {
+        if (flow == null || statusText == null)
+        {
+            return;
+        }
+
+        for (int index = 0; index < buttons.Count; index++)
+        {
+            buttons[index].interactable = !flow.IsLoading;
+        }
+
+        string status = !string.IsNullOrWhiteSpace(flow.FailureMessage)
+            ? flow.FailureMessage
+            : flow.IsLoading
+                ? $"{flow.StatusMessage}  {flow.LoadingProgress:P0}"
+                : "等待选择";
+        statusText.text = status;
+        bool failed = !string.IsNullOrWhiteSpace(flow.FailureMessage);
+        statusText.color = failed
+            ? new Color(1f, 0.48f, 0.4f, 1f)
+            : Color.white;
+        statusBackground.color = failed
+            ? new Color(0.24f, 0.055f, 0.055f, 0.94f)
+            : new Color(0.04f, 0.12f, 0.15f, 0.92f);
+    }
+
+    private static void CreateAmbientAccent(RectTransform canvas)
+    {
+        RectTransform topLine = ModeUiFactory.CreateRect("Top Accent", canvas);
+        ModeUiFactory.SetRect(
+            topLine,
+            new Vector2(0f, 1f),
+            new Vector2(1f, 1f),
+            new Vector2(0.5f, 1f),
+            new Vector2(0f, 3f),
+            Vector2.zero);
+        UnityEngine.UI.Image line =
+            topLine.gameObject.AddComponent<UnityEngine.UI.Image>();
+        line.color = new Color(0.22f, 0.84f, 0.8f, 0.8f);
+        line.raycastTarget = false;
+    }
+
+    private void OnDestroy()
+    {
+        if (flow != null)
+        {
+            flow.StateChanged -= Refresh;
+        }
+
+        if (ownsFont && font != null)
+        {
+            Destroy(font);
+        }
+    }
+}
+
+internal static class ModeUiFactory
+{
+    public static GameObject CreateCanvas(string objectName, int sortingOrder)
+    {
+        GameObject canvasObject = new GameObject(
+            objectName,
+            typeof(RectTransform),
+            typeof(Canvas),
+            typeof(UnityEngine.UI.CanvasScaler),
+            typeof(UnityEngine.UI.GraphicRaycaster));
+        Canvas canvas = canvasObject.GetComponent<Canvas>();
+        canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+        canvas.sortingOrder = sortingOrder;
+        UnityEngine.UI.CanvasScaler scaler =
+            canvasObject.GetComponent<UnityEngine.UI.CanvasScaler>();
+        scaler.uiScaleMode =
+            UnityEngine.UI.CanvasScaler.ScaleMode.ScaleWithScreenSize;
+        scaler.referenceResolution = new Vector2(1920f, 1080f);
+        scaler.screenMatchMode =
+            UnityEngine.UI.CanvasScaler.ScreenMatchMode.MatchWidthOrHeight;
+        scaler.matchWidthOrHeight = 0.5f;
+        return canvasObject;
+    }
+
+    public static void EnsureEventSystem()
+    {
+        EventSystem eventSystem = EventSystem.current;
+        if (eventSystem == null)
+        {
+            GameObject eventSystemObject = new GameObject(
+                "EventSystem",
+                typeof(EventSystem),
+                typeof(InputSystemUIInputModule));
+            eventSystem = eventSystemObject.GetComponent<EventSystem>();
+        }
+
+        InputSystemUIInputModule module =
+            eventSystem.GetComponent<InputSystemUIInputModule>();
+        module ??= eventSystem.gameObject.AddComponent<InputSystemUIInputModule>();
+        if (module.actionsAsset == null)
+        {
+            module.AssignDefaultActions();
+        }
+    }
+
+    public static TMP_FontAsset CreateChineseFont(out bool owned)
+    {
+        string[] fonts =
+        {
+            "PingFang SC",
+            "Microsoft YaHei",
+            "Noto Sans CJK SC",
+            "Source Han Sans SC",
+            "Arial Unicode MS"
+        };
+
+        for (int index = 0; index < fonts.Length; index++)
+        {
+            TMP_FontAsset candidate = TMP_FontAsset.CreateFontAsset(
+                fonts[index],
+                "Regular",
+                48);
+            if (candidate != null && candidate.HasCharacter('中', false, true))
+            {
+                candidate.name = "模式入口中文动态字体";
+                owned = true;
+                return candidate;
+            }
+
+            if (candidate != null)
+            {
+                UnityEngine.Object.Destroy(candidate);
+            }
+        }
+
+        owned = false;
+        return Resources.Load<TMP_FontAsset>(
+            "Fonts & Materials/LiberationSans SDF");
+    }
+
+    public static RectTransform CreateRect(string name, Transform parent)
+    {
+        GameObject gameObject = new GameObject(name, typeof(RectTransform));
+        gameObject.transform.SetParent(parent, false);
+        return (RectTransform)gameObject.transform;
+    }
+
+    public static UnityEngine.UI.Image CreateImage(
+        string name,
+        Transform parent,
+        Color color,
+        bool stretch)
+    {
+        RectTransform rect = CreateRect(name, parent);
+        UnityEngine.UI.Image image =
+            rect.gameObject.AddComponent<UnityEngine.UI.Image>();
+        image.color = color;
+        image.raycastTarget = false;
+        if (stretch)
+        {
+            Stretch(rect);
+        }
+
+        return image;
+    }
+
+    public static TMP_Text CreateText(
+        string name,
+        Transform parent,
+        string value,
+        float size,
+        TextAlignmentOptions alignment,
+        TMP_FontAsset font,
+        Color color)
+    {
+        GameObject textObject = new GameObject(
+            name,
+            typeof(RectTransform),
+            typeof(CanvasRenderer),
+            typeof(TextMeshProUGUI));
+        textObject.transform.SetParent(parent, false);
+        TMP_Text text = textObject.GetComponent<TMP_Text>();
+        text.text = value;
+        text.fontSize = size;
+        text.alignment = alignment;
+        text.color = color;
+        text.raycastTarget = false;
+        text.enableWordWrapping = false;
+        if (font != null)
+        {
+            text.font = font;
+        }
+
+        return text;
+    }
+
+    public static void SetRect(
+        RectTransform rect,
+        Vector2 anchorMin,
+        Vector2 anchorMax,
+        Vector2 pivot,
+        Vector2 size,
+        Vector2 position)
+    {
+        rect.anchorMin = anchorMin;
+        rect.anchorMax = anchorMax;
+        rect.pivot = pivot;
+        rect.sizeDelta = size;
+        rect.anchoredPosition = position;
+    }
+
+    public static void Stretch(
+        RectTransform rect,
+        float horizontalPadding = 0f,
+        float verticalPadding = 0f)
+    {
+        rect.anchorMin = Vector2.zero;
+        rect.anchorMax = Vector2.one;
+        rect.offsetMin = new Vector2(horizontalPadding, verticalPadding);
+        rect.offsetMax = new Vector2(-horizontalPadding, -verticalPadding);
+    }
+}

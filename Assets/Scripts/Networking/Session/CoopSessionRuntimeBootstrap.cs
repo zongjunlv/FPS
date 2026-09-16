@@ -6,20 +6,36 @@ namespace FPS.Networking.Session
 {
     public static class CoopSessionRuntimeBootstrap
     {
+        public static bool ShouldInstallForCurrentMode =>
+            HasCommandLineRole();
+
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         private static void InstallOptionalOverlay()
         {
-            if (UnityEngine.Object.FindFirstObjectByType<
-                    CoopSessionController>() != null)
+            if (HasCommandLineRole())
             {
-                return;
+                EnsureForCurrentMode();
+            }
+        }
+
+        public static CoopSessionController EnsureForCurrentMode()
+        {
+            CoopSessionController existing =
+                UnityEngine.Object.FindFirstObjectByType<
+                    CoopSessionController>();
+            if (existing != null)
+            {
+                return existing;
             }
 
             var runtime = new GameObject("Optional Coop Session");
             runtime.AddComponent<CoopSessionController>();
             runtime.AddComponent<CoopSessionOverlay>();
             UnityEngine.Object.DontDestroyOnLoad(runtime);
-            TryAutoStart(runtime.GetComponent<CoopSessionController>());
+            CoopSessionController controller =
+                runtime.GetComponent<CoopSessionController>();
+            TryAutoStart(controller);
+            return controller;
         }
 
         private static void TryAutoStart(CoopSessionController controller)
@@ -46,6 +62,13 @@ namespace FPS.Networking.Session
                 string.Equals(role, "host",
                     StringComparison.OrdinalIgnoreCase),
                 settings);
+        }
+
+        private static bool HasCommandLineRole()
+        {
+            string role = Argument("-issue65-role");
+            return string.Equals(role, "host", StringComparison.OrdinalIgnoreCase) ||
+                   string.Equals(role, "client", StringComparison.OrdinalIgnoreCase);
         }
 
         private static string Argument(string key)

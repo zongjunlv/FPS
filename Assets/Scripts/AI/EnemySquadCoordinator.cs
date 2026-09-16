@@ -1,6 +1,6 @@
 using System.Collections.Generic;
+using FPS.Core.GameModes;
 using UnityEngine;
-using UnityEngine.SceneManagement;
 
 public readonly struct EnemyAlertDebugRelation
 {
@@ -74,13 +74,17 @@ public sealed class EnemySquadCoordinator : MonoBehaviour,
                 gameObject.AddComponent<EnemySquadAlertDebugView>();
         }
 
-        if (SceneManager.GetActiveScene().name == "CityNew" &&
+        if (GameModeContext.IsActive(
+                GameModeId.SoloBattle,
+                GameModeStage.Battle) &&
             GetComponent<CityNewWaveBootstrap>() == null)
         {
             gameObject.AddComponent<CityNewWaveBootstrap>();
         }
 
-        if (SceneManager.GetActiveScene().name == "CityNew" &&
+        if (GameModeContext.IsActive(
+                GameModeId.SoloBattle,
+                GameModeStage.Battle) &&
             GetComponent<CityNewEnemySquadBootstrap>() == null)
         {
             gameObject.AddComponent<CityNewEnemySquadBootstrap>();

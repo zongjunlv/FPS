@@ -1,10 +1,10 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using FPS.Core.GameModes;
 using FPS.SaveGame;
 using UnityEngine;
 using UnityEngine.AI;
-using UnityEngine.SceneManagement;
 
 [DefaultExecutionOrder(-2000)]
 public sealed class CityNewModularLayoutBootstrap : MonoBehaviour
@@ -55,7 +55,9 @@ public sealed class CityNewModularLayoutBootstrap : MonoBehaviour
 
     public static CityNewModularLayoutBootstrap EnsureForActiveScene()
     {
-        if (SceneManager.GetActiveScene().name != "CityNew") return null;
+        if (!GameModeContext.IsActive(
+                GameModeId.SoloBattle,
+                GameModeStage.Battle)) return null;
         if (instance != null) return instance;
         var root = new GameObject("Modular Combat Layout Bootstrap");
         instance = root.AddComponent<CityNewModularLayoutBootstrap>();

@@ -1,3 +1,4 @@
+using FPS.Core.GameModes;
 using UnityEngine;
 
 [DefaultExecutionOrder(-900)]
@@ -14,6 +15,16 @@ public sealed class CityNewPlayerModeInstaller : MonoBehaviour
 
     public bool TryInstall()
     {
+        if (!GameModeContext.IsActive(
+                GameModeId.SoloBattle,
+                GameModeStage.Battle))
+        {
+            InitializationError =
+                "当前模式不是单人战斗，已跳过 CityNew 玩家安装。";
+            enabled = false;
+            return false;
+        }
+
         if (IsInitialized)
         {
             return true;

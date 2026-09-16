@@ -1,3 +1,4 @@
+using FPS.Core.GameModes;
 using FPS.Networking.Netcode;
 using FPS.Networking.Session;
 using UnityEngine;
@@ -20,6 +21,12 @@ public sealed class CoopNetworkInputBridge : MonoBehaviour
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
     private static void Install()
     {
+        if (GameModeContext.RequestedMode != GameModeId.Coop &&
+            !CoopSessionRuntimeBootstrap.ShouldInstallForCurrentMode)
+        {
+            return;
+        }
+
         PlayerController player = FindFirstObjectByType<PlayerController>();
         if (player != null &&
             player.GetComponent<CoopNetworkInputBridge>() == null)

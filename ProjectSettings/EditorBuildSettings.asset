@@ -6,6 +6,18 @@ EditorBuildSettings:
   serializedVersion: 2
   m_Scenes:
   - enabled: 1
+    path: Assets/Scenes/Modes/ModeEntry.unity
+    guid: 46cb9be3b3d2d4ea7b53e249f7da5e21
+  - enabled: 1
+    path: Assets/Scenes/Modes/Tutorial.unity
+    guid: 5cffcf3644e4c42cd9460b832dcf5daf
+  - enabled: 1
+    path: Assets/Scenes/Modes/BattlePreparation.unity
+    guid: 427e84dd2b2374aac949dd5eb60fed0b
+  - enabled: 1
+    path: Assets/Scenes/Modes/CoopLogin.unity
+    guid: a0f68d8ce6c834a968d800b821ff96aa
+  - enabled: 1
     path: Assets/ImportPackages/CSAssets2026/Scenes/CityNew.unity
     guid: 88e2ce9ba5e5fe54dbb8eb1fb3d2ef0a
   m_configObjects:
