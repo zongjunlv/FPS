@@ -78,20 +78,20 @@ public sealed class ThirdPersonWeaponRig : MonoBehaviour
             error = "右手基准必须与 WeaponSocket 原点重合。";
             return false;
         }
-        Vector3 muzzle = transform.InverseTransformPoint(
+        Vector3 muzzle = calibrationRoot.InverseTransformPoint(
             muzzlePoint.position);
-        Vector3 aim = transform.InverseTransformPoint(aimPoint.position);
-        Vector3 leftGrip = transform.InverseTransformPoint(
+        Vector3 aim = calibrationRoot.InverseTransformPoint(aimPoint.position);
+        Vector3 leftGrip = calibrationRoot.InverseTransformPoint(
             leftHandGrip.position);
         if (muzzle.z <= aim.z + 0.05f || muzzle.z <= leftGrip.z)
         {
             error = "枪口必须位于瞄准点和左手握点前方。";
             return false;
         }
-        if (Vector3.Dot(muzzlePoint.forward, transform.forward) < 0.9f ||
-            Vector3.Dot(aimPoint.forward, transform.forward) < 0.9f)
+        if (Vector3.Dot(muzzlePoint.forward, calibrationRoot.forward) < 0.9f ||
+            Vector3.Dot(aimPoint.forward, calibrationRoot.forward) < 0.9f)
         {
-            error = "枪口或瞄准点方向与武器 +Z 前向不一致。";
+            error = "枪口或瞄准点方向与校准根 +Z 前向不一致。";
             return false;
         }
         if (Mathf.Abs(aim.x - muzzle.x) > 0.2f ||

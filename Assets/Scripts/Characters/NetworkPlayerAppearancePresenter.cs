@@ -183,10 +183,12 @@ public sealed class NetworkPlayerAppearancePresenter : MonoBehaviour
                 "联机人物表现缺少有效第三人称武器定义。");
         weaponInstance = ThirdPersonWeaponFactory.Create(
             weaponDefinition, animator, out weaponSocket);
+        animationDriver?.BindWeaponRig(weaponInstance);
     }
 
     private void DisposeWeapon()
     {
+        animationDriver?.BindWeaponRig(null);
         if (weaponSocket != null)
         {
             weaponSocket.gameObject.SetActive(false);

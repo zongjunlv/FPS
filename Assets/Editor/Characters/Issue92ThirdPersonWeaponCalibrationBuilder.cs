@@ -33,8 +33,9 @@ public static class Issue92ThirdPersonWeaponCalibrationBuilder
             PrefabRoot + "/CalibratedAR.prefab",
             DefinitionRoot + "/weapon_lpsp_ar.asset",
             new Vector3(0.015f, -0.015f, 0f),
-            Vector3.zero,
-            Vector3.one),
+            new Vector3(0f, 180f, 0f),
+            Vector3.one,
+            new Vector3(0f, 0.032f, -0.08f)),
         new(
             "weapon.lpsp.handgun",
             "战术手枪",
@@ -43,8 +44,9 @@ public static class Issue92ThirdPersonWeaponCalibrationBuilder
             PrefabRoot + "/CalibratedHandgun.prefab",
             DefinitionRoot + "/weapon_lpsp_handgun.asset",
             new Vector3(-0.012f, -0.006f, 0.008f),
-            new Vector3(0f, 0.6f, 0f),
-            Vector3.one)
+            new Vector3(0f, 180.6f, 0f),
+            Vector3.one,
+            new Vector3(0f, 0.024f, -0.05f))
     };
 
     [MenuItem("FPS/Content/Issue 92/Rebuild Third Person Weapon Calibration")]
@@ -115,6 +117,7 @@ public static class Issue92ThirdPersonWeaponCalibrationBuilder
         Directory.CreateDirectory(outputDirectory);
         foreach (int character in Enumerable.Range(0, 3))
         foreach (int weapon in Enumerable.Range(0, 2))
+        foreach (float pitch in new[] { -45f, 0f, 45f })
         foreach (WeaponCalibrationView view in new[]
                  {
                      WeaponCalibrationView.Front,
@@ -124,10 +127,12 @@ public static class Issue92ThirdPersonWeaponCalibrationBuilder
         {
             preview.SelectCharacter(character);
             preview.SelectWeapon(weapon);
+            preview.SetAimPitch(pitch);
             preview.SetView(view);
             CaptureCamera(preview.PreviewCamera, Path.Combine(
                 outputDirectory,
                 $"character-{character + 1}_weapon-{weapon + 1}_" +
+                $"pitch-{pitch:+0;-0;0}_" +
                 $"{view.ToString().ToLowerInvariant()}.png"));
         }
         Debug.Log($"Issue #92 校准截图已写入：{outputDirectory}");
@@ -190,7 +195,7 @@ public static class Issue92ThirdPersonWeaponCalibrationBuilder
             model.transform.SetLocalPositionAndRotation(
                 Vector3.zero, Quaternion.identity);
             model.transform.localScale = Vector3.one;
-            Transform sourceGrip = FindRequired(model.transform, "SOCKET_Grip");
+            _ = FindRequired(model.transform, "SOCKET_Grip");
             Transform sourceAim = FindRequired(model.transform, "SOCKET_Scope");
             Transform sourceMuzzle = FindRequired(
                 model.transform, "SOCKET_Muzzle");
@@ -199,7 +204,7 @@ public static class Issue92ThirdPersonWeaponCalibrationBuilder
 
             Transform leftGrip = CreatePoint(calibrationRoot,
                 ThirdPersonWeaponRig.LeftHandGripName,
-                calibrationRoot.InverseTransformPoint(sourceGrip.position));
+                spec.LeftHandGripLocalPosition);
             Transform aim = CreatePoint(calibrationRoot,
                 ThirdPersonWeaponRig.AimPointName,
                 calibrationRoot.InverseTransformPoint(sourceAim.position));
@@ -491,7 +496,8 @@ public static class Issue92ThirdPersonWeaponCalibrationBuilder
             string definitionPath,
             Vector3 localPosition,
             Vector3 localEuler,
-            Vector3 localScale)
+            Vector3 localScale,
+            Vector3 leftHandGripLocalPosition)
         {
             StableId = stableId;
             DisplayName = displayName;
@@ -502,6 +508,7 @@ public static class Issue92ThirdPersonWeaponCalibrationBuilder
             LocalPosition = localPosition;
             LocalEuler = localEuler;
             LocalScale = localScale;
+            LeftHandGripLocalPosition = leftHandGripLocalPosition;
         }
 
         public string StableId { get; }
@@ -513,5 +520,6 @@ public static class Issue92ThirdPersonWeaponCalibrationBuilder
         public Vector3 LocalPosition { get; }
         public Vector3 LocalEuler { get; }
         public Vector3 LocalScale { get; }
+        public Vector3 LeftHandGripLocalPosition { get; }
     }
 }

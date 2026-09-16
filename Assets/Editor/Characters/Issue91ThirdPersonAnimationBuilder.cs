@@ -54,6 +54,28 @@ public static class Issue91ThirdPersonAnimationBuilder
         return controller;
     }
 
+    public static void ApplyAimPitchConvention(
+        EditorAnimatorController controller)
+    {
+        if (controller == null)
+            throw new ArgumentNullException(nameof(controller));
+        Dictionary<string, AnimationClip> clips = LoadClips();
+        AnimatorControllerLayer upper = controller.layers.Single(layer =>
+            layer.name == ThirdPersonAnimationParameters.UpperBodyLayerName);
+        AnimatorState aimState = upper.stateMachine.states.Single(child =>
+            child.state.name == "Aim").state;
+        if (aimState.motion is not BlendTree aimTree)
+            throw new InvalidOperationException("Upper Body/Aim 缺少俯仰混合树。");
+        aimTree.children = new[]
+        {
+            ThresholdChild(clips["Pistol_Aim_Up"], -1f),
+            ThresholdChild(clips["Pistol_Aim_Neutral"], 0f),
+            ThresholdChild(clips["Pistol_Aim_Down"], 1f)
+        };
+        EditorUtility.SetDirty(aimTree);
+        EditorUtility.SetDirty(controller);
+    }
+
     private static Dictionary<string, AnimationClip> LoadClips()
     {
         return AssetDatabase.LoadAllAssetsAtPath(AnimationModelPath)
@@ -214,6 +236,7 @@ public static class Issue91ThirdPersonAnimationBuilder
             name = ThirdPersonAnimationParameters.UpperBodyLayerName,
             defaultWeight = 1f,
             blendingMode = AnimatorLayerBlendingMode.Override,
+            iKPass = true,
             avatarMask = mask,
             stateMachine = machine
         });
@@ -300,9 +323,9 @@ public static class Issue91ThirdPersonAnimationBuilder
         AssetDatabase.AddObjectToAsset(tree, controller);
         tree.children = new[]
         {
-            ThresholdChild(clips["Pistol_Aim_Down"], -1f),
+            ThresholdChild(clips["Pistol_Aim_Up"], -1f),
             ThresholdChild(clips["Pistol_Aim_Neutral"], 0f),
-            ThresholdChild(clips["Pistol_Aim_Up"], 1f)
+            ThresholdChild(clips["Pistol_Aim_Down"], 1f)
         };
         return tree;
     }

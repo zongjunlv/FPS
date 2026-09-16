@@ -16,10 +16,12 @@ public sealed class WeaponCalibrationPreviewController : MonoBehaviour
     [SerializeField] private int selectedCharacter;
     [SerializeField] private int selectedWeapon;
     [SerializeField] private WeaponCalibrationView selectedView;
+    [SerializeField, Range(-55f, 55f)] private float selectedAimPitch;
     [SerializeField] private bool showRuntimePanel = true;
 
     private GameObject appearanceInstance;
     private ThirdPersonWeaponRig weaponInstance;
+    private ThirdPersonWeaponIkController weaponIk;
 
     public PlayerAppearanceCatalog Appearances => appearances;
     public ThirdPersonWeaponCatalog Weapons => weapons;
@@ -29,6 +31,8 @@ public sealed class WeaponCalibrationPreviewController : MonoBehaviour
     public GameObject AppearanceInstance => appearanceInstance;
     public ThirdPersonWeaponRig WeaponInstance => weaponInstance;
     public Camera PreviewCamera => previewCamera;
+    public float SelectedAimPitch => selectedAimPitch;
+    public ThirdPersonWeaponIkController WeaponIk => weaponIk;
 
     public void Configure(
         PlayerAppearanceCatalog appearanceCatalog,
@@ -65,6 +69,9 @@ public sealed class WeaponCalibrationPreviewController : MonoBehaviour
             SetView(WeaponCalibrationView.Side);
         if (Input.GetKeyDown(KeyCode.Alpha3))
             SetView(WeaponCalibrationView.Aim);
+        if (Input.GetKeyDown(KeyCode.Alpha4)) SetAimPitch(45f);
+        if (Input.GetKeyDown(KeyCode.Alpha5)) SetAimPitch(0f);
+        if (Input.GetKeyDown(KeyCode.Alpha6)) SetAimPitch(-45f);
     }
 
     public void PreviousCharacter() => SelectCharacter(
@@ -93,6 +100,26 @@ public sealed class WeaponCalibrationPreviewController : MonoBehaviour
         ApplyCameraView();
     }
 
+    public void SetAimPitch(float pitchDegrees)
+    {
+        selectedAimPitch = Mathf.Clamp(pitchDegrees, -55f, 55f);
+        if (weaponIk != null)
+        {
+            weaponIk.SetAimPitch(selectedAimPitch);
+            weaponIk.Tick(1f);
+        }
+        if (appearanceInstance != null)
+        {
+            Animator animator = appearanceInstance.GetComponent<Animator>();
+            animator.SetFloat(
+                ThirdPersonAnimationParameters.AimPitch,
+                ThirdPersonWeaponIkController
+                    .ResolvePresentationAimParameter(selectedAimPitch));
+            animator.Update(0.1f);
+        }
+        ApplyCameraView();
+    }
+
     public void Refresh()
     {
         if (appearances == null || weapons == null || previewAnchor == null ||
@@ -113,9 +140,20 @@ public sealed class WeaponCalibrationPreviewController : MonoBehaviour
         animator.Rebind();
         animator.SetBool(ThirdPersonAnimationParameters.Grounded, true);
         animator.SetBool(ThirdPersonAnimationParameters.Aiming, true);
-        animator.Update(0.2f);
         weaponInstance = ThirdPersonWeaponFactory.Create(
             weapons.Definitions[selectedWeapon], animator, out _);
+        weaponIk = appearanceInstance.AddComponent<
+            ThirdPersonWeaponIkController>();
+        weaponIk.Configure(animator, weaponInstance,
+            appearanceInstance.transform);
+        weaponIk.SetAiming(true);
+        weaponIk.SetAimPitch(selectedAimPitch);
+        weaponIk.Tick(1f);
+        animator.SetFloat(
+            ThirdPersonAnimationParameters.AimPitch,
+            ThirdPersonWeaponIkController
+                .ResolvePresentationAimParameter(selectedAimPitch));
+        animator.Update(0.2f);
         ApplyCameraView();
     }
 
@@ -163,7 +201,7 @@ public sealed class WeaponCalibrationPreviewController : MonoBehaviour
         {
             return;
         }
-        GUILayout.BeginArea(new Rect(18f, 18f, 560f, 145f), GUI.skin.box);
+        GUILayout.BeginArea(new Rect(18f, 18f, 560f, 190f), GUI.skin.box);
         GUILayout.Label("第三人称武器校准 · Q/E 切角色 · Z/X 切武器");
         GUILayout.Label(
             $"角色：{appearances.Definitions[selectedCharacter].DisplayName}    " +
@@ -174,6 +212,12 @@ public sealed class WeaponCalibrationPreviewController : MonoBehaviour
         if (GUILayout.Button("3 瞄准")) SetView(WeaponCalibrationView.Aim);
         GUILayout.EndHorizontal();
         GUILayout.Label($"当前视图：{selectedView}");
+        GUILayout.BeginHorizontal();
+        if (GUILayout.Button("4 向下")) SetAimPitch(45f);
+        if (GUILayout.Button("5 水平")) SetAimPitch(0f);
+        if (GUILayout.Button("6 向上")) SetAimPitch(-45f);
+        GUILayout.EndHorizontal();
+        GUILayout.Label($"受限瞄准俯仰：{selectedAimPitch:0}°");
         GUILayout.EndArea();
     }
 }

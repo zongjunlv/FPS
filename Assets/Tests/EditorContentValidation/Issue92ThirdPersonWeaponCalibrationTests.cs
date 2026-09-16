@@ -71,8 +71,8 @@ public sealed class Issue92ThirdPersonWeaponCalibrationTests
             Assert.That(rig.CasingEjectionPoint, Is.Not.Null,
                 definition.StableId);
             Assert.That(Vector3.Dot(rig.MuzzlePoint.forward,
-                    rig.transform.forward), Is.GreaterThan(0.9f),
-                $"{definition.StableId} 枪口方向必须沿 +Z。");
+                    rig.CalibrationRoot.forward), Is.GreaterThan(0.9f),
+                $"{definition.StableId} 枪口方向必须沿校准根 +Z。");
             Assert.That(definition.CalibratedPrefab
                     .GetComponentsInChildren<Collider>(true), Is.Empty,
                 definition.StableId);

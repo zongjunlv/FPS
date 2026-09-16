@@ -11,6 +11,7 @@ public sealed class NetworkThirdPersonAnimator : MonoBehaviour
 
     private NetworkPlayerReplica replica;
     private Animator animator;
+    private ThirdPersonWeaponIkController weaponIk;
     private bool aiming = true;
 
     public Animator BoundAnimator => animator;
@@ -19,6 +20,10 @@ public sealed class NetworkThirdPersonAnimator : MonoBehaviour
     public float NormalizedAimPitch { get; private set; }
     public ThirdPersonCombatAction LastCombatAction { get; private set; }
     public int CombatActionCount { get; private set; }
+    public ThirdPersonWeaponIkController WeaponIk => weaponIk;
+    public Ray CurrentWeaponFeedbackRay => weaponIk != null
+        ? weaponIk.FeedbackRay
+        : new Ray(transform.position, transform.forward);
 
     private void Awake()
     {
@@ -44,6 +49,12 @@ public sealed class NetworkThirdPersonAnimator : MonoBehaviour
         animator.applyRootMotion = false;
         animator.updateMode = AnimatorUpdateMode.Normal;
         animator.cullingMode = AnimatorCullingMode.AlwaysAnimate;
+        weaponIk = animator.GetComponent<ThirdPersonWeaponIkController>();
+        if (weaponIk == null)
+            weaponIk = animator.gameObject.AddComponent<
+                ThirdPersonWeaponIkController>();
+        weaponIk.Configure(animator, null, transform);
+        weaponIk.SetAiming(aiming);
         int upperBodyLayer = animator.GetLayerIndex(
             ThirdPersonAnimationParameters.UpperBodyLayerName);
         if (upperBodyLayer >= 0) animator.SetLayerWeight(upperBodyLayer, 1f);
@@ -63,6 +74,7 @@ public sealed class NetworkThirdPersonAnimator : MonoBehaviour
     public void SetAiming(bool value)
     {
         aiming = value;
+        weaponIk?.SetAiming(aiming);
         if (animator != null)
             animator.SetBool(ThirdPersonAnimationParameters.Aiming, aiming);
     }
@@ -76,6 +88,7 @@ public sealed class NetworkThirdPersonAnimator : MonoBehaviour
         }
         LastCombatAction = action;
         CombatActionCount++;
+        weaponIk?.BeginCombatAction(action);
         if (animator == null) return;
         int trigger = action switch
         {
@@ -109,6 +122,7 @@ public sealed class NetworkThirdPersonAnimator : MonoBehaviour
             direction.Normalize();
         LocalMovement = direction * NormalizedSpeed;
         NormalizedAimPitch = Mathf.Clamp(aimPitchDegrees / 89f, -1f, 1f);
+        weaponIk?.SetAimPitch(aimPitchDegrees);
 
         if (animator == null) return;
         float movementBlend = immediate ? 0f : movementDamping;
@@ -123,10 +137,31 @@ public sealed class NetworkThirdPersonAnimator : MonoBehaviour
         animator.SetFloat(ThirdPersonAnimationParameters.VerticalSpeed,
             worldVelocity.y, movementBlend, safeDelta);
         animator.SetFloat(ThirdPersonAnimationParameters.AimPitch,
-            NormalizedAimPitch, aimBlend, safeDelta);
+            ThirdPersonWeaponIkController.ResolvePresentationAimParameter(
+                aimPitchDegrees), aimBlend, safeDelta);
         animator.SetBool(ThirdPersonAnimationParameters.Crouching, crouching);
         animator.SetBool(ThirdPersonAnimationParameters.Grounded, grounded);
         animator.SetBool(ThirdPersonAnimationParameters.Aiming, aiming);
+    }
+
+    public void BindWeaponRig(ThirdPersonWeaponRig rig)
+    {
+        if (animator != null && weaponIk == null)
+        {
+            weaponIk = animator.GetComponent<ThirdPersonWeaponIkController>();
+            if (weaponIk == null)
+                weaponIk = animator.gameObject.AddComponent<
+                    ThirdPersonWeaponIkController>();
+            weaponIk.Configure(animator, rig, transform);
+        }
+        else
+        {
+            weaponIk?.BindWeaponRig(rig);
+        }
+        weaponIk?.SetAiming(aiming);
+        weaponIk?.SetAimPitch(replica != null
+            ? replica.PresentedAimPitch
+            : NormalizedAimPitch * 89f);
     }
 
     private void HandlePosePresented(
