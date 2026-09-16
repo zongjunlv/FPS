@@ -1,0 +1,19 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: db9af355612f14fa68f765c1fe798c10, type: 3}
+  m_Name: weapon_lpsp_handgun
+  m_EditorClassIdentifier: FPS.Composition::ThirdPersonWeaponDefinition
+  stableId: weapon.lpsp.handgun
+  displayName: "\u6218\u672F\u624B\u67AA"
+  kind: 1
+  calibratedPrefab: {fileID: 4824055278311720602, guid: 1a47d61019ddb49c5a6a93fdb4a41d19, type: 3}
+  supportsCasingEjection: 1

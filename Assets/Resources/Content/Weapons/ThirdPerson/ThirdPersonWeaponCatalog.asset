@@ -1,0 +1,18 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 1c7370c727d0b41b29e639712ca2e3fe, type: 3}
+  m_Name: ThirdPersonWeaponCatalog
+  m_EditorClassIdentifier: FPS.Composition::ThirdPersonWeaponCatalog
+  defaultWeaponId: weapon.lpsp.ar
+  definitions:
+  - {fileID: 11400000, guid: 85856b7cbec5c4767be167f1cec8fa9d, type: 2}
+  - {fileID: 11400000, guid: 96ed19815b09a453aa86662465552cdd, type: 2}

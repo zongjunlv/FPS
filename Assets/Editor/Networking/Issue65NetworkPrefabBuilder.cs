@@ -14,12 +14,6 @@ namespace FPS.Editor.Networking
             ResourceFolder + "/CoopSessionAuthority.prefab";
         private const string ReplicaPath =
             ResourceFolder + "/CoopPlayerReplica.prefab";
-        private const string ThirdPersonWeaponPath =
-            ResourceFolder + "/ThirdPersonRifleVisual.prefab";
-        private const string ThirdPersonWeaponSourcePath =
-            "Assets/ImportPackages/CSAssets2026/Infima Games/" +
-            "Low Poly Shooter Pack - Free Sample/Prefabs/Weapons/" +
-            "P_LPSP_WEP_AR_01.prefab";
         private const string DefaultPrefabsPath =
             "Assets/DefaultNetworkPrefabs.asset";
 
@@ -41,7 +35,17 @@ namespace FPS.Editor.Networking
                 UnityEngine.Object.DestroyImmediate(authority);
             }
 
-            GameObject thirdPersonWeapon = BuildThirdPersonWeaponVisual();
+            ThirdPersonWeaponCatalog weaponCatalog =
+                AssetDatabase.LoadAssetAtPath<ThirdPersonWeaponCatalog>(
+                    ThirdPersonWeaponCatalog.DefaultAssetPath);
+            if (weaponCatalog == null)
+            {
+                throw new InvalidOperationException(
+                    "第三人称武器目录不存在，请先运行 Issue 92 构建器。");
+            }
+            if (!weaponCatalog.TryValidate(out string weaponError))
+                throw new InvalidOperationException(
+                    $"第三人称武器目录不可用：{weaponError}");
             GameObject replica = new GameObject("CoopPlayerReplica");
             try
             {
@@ -56,11 +60,9 @@ namespace FPS.Editor.Networking
                     replica.AddComponent<NetworkPlayerAppearancePresenter>();
                 presenter.Configure(
                     visualRoot,
-                    thirdPersonWeapon,
-                    castOwnerShadows: true,
-                    new Vector3(0.02f, 0.04f, 0.02f),
-                    new Vector3(0f, 90f, 90f),
-                    Vector3.one);
+                    weaponCatalog,
+                    weaponCatalog.DefaultWeaponId,
+                    castOwnerShadows: true);
                 PrefabUtility.SaveAsPrefabAsset(replica, ReplicaPath);
             }
             finally
@@ -73,66 +75,6 @@ namespace FPS.Editor.Networking
             RegisterDefaultPrefabs();
             Debug.Log(
                 "[Issue65] Rebuilt authority and player replica prefabs.");
-        }
-
-        private static GameObject BuildThirdPersonWeaponVisual()
-        {
-            GameObject source = AssetDatabase.LoadAssetAtPath<GameObject>(
-                ThirdPersonWeaponSourcePath);
-            if (source == null)
-            {
-                throw new InvalidOperationException(
-                    $"第三人称武器源资源缺失：{ThirdPersonWeaponSourcePath}");
-            }
-
-            GameObject root = new GameObject("ThirdPersonRifleVisual");
-            try
-            {
-                GameObject model = (GameObject)PrefabUtility.InstantiatePrefab(
-                    source);
-                model.name = "Model";
-                model.transform.SetParent(root.transform, false);
-                model.transform.SetLocalPositionAndRotation(
-                    Vector3.zero, Quaternion.identity);
-                model.transform.localScale = Vector3.one;
-
-                foreach (MonoBehaviour behaviour in root
-                             .GetComponentsInChildren<MonoBehaviour>(true))
-                    UnityEngine.Object.DestroyImmediate(behaviour);
-                foreach (Animator animator in root
-                             .GetComponentsInChildren<Animator>(true))
-                    UnityEngine.Object.DestroyImmediate(animator);
-                foreach (Collider collider in root
-                             .GetComponentsInChildren<Collider>(true))
-                    UnityEngine.Object.DestroyImmediate(collider);
-                foreach (Rigidbody body in root
-                             .GetComponentsInChildren<Rigidbody>(true))
-                    UnityEngine.Object.DestroyImmediate(body);
-                foreach (AudioSource sourceAudio in root
-                             .GetComponentsInChildren<AudioSource>(true))
-                    UnityEngine.Object.DestroyImmediate(sourceAudio);
-                foreach (ParticleSystem particles in root
-                             .GetComponentsInChildren<ParticleSystem>(true))
-                    UnityEngine.Object.DestroyImmediate(particles.gameObject);
-                foreach (Renderer renderer in root
-                             .GetComponentsInChildren<Renderer>(true))
-                {
-                    renderer.shadowCastingMode =
-                        UnityEngine.Rendering.ShadowCastingMode.On;
-                    renderer.receiveShadows = true;
-                }
-
-                GameObject prefab = PrefabUtility.SaveAsPrefabAsset(
-                    root, ThirdPersonWeaponPath);
-                if (prefab == null)
-                    throw new InvalidOperationException(
-                        "无法生成第三人称武器表现 Prefab。");
-                return prefab;
-            }
-            finally
-            {
-                UnityEngine.Object.DestroyImmediate(root);
-            }
         }
 
         private static void RegisterDefaultPrefabs()

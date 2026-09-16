@@ -9,25 +9,30 @@ using UnityEngine.Rendering;
 public sealed class NetworkPlayerAppearancePresenter : MonoBehaviour
 {
     [SerializeField] private Transform visualRoot;
-    [SerializeField] private GameObject thirdPersonWeaponPrefab;
+    [SerializeField] private ThirdPersonWeaponCatalog weaponCatalog;
+    [SerializeField] private string defaultWeaponId = "weapon.lpsp.ar";
     [SerializeField] private bool ownerBodyCastsShadows = true;
-    [SerializeField] private Vector3 weaponLocalPosition =
-        new(0.02f, 0.04f, 0.02f);
-    [SerializeField] private Vector3 weaponLocalEuler =
-        new(0f, 90f, 90f);
-    [SerializeField] private Vector3 weaponLocalScale = Vector3.one;
 
     private NetworkPlayerReplica replica;
     private PlayerAppearanceCatalog catalog;
     private GameObject appearanceInstance;
-    private GameObject weaponInstance;
+    private ThirdPersonWeaponRig weaponInstance;
+    private ThirdPersonWeaponDefinition weaponDefinition;
+    private Transform weaponSocket;
     private Animator animator;
     private NetworkThirdPersonAnimator animationDriver;
 
     public Transform VisualRoot => visualRoot;
     public GameObject CurrentAppearance => appearanceInstance;
-    public GameObject ThirdPersonWeapon => weaponInstance;
-    public GameObject ThirdPersonWeaponPrefab => thirdPersonWeaponPrefab;
+    public GameObject ThirdPersonWeapon =>
+        weaponInstance != null ? weaponInstance.gameObject : null;
+    public GameObject ThirdPersonWeaponPrefab => ResolveWeaponDefinition()
+        ?.CalibratedPrefab;
+    public ThirdPersonWeaponCatalog WeaponCatalog => weaponCatalog;
+    public ThirdPersonWeaponDefinition CurrentWeaponDefinition =>
+        weaponDefinition;
+    public ThirdPersonWeaponRig CurrentWeaponRig => weaponInstance;
+    public Transform WeaponSocket => weaponSocket;
     public bool OwnerBodyCastsShadows => ownerBodyCastsShadows;
     public NetworkThirdPersonAnimator AnimationDriver => animationDriver;
     public bool IsOwnerRepresentation =>
@@ -35,18 +40,14 @@ public sealed class NetworkPlayerAppearancePresenter : MonoBehaviour
 
     public void Configure(
         Transform presentationRoot,
-        GameObject weaponPrefab,
-        bool castOwnerShadows,
-        Vector3 weaponPosition,
-        Vector3 weaponEuler,
-        Vector3 weaponScale)
+        ThirdPersonWeaponCatalog catalog,
+        string weaponId,
+        bool castOwnerShadows)
     {
         visualRoot = presentationRoot;
-        thirdPersonWeaponPrefab = weaponPrefab;
+        weaponCatalog = catalog;
+        defaultWeaponId = weaponId?.Trim() ?? string.Empty;
         ownerBodyCastsShadows = castOwnerShadows;
-        weaponLocalPosition = weaponPosition;
-        weaponLocalEuler = weaponEuler;
-        weaponLocalScale = weaponScale;
     }
 
     private void Awake()
@@ -113,6 +114,16 @@ public sealed class NetworkPlayerAppearancePresenter : MonoBehaviour
         ApplyVisibilityPolicy();
     }
 
+    public void SetThirdPersonWeapon(string weaponId)
+    {
+        defaultWeaponId = weaponId?.Trim() ?? string.Empty;
+        if (animator != null && isActiveAndEnabled)
+        {
+            CreateThirdPersonWeapon();
+            ApplyVisibilityPolicy();
+        }
+    }
+
     private void HandleAppearanceChanged(string _)
     {
         if (!isActiveAndEnabled) return;
@@ -165,28 +176,26 @@ public sealed class NetworkPlayerAppearancePresenter : MonoBehaviour
     private void CreateThirdPersonWeapon()
     {
         DisposeWeapon();
-        if (animator == null || thirdPersonWeaponPrefab == null) return;
-        Transform rightHand = animator.GetBoneTransform(
-            HumanBodyBones.RightHand);
-        if (rightHand == null) return;
-
-        weaponInstance = Instantiate(
-            thirdPersonWeaponPrefab, rightHand, false);
-        weaponInstance.name = "ThirdPersonWeapon";
-        weaponInstance.transform.localPosition = weaponLocalPosition;
-        weaponInstance.transform.localRotation =
-            Quaternion.Euler(weaponLocalEuler);
-        weaponInstance.transform.localScale = weaponLocalScale;
-        DisableWeaponGameplayComponents(weaponInstance);
+        if (animator == null) return;
+        weaponDefinition = ResolveWeaponDefinition();
+        if (weaponDefinition == null)
+            throw new InvalidOperationException(
+                "联机人物表现缺少有效第三人称武器定义。");
+        weaponInstance = ThirdPersonWeaponFactory.Create(
+            weaponDefinition, animator, out weaponSocket);
     }
 
     private void DisposeWeapon()
     {
-        if (weaponInstance == null) return;
-        weaponInstance.SetActive(false);
-        if (Application.isPlaying) Destroy(weaponInstance);
-        else DestroyImmediate(weaponInstance);
+        if (weaponSocket != null)
+        {
+            weaponSocket.gameObject.SetActive(false);
+            if (Application.isPlaying) Destroy(weaponSocket.gameObject);
+            else DestroyImmediate(weaponSocket.gameObject);
+        }
         weaponInstance = null;
+        weaponDefinition = null;
+        weaponSocket = null;
     }
 
     private void EnsureVisualRoot()
@@ -204,29 +213,12 @@ public sealed class NetworkPlayerAppearancePresenter : MonoBehaviour
         visualRoot.SetParent(transform, false);
     }
 
-    private static void DisableWeaponGameplayComponents(GameObject weapon)
+    private ThirdPersonWeaponDefinition ResolveWeaponDefinition()
     {
-        foreach (MonoBehaviour behaviour in weapon
-                     .GetComponentsInChildren<MonoBehaviour>(true))
-            behaviour.enabled = false;
-        foreach (Animator weaponAnimator in weapon
-                     .GetComponentsInChildren<Animator>(true))
-            weaponAnimator.enabled = false;
-        foreach (Collider collider in weapon
-                     .GetComponentsInChildren<Collider>(true))
-            collider.enabled = false;
-        foreach (Rigidbody body in weapon
-                     .GetComponentsInChildren<Rigidbody>(true))
-        {
-            body.isKinematic = true;
-            body.detectCollisions = false;
-        }
-        foreach (AudioSource source in weapon
-                     .GetComponentsInChildren<AudioSource>(true))
-            source.enabled = false;
-        foreach (ParticleSystem particles in weapon
-                     .GetComponentsInChildren<ParticleSystem>(true))
-            particles.Stop(true, ParticleSystemStopBehavior.StopEmittingAndClear);
+        weaponCatalog ??= Resources.Load<ThirdPersonWeaponCatalog>(
+            ThirdPersonWeaponCatalog.ResourcesPath);
+        if (weaponCatalog == null) return null;
+        return weaponCatalog.Resolve(defaultWeaponId, out _);
     }
 
     private static bool IsDedicatedServer()

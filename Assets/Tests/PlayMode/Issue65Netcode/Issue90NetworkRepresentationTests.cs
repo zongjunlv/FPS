@@ -46,9 +46,16 @@ namespace FPS.Tests.PlayMode.Issue65
                     .GetComponentsInChildren<SkinnedMeshRenderer>(true),
                 Is.Not.Empty);
             Assert.That(presenter.ThirdPersonWeapon, Is.Not.Null);
+            Transform rightHand = presenter.CurrentAppearance
+                .GetComponent<Animator>()
+                .GetBoneTransform(HumanBodyBones.RightHand);
+            Assert.That(presenter.WeaponSocket.parent, Is.SameAs(rightHand));
             Assert.That(presenter.ThirdPersonWeapon.transform.parent,
-                Is.SameAs(presenter.CurrentAppearance.GetComponent<Animator>()
-                    .GetBoneTransform(HumanBodyBones.RightHand)));
+                Is.SameAs(presenter.WeaponSocket));
+            Assert.That(presenter.ThirdPersonWeapon.transform.localPosition,
+                Is.EqualTo(Vector3.zero));
+            Assert.That(presenter.ThirdPersonWeapon.transform.localRotation,
+                Is.EqualTo(Quaternion.identity));
             Assert.That(presenter.VisualRoot
                     .GetComponentsInChildren<Renderer>(true),
                 Has.All.Matches<Renderer>(renderer => renderer.enabled &&
@@ -109,9 +116,8 @@ namespace FPS.Tests.PlayMode.Issue65
                     .StableId,
                 Is.EqualTo("character.quaternius.female-dark"));
             Assert.That(presenter.VisualRoot
-                    .GetComponentsInChildren<Transform>(true)
-                    .Count(value => value.name == "ThirdPersonWeapon" &&
-                                    value.gameObject.activeSelf),
+                    .GetComponentsInChildren<ThirdPersonWeaponRig>(true)
+                    .Count(value => value.gameObject.activeSelf),
                 Is.EqualTo(1));
 
             var dead = new AuthoritativePlayerState(
@@ -144,14 +150,14 @@ namespace FPS.Tests.PlayMode.Issue65
             visualRoot.SetParent(replicaObject.transform, false);
             presenter = replicaObject.AddComponent<
                 NetworkPlayerAppearancePresenter>();
+            ThirdPersonWeaponCatalog weaponCatalog = Resources.Load<
+                ThirdPersonWeaponCatalog>(
+                ThirdPersonWeaponCatalog.ResourcesPath);
             presenter.Configure(
                 visualRoot,
-                Resources.Load<GameObject>(
-                    "Networking/ThirdPersonRifleVisual"),
-                true,
-                new Vector3(0.02f, 0.04f, 0.02f),
-                new Vector3(0f, 90f, 90f),
-                Vector3.one);
+                weaponCatalog,
+                weaponCatalog.DefaultWeaponId,
+                true);
             replica.ConfigureServerIdentity(authority, 1, appearanceId);
             if (owner) replica.EnableOwnerTestHook(authority, 1);
             replica.ApplyOwnershipPolicy();

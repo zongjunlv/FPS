@@ -121,11 +121,9 @@ MonoBehaviour:
   m_Name:
   m_EditorClassIdentifier: FPS.Composition::NetworkPlayerAppearancePresenter
   visualRoot: {fileID: 5002160852721167297}
-  thirdPersonWeaponPrefab: {fileID: 2131009110609878527, guid: c11743ecde4d84353b5d8cc247e8d532, type: 3}
+  weaponCatalog: {fileID: 11400000, guid: c277c672844b14017a4cf3e3eaf09ca3, type: 2}
+  defaultWeaponId: weapon.lpsp.ar
   ownerBodyCastsShadows: 1
-  weaponLocalPosition: {x: 0.02, y: 0.04, z: 0.02}
-  weaponLocalEuler: {x: 0, y: 90, z: 90}
-  weaponLocalScale: {x: 1, y: 1, z: 1}
 --- !u!1 &4233356697159750698
 GameObject:
   m_ObjectHideFlags: 0
