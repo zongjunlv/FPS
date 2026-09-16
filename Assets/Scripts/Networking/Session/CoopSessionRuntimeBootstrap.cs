@@ -29,6 +29,10 @@ namespace FPS.Networking.Session
                     existing.gameObject.AddComponent<CoopEconomyHudPresenter>();
                 if (existing.GetComponent<CoopMissionHudPresenter>() == null)
                     existing.gameObject.AddComponent<CoopMissionHudPresenter>();
+                if (existing.GetComponent<CoopReconnectPresentationGate>() ==
+                    null)
+                    existing.gameObject.AddComponent<
+                        CoopReconnectPresentationGate>();
                 return existing;
             }
 
@@ -37,6 +41,7 @@ namespace FPS.Networking.Session
             runtime.AddComponent<CoopSessionOverlay>();
             runtime.AddComponent<CoopEconomyHudPresenter>();
             runtime.AddComponent<CoopMissionHudPresenter>();
+            runtime.AddComponent<CoopReconnectPresentationGate>();
             UnityEngine.Object.DontDestroyOnLoad(runtime);
             CoopSessionController controller =
                 runtime.GetComponent<CoopSessionController>();
@@ -74,7 +79,8 @@ namespace FPS.Networking.Session
                         out CoopConnectionTicketCodec codec, out _))
                 {
                     string ticket = codec.Issue(account, version,
-                        DateTimeOffset.UtcNow.ToUnixTimeSeconds());
+                        DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+                        matchId: Argument("-issue99-match"));
                     controller.ConfigureConnectionCredential(ticket);
                 }
             }

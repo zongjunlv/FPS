@@ -154,6 +154,7 @@ namespace FPS.Networking.Session
                 CoopSessionState.Hosting => "创建中",
                 CoopSessionState.Joining => "加入中",
                 CoopSessionState.Connected => "已连接",
+                CoopSessionState.Reconnecting => "重连中",
                 CoopSessionState.Leaving => "离开中",
                 CoopSessionState.Failed => "失败",
                 _ => state.ToString()

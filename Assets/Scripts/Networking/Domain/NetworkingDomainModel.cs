@@ -682,7 +682,8 @@ namespace FPS.Networking.Domain
             double armor = 0d,
             double maximumArmor = 100d,
             AuthoritativePlayerLifeState lifeState =
-                AuthoritativePlayerLifeState.Alive)
+                AuthoritativePlayerLifeState.Alive,
+            uint acknowledgedMissionSequence = 0)
         {
             PlayerId = playerId;
             Position = position;
@@ -708,6 +709,7 @@ namespace FPS.Networking.Domain
             Armor = Math.Max(0d, Math.Min(armor, maximumArmor));
             MaximumArmor = Math.Max(0d, maximumArmor);
             LifeState = lifeState;
+            AcknowledgedMissionSequence = acknowledgedMissionSequence;
         }
 
         public int PlayerId { get; }
@@ -734,6 +736,7 @@ namespace FPS.Networking.Domain
         public double Armor { get; }
         public double MaximumArmor { get; }
         public AuthoritativePlayerLifeState LifeState { get; }
+        public uint AcknowledgedMissionSequence { get; }
         public bool IsCrouching => Stance == PlayerStance.Crouching;
         public bool IsAlive => LifeState == AuthoritativePlayerLifeState.Alive &&
             Health > 0d;

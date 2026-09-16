@@ -721,6 +721,7 @@ namespace FPS.Networking.Netcode
         public float DamageDealt;
         public float DamageTaken;
         public int UpgradesSelected;
+        public uint AcknowledgedMissionSequence;
 
         public bool IsAlive =>
             LifeState == AuthoritativePlayerLifeState.Alive && Health > 0f;
@@ -764,7 +765,9 @@ namespace FPS.Networking.Netcode
                 Kills = stats.Kills,
                 DamageDealt = (float)stats.DamageDealt,
                 DamageTaken = (float)stats.DamageTaken,
-                UpgradesSelected = stats.UpgradesSelected
+                UpgradesSelected = stats.UpgradesSelected,
+                AcknowledgedMissionSequence =
+                    value.AcknowledgedMissionSequence
             };
         }
 
@@ -796,7 +799,8 @@ namespace FPS.Networking.Netcode
                 MaximumHealth,
                 Armor,
                 MaximumArmor,
-                LifeState);
+                LifeState,
+                AcknowledgedMissionSequence);
         }
 
         public RemotePlayerSnapshot ToRemoteSnapshot()
@@ -842,6 +846,7 @@ namespace FPS.Networking.Netcode
             serializer.SerializeValue(ref DamageDealt);
             serializer.SerializeValue(ref DamageTaken);
             serializer.SerializeValue(ref UpgradesSelected);
+            serializer.SerializeValue(ref AcknowledgedMissionSequence);
 
             int positionX = 0;
             int positionY = 0;
@@ -940,7 +945,10 @@ namespace FPS.Networking.Netcode
                 Kills == other.Kills &&
                 DamageDealt.Equals(other.DamageDealt) &&
                 DamageTaken.Equals(other.DamageTaken) &&
-                UpgradesSelected == other.UpgradesSelected;
+                UpgradesSelected == other.UpgradesSelected &&
+                AcknowledgedMissionSequence ==
+                    other.AcknowledgedMissionSequence;
+
         }
 
         private static int QuantizeInt(float value, float scale)
@@ -1063,6 +1071,12 @@ namespace FPS.Networking.Netcode
         public float TerminalRadius;
         public float ExtractionRadius;
         public float ReviveRadius;
+        public int SnapshotPlayerCount;
+        public int SnapshotTargetCount;
+        public int SnapshotInventoryCount;
+        public int SnapshotDropCount;
+        public int SnapshotProgressionCount;
+        public int SnapshotUpgradeCount;
 
         public void NetworkSerialize<T>(BufferSerializer<T> serializer)
             where T : IReaderWriter
@@ -1095,6 +1109,12 @@ namespace FPS.Networking.Netcode
             serializer.SerializeValue(ref TerminalRadius);
             serializer.SerializeValue(ref ExtractionRadius);
             serializer.SerializeValue(ref ReviveRadius);
+            serializer.SerializeValue(ref SnapshotPlayerCount);
+            serializer.SerializeValue(ref SnapshotTargetCount);
+            serializer.SerializeValue(ref SnapshotInventoryCount);
+            serializer.SerializeValue(ref SnapshotDropCount);
+            serializer.SerializeValue(ref SnapshotProgressionCount);
+            serializer.SerializeValue(ref SnapshotUpgradeCount);
         }
 
         public bool Equals(NetcodeWorldState other)
@@ -1126,7 +1146,13 @@ namespace FPS.Networking.Netcode
                 ExtractionPosition.Equals(other.ExtractionPosition) &&
                 TerminalRadius.Equals(other.TerminalRadius) &&
                 ExtractionRadius.Equals(other.ExtractionRadius) &&
-                ReviveRadius.Equals(other.ReviveRadius);
+                ReviveRadius.Equals(other.ReviveRadius) &&
+                SnapshotPlayerCount == other.SnapshotPlayerCount &&
+                SnapshotTargetCount == other.SnapshotTargetCount &&
+                SnapshotInventoryCount == other.SnapshotInventoryCount &&
+                SnapshotDropCount == other.SnapshotDropCount &&
+                SnapshotProgressionCount == other.SnapshotProgressionCount &&
+                SnapshotUpgradeCount == other.SnapshotUpgradeCount;
         }
     }
 

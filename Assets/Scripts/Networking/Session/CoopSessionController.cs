@@ -19,6 +19,7 @@ namespace FPS.Networking.Session
         Hosting,
         Joining,
         Connected,
+        Reconnecting,
         Leaving,
         Failed
     }
@@ -182,6 +183,46 @@ namespace FPS.Networking.Session
                 pendingConnectionCredential);
         }
 
+        /// <summary>
+        /// Restarts only the client transport with a newly issued one-time
+        /// credential while retaining the current lobby and battle context.
+        /// </summary>
+        public bool ReconnectWithCredential(string credential)
+        {
+            if (operationInProgress || networkBootstrap == null ||
+                networkBootstrap.IsListening || IsHost ||
+                activeSession == null && !directSession)
+            {
+                LastFailure = "当前会话不能执行重连。";
+                return false;
+            }
+            string normalized = credential?.Trim() ?? string.Empty;
+            if (string.IsNullOrEmpty(normalized))
+            {
+                LastFailure = "重连需要新的短期身份凭证。";
+                return false;
+            }
+            operationInProgress = true;
+            SetState(CoopSessionState.Reconnecting);
+            try
+            {
+                pendingConnectionCredential = normalized;
+                networkBootstrap.ConfigureClientCredential(normalized);
+                if (!networkBootstrap.StartClient())
+                {
+                    LastFailure = networkBootstrap.LastFailure;
+                    SetState(CoopSessionState.Failed);
+                    return false;
+                }
+                LastFailure = string.Empty;
+                return true;
+            }
+            finally
+            {
+                operationInProgress = false;
+            }
+        }
+
         private void OnDestroy()
         {
             modeExitRequested = true;
@@ -189,6 +230,13 @@ namespace FPS.Networking.Session
             UnbindSession();
             activeSession = null;
             directSession = false;
+            if (networkBootstrap != null)
+            {
+                networkBootstrap.ClientConnected -=
+                    HandleReconnectableClientConnected;
+                networkBootstrap.ClientDisconnected -=
+                    HandleReconnectableClientDisconnect;
+            }
             networkBootstrap?.Shutdown();
         }
 
@@ -698,6 +746,10 @@ namespace FPS.Networking.Session
                 NetworkEndpointSettings.Localhost,
                 "FPS Coop Network Runtime");
             DontDestroyOnLoad(networkBootstrap.gameObject);
+            networkBootstrap.ClientDisconnected +=
+                HandleReconnectableClientDisconnect;
+            networkBootstrap.ClientConnected +=
+                HandleReconnectableClientConnected;
             if (!string.IsNullOrEmpty(pendingConnectionCredential))
                 networkBootstrap.ConfigureClientCredential(
                     pendingConnectionCredential);
@@ -758,6 +810,27 @@ namespace FPS.Networking.Session
                 networkBootstrap = null;
                 throw new InvalidOperationException(failure);
             }
+        }
+
+        private void HandleReconnectableClientDisconnect(ulong clientId)
+        {
+            if (modeExitRequested || networkBootstrap?.NetworkManager == null ||
+                networkBootstrap.NetworkManager.IsServer ||
+                clientId != networkBootstrap.NetworkManager.LocalClientId ||
+                State == CoopSessionState.Leaving ||
+                State == CoopSessionState.Offline)
+                return;
+            SetState(CoopSessionState.Reconnecting);
+        }
+
+        private void HandleReconnectableClientConnected(ulong clientId)
+        {
+            if (networkBootstrap?.NetworkManager == null ||
+                clientId != networkBootstrap.NetworkManager.LocalClientId ||
+                State != CoopSessionState.Reconnecting)
+                return;
+            LastFailure = string.Empty;
+            SetState(CoopSessionState.Connected);
         }
 
         private static CoopPlayerSpawnDefinition[] BuildPlayerSpawns()

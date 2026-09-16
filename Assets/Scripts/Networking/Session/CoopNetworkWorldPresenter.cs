@@ -74,6 +74,13 @@ namespace FPS.Networking.Session
                     NetworkCoopSessionAuthority>();
             }
             if (authority == null) return;
+            if (!authority.IsReplicatedSnapshotComplete)
+            {
+                foreach (TargetView view in targetViews.Values)
+                    if (view.View != null) view.View.SetActive(false);
+                VisibleViewCount = 0;
+                return;
+            }
 
             var states = new NetcodeTargetState[
                 authority.ReplicatedTargetCount];

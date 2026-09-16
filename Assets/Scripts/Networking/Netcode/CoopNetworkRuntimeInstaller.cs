@@ -157,6 +157,19 @@ namespace FPS.Networking.Netcode
             }
         }
 
+        private void Update()
+        {
+            if (bootstrap?.NetworkManager == null ||
+                !bootstrap.NetworkManager.IsServer ||
+                bootstrap.AdmissionService == null ||
+                sessionAuthority == null)
+                return;
+            while (bootstrap.AdmissionService.TryDequeueExpiredReservation(
+                       out CoopReconnectReservation expired))
+                sessionAuthority.FinalizeDisconnectedPlayer(
+                    expired.SimulationPlayerId);
+        }
+
         public void ConfigurePrefabs(
             NetworkObject authorityPrefab,
             NetworkObject replicaPrefab)
@@ -415,8 +428,14 @@ namespace FPS.Networking.Netcode
             {
                 return;
             }
-            if (deferPlayerSpawns && playerSpawnBarrierReleased)
+            bool approvedReconnect = bootstrap.AdmissionService != null &&
+                bootstrap.TryGetApprovedIdentity(clientId,
+                    out CoopApprovedIdentity identity) &&
+                identity.IsReconnection;
+            if (deferPlayerSpawns && playerSpawnBarrierReleased &&
+                !approvedReconnect)
             {
+                bootstrap.AdmissionService?.ReleaseImmediately(clientId);
                 bootstrap.NetworkManager.DisconnectClient(clientId,
                     "战局已经开始，请返回房间等待下一局。");
                 return;
@@ -492,7 +511,10 @@ namespace FPS.Networking.Netcode
             waitingClients.Remove(clientId);
             if (sessionAuthority != null)
             {
-                sessionAuthority.UnregisterPlayerClient(clientId);
+                if (bootstrap.AdmissionService != null)
+                    sessionAuthority.SuspendPlayerClient(clientId);
+                else
+                    sessionAuthority.UnregisterPlayerClient(clientId);
             }
         }
 
@@ -515,6 +537,13 @@ namespace FPS.Networking.Netcode
 
             replica.ConfigureServerIdentity(sessionAuthority, playerId,
                 AppearanceForPlayer(playerId));
+            if (sessionAuthority.TryGetPlayerState(playerId,
+                    out NetcodePlayerState restoredState))
+            {
+                playerObject.transform.SetPositionAndRotation(
+                    restoredState.Position,
+                    Quaternion.Euler(0f, restoredState.AimYawDegrees, 0f));
+            }
             DontDestroyOnLoad(playerObject.gameObject);
             playerObject.SpawnAsPlayerObject(
                 clientId,

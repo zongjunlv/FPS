@@ -105,6 +105,29 @@ public sealed class Health : MonoBehaviour, IDamageable,
         return true;
     }
 
+    public bool ReconcileAuthoritativeVitals(
+        float maximumHealth,
+        float health,
+        float maximumArmor,
+        float armor,
+        bool alive)
+    {
+        if (!IsFinite(maximumHealth) || maximumHealth <= 0f ||
+            !IsFinite(health) || health < 0f || health > maximumHealth ||
+            !IsFinite(maximumArmor) || maximumArmor < 0f ||
+            !IsFinite(armor) || armor < 0f || armor > maximumArmor)
+            return false;
+        MaxHealth = maximumHealth;
+        CurrentHealth = health;
+        MaxArmor = maximumArmor;
+        CurrentArmor = armor;
+        IsDead = !alive || health <= 0f;
+        HasLastAppliedDamage = false;
+        LastAppliedDamage = default;
+        VitalsChanged?.Invoke();
+        return true;
+    }
+
     public float RestoreArmor(float amount)
     {
         return RestoreValue(

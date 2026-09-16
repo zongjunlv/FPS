@@ -66,6 +66,7 @@ namespace FPS.Networking.Netcode
                 NetworkVariableWritePermission.Server);
 
         private readonly Dictionary<ulong, int> playerByClient = new();
+        private readonly Dictionary<int, ulong> clientByPlayer = new();
         private readonly List<PlayerInputCommand> pendingCommands = new();
         private readonly List<AuthoritativeEconomyCommand>
             pendingEconomyCommands = new();
@@ -108,8 +109,12 @@ namespace FPS.Networking.Netcode
         public CoopServerRules Rules => simulation?.Rules ??
             rulesState.Value.ToDomain();
         public NetcodeWorldState WorldState => worldState.Value;
-        public int ReplicatedPlayerCount => playerStates.Count;
-        public int ReplicatedTargetCount => targetStates.Count;
+        public int ReplicatedPlayerCount => IsSpawned
+            ? playerStates.Count
+            : LastAuthoritativeSnapshot?.Players.Count ?? 0;
+        public int ReplicatedTargetCount => IsSpawned
+            ? targetStates.Count
+            : LastAuthoritativeSnapshot?.Targets.Count ?? 0;
         public int ReplicatedEventCount => authorityEvents.Count;
         public int ReplicatedPresentationEventCount =>
             IsSpawned ? presentationEvents.Count : offlinePresentationEvents.Count;
@@ -131,6 +136,22 @@ namespace FPS.Networking.Netcode
         public AuthoritativeTickResult LastServerResult => lastResult;
         public AuthoritativeWorldSnapshot LastAuthoritativeSnapshot =>
             lastSnapshot ?? simulation?.CaptureSnapshot();
+        public bool IsReplicatedSnapshotComplete
+        {
+            get
+            {
+                NetcodeWorldState committed = worldState.Value;
+                return committed.SnapshotPlayerCount > 0 &&
+                    ReplicatedPlayerCount == committed.SnapshotPlayerCount &&
+                    ReplicatedTargetCount == committed.SnapshotTargetCount &&
+                    ReplicatedInventorySlotCount ==
+                        committed.SnapshotInventoryCount &&
+                    ReplicatedWorldDropCount == committed.SnapshotDropCount &&
+                    ReplicatedProgressionCount ==
+                        committed.SnapshotProgressionCount &&
+                    ReplicatedUpgradeCount == committed.SnapshotUpgradeCount;
+            }
+        }
 
         public override void OnNetworkSpawn()
         {
@@ -226,7 +247,17 @@ namespace FPS.Networking.Netcode
                 throw new ArgumentOutOfRangeException(nameof(playerId));
             }
 
+            if (clientByPlayer.TryGetValue(playerId, out ulong previousClient) &&
+                previousClient != clientId)
+            {
+                playerByClient.Remove(previousClient);
+                ClearPendingCommands(playerId);
+            }
+            if (playerByClient.TryGetValue(clientId, out int previousPlayer) &&
+                previousPlayer != playerId)
+                clientByPlayer.Remove(previousPlayer);
             playerByClient[clientId] = playerId;
+            clientByPlayer[playerId] = clientId;
             if (simulation != null)
             {
                 IReadOnlyList<AuthoritativeEvent> events =
@@ -240,25 +271,52 @@ namespace FPS.Networking.Netcode
         {
             RequireServerWrite();
             if (playerByClient.TryGetValue(clientId, out int playerId) &&
-                simulation != null)
+                clientByPlayer.TryGetValue(playerId, out ulong currentClient) &&
+                currentClient == clientId)
             {
-                pendingCommands.RemoveAll(value =>
-                    value.PlayerId == playerId);
-                pendingEconomyCommands.RemoveAll(value =>
-                    value.PlayerId == playerId);
-                pendingMissionCommands.RemoveAll(value =>
-                    value.PlayerId == playerId);
-                foreach (var key in new List<(int playerId, uint sequence)>(
-                             pendingPresentationInputs.Keys))
-                    if (key.playerId == playerId)
-                        pendingPresentationInputs.Remove(key);
-                IReadOnlyList<AuthoritativeEvent> events =
-                    simulation.SetPlayerConnected(playerId, false);
-                lastSnapshot = simulation.CaptureSnapshot();
-                PublishSnapshot(lastSnapshot, events);
+                playerByClient.Remove(clientId);
+                clientByPlayer.Remove(playerId);
+                FinalizeDisconnectedPlayer(playerId);
+                return;
             }
             playerByClient.Remove(clientId);
         }
+
+        public bool SuspendPlayerClient(ulong clientId)
+        {
+            RequireServerWrite();
+            if (!playerByClient.TryGetValue(clientId, out int playerId) ||
+                !clientByPlayer.TryGetValue(playerId, out ulong currentClient) ||
+                currentClient != clientId)
+            {
+                playerByClient.Remove(clientId);
+                return false;
+            }
+            playerByClient.Remove(clientId);
+            clientByPlayer.Remove(playerId);
+            ClearPendingCommands(playerId);
+            return true;
+        }
+
+        public bool FinalizeDisconnectedPlayer(int playerId)
+        {
+            RequireServerWrite();
+            if (playerId <= 0 || simulation == null ||
+                clientByPlayer.ContainsKey(playerId))
+                return false;
+            ClearPendingCommands(playerId);
+            IReadOnlyList<AuthoritativeEvent> events =
+                simulation.SetPlayerConnected(playerId, false);
+            lastSnapshot = simulation.CaptureSnapshot();
+            PublishSnapshot(lastSnapshot, events);
+            return true;
+        }
+
+        public bool TryGetBoundClient(int playerId, out ulong clientId) =>
+            clientByPlayer.TryGetValue(playerId, out clientId);
+
+        public bool TryGetBoundPlayer(ulong clientId, out int playerId) =>
+            playerByClient.TryGetValue(clientId, out playerId);
 
         [Rpc(SendTo.Server, InvokePermission = RpcInvokePermission.Everyone,
             Delivery = RpcDelivery.Unreliable)]
@@ -797,8 +855,10 @@ namespace FPS.Networking.Netcode
             return destination.Count;
         }
 
-        public NetcodeTargetState GetReplicatedTarget(int index) =>
-            targetStates[index];
+        public NetcodeTargetState GetReplicatedTarget(int index) => IsSpawned
+            ? targetStates[index]
+            : NetcodeTargetState.FromDomain(
+                LastAuthoritativeSnapshot.Targets[index]);
         public NetcodeAuthorityEvent GetReplicatedEvent(int index) =>
             authorityEvents[index];
 
@@ -866,6 +926,7 @@ namespace FPS.Networking.Netcode
             pendingMissionCommands.Clear();
             pendingPresentationInputs.Clear();
             playerByClient.Clear();
+            clientByPlayer.Clear();
             playerPresentation.Clear();
             offlinePresentationEvents.Clear();
             offlineShotEvents.Clear();
@@ -895,6 +956,19 @@ namespace FPS.Networking.Netcode
                 throw new InvalidOperationException(
                     "Authoritative state can only be changed by the server.");
             }
+        }
+
+        private void ClearPendingCommands(int playerId)
+        {
+            pendingCommands.RemoveAll(value => value.PlayerId == playerId);
+            pendingEconomyCommands.RemoveAll(value =>
+                value.PlayerId == playerId);
+            pendingMissionCommands.RemoveAll(value =>
+                value.PlayerId == playerId);
+            foreach (var key in new List<(int playerId, uint sequence)>(
+                         pendingPresentationInputs.Keys))
+                if (key.playerId == playerId)
+                    pendingPresentationInputs.Remove(key);
         }
 
         private void PublishSnapshot(
@@ -1064,7 +1138,13 @@ namespace FPS.Networking.Netcode
                     definition.ExtractionPosition),
                 TerminalRadius = (float)definition.TerminalRadius,
                 ExtractionRadius = (float)definition.ExtractionRadius,
-                ReviveRadius = (float)definition.ReviveRadius
+                ReviveRadius = (float)definition.ReviveRadius,
+                SnapshotPlayerCount = snapshot.Players.Count,
+                SnapshotTargetCount = snapshot.Targets.Count,
+                SnapshotInventoryCount = snapshot.Economy.InventorySlots.Count,
+                SnapshotDropCount = snapshot.Economy.WorldDrops.Count,
+                SnapshotProgressionCount = snapshot.Economy.Progression.Count,
+                SnapshotUpgradeCount = snapshot.Economy.Upgrades.Count
             };
         }
 

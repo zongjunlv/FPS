@@ -22,6 +22,12 @@ namespace FPS.Networking.Session
         private void Update()
         {
             ResolveBindings();
+            if (localPlayer != null &&
+                !localPlayer.HasConsumedServerState)
+            {
+                inventoryVisible = false;
+                return;
+            }
             if (authority != null && IsOutcome(authority.WorldState))
             {
                 inventoryVisible = false;
@@ -44,6 +50,7 @@ namespace FPS.Networking.Session
         private void OnGUI()
         {
             if (authority == null || localPlayer == null ||
+                !localPlayer.HasConsumedServerState ||
                 IsOutcome(authority.WorldState) ||
                 !authority.TryGetProgression(localPlayer.PlayerId,
                     out NetcodeProgressionState progression))

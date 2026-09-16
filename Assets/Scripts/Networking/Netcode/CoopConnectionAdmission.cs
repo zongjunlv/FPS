@@ -15,19 +15,23 @@ namespace FPS.Networking.Netcode
         CredentialReplayed = 4,
         DuplicateAccount = 5,
         ServerFull = 6,
-        VersionMismatch = 7
+        VersionMismatch = 7,
+        SessionMismatch = 8,
+        ReconnectWindowExpired = 9
     }
 
     public readonly struct CoopConnectionClaims
     {
         public CoopConnectionClaims(string accountPlayerId, string version,
-            string nonce, long issuedAtUnixSeconds, long expiresAtUnixSeconds)
+            string nonce, long issuedAtUnixSeconds, long expiresAtUnixSeconds,
+            string matchId = "")
         {
             AccountPlayerId = accountPlayerId;
             Version = version;
             Nonce = nonce;
             IssuedAtUnixSeconds = issuedAtUnixSeconds;
             ExpiresAtUnixSeconds = expiresAtUnixSeconds;
+            MatchId = matchId ?? string.Empty;
         }
 
         public string AccountPlayerId { get; }
@@ -35,21 +39,45 @@ namespace FPS.Networking.Netcode
         public string Nonce { get; }
         public long IssuedAtUnixSeconds { get; }
         public long ExpiresAtUnixSeconds { get; }
+        public string MatchId { get; }
     }
 
     public readonly struct CoopApprovedIdentity
     {
         public CoopApprovedIdentity(ulong clientId, string accountPlayerId,
-            int simulationPlayerId)
+            int simulationPlayerId, int connectionGeneration = 1,
+            bool isReconnection = false)
         {
             ClientId = clientId;
             AccountPlayerId = accountPlayerId;
             SimulationPlayerId = simulationPlayerId;
+            ConnectionGeneration = Math.Max(1, connectionGeneration);
+            IsReconnection = isReconnection;
         }
 
         public ulong ClientId { get; }
         public string AccountPlayerId { get; }
         public int SimulationPlayerId { get; }
+        public int ConnectionGeneration { get; }
+        public bool IsReconnection { get; }
+    }
+
+    public readonly struct CoopReconnectReservation
+    {
+        public CoopReconnectReservation(string accountPlayerId,
+            int simulationPlayerId, int connectionGeneration,
+            long expiresAtUnixSeconds)
+        {
+            AccountPlayerId = accountPlayerId ?? string.Empty;
+            SimulationPlayerId = simulationPlayerId;
+            ConnectionGeneration = Math.Max(1, connectionGeneration);
+            ExpiresAtUnixSeconds = expiresAtUnixSeconds;
+        }
+
+        public string AccountPlayerId { get; }
+        public int SimulationPlayerId { get; }
+        public int ConnectionGeneration { get; }
+        public long ExpiresAtUnixSeconds { get; }
     }
 
     public readonly struct CoopAdmissionDecision
@@ -96,6 +124,10 @@ namespace FPS.Networking.Netcode
                     "服务器人数已满，请稍后重试。",
                 CoopAdmissionFailure.VersionMismatch =>
                     "客户端版本与服务器不一致，请更新后重试。",
+                CoopAdmissionFailure.SessionMismatch =>
+                    "连接凭证不属于当前战局，请重新进入房间。",
+                CoopAdmissionFailure.ReconnectWindowExpired =>
+                    "重连时间已结束，请返回房间等待下一局。",
                 _ => "连接审批失败，请稍后重试。"
             };
         }
@@ -123,7 +155,7 @@ namespace FPS.Networking.Netcode
 
         public string Issue(string accountPlayerId, string version,
             long issuedAtUnixSeconds, int lifetimeSeconds = 120,
-            string nonce = null)
+            string nonce = null, string matchId = "")
         {
             string account = NormalizeField(accountPlayerId,
                 nameof(accountPlayerId), 128);
@@ -135,6 +167,9 @@ namespace FPS.Networking.Netcode
             string normalizedNonce = string.IsNullOrWhiteSpace(nonce)
                 ? Guid.NewGuid().ToString("N")
                 : NormalizeField(nonce, nameof(nonce), 64);
+            string normalizedMatch = string.IsNullOrWhiteSpace(matchId)
+                ? string.Empty
+                : NormalizeField(matchId, nameof(matchId), 128);
             long expiresAt = checked(issuedAtUnixSeconds + lifetimeSeconds);
             string payload = string.Join("\n", new[]
             {
@@ -142,7 +177,8 @@ namespace FPS.Networking.Netcode
                 EncodeText(normalizedVersion),
                 normalizedNonce,
                 issuedAtUnixSeconds.ToString(CultureInfo.InvariantCulture),
-                expiresAt.ToString(CultureInfo.InvariantCulture)
+                expiresAt.ToString(CultureInfo.InvariantCulture),
+                EncodeText(normalizedMatch)
             });
             string encodedPayload = Base64UrlEncode(Encoding.UTF8.GetBytes(payload));
             string signedValue = Prefix + "." + encodedPayload;
@@ -171,7 +207,7 @@ namespace FPS.Networking.Netcode
             if (!FixedTimeEquals(signature, expected)) return false;
 
             string[] values = Encoding.UTF8.GetString(payloadBytes).Split('\n');
-            if (values.Length != 5 ||
+            if (values.Length != 5 && values.Length != 6 ||
                 !TryDecodeText(values[0], out string account) ||
                 !TryDecodeText(values[1], out string version) ||
                 !IsSafeField(account, 128) || !IsSafeField(version, 64) ||
@@ -191,8 +227,18 @@ namespace FPS.Networking.Netcode
                 return false;
             }
 
+            string matchId = string.Empty;
+            if (values.Length == 6)
+            {
+                if (values[5].Length == 0)
+                    matchId = string.Empty;
+                else if (!TryDecodeText(values[5], out matchId) ||
+                         matchId.Length > 128 || matchId.IndexOf('\n') >= 0 ||
+                         matchId.IndexOf('\r') >= 0)
+                    return false;
+            }
             claims = new CoopConnectionClaims(account, version, values[2],
-                issuedAt, expiresAt);
+                issuedAt, expiresAt, matchId);
             failure = CoopAdmissionFailure.None;
             return true;
         }
@@ -275,14 +321,25 @@ namespace FPS.Networking.Netcode
         private readonly string expectedVersion;
         private readonly int maximumPlayers;
         private readonly Func<long> utcNowSeconds;
+        private readonly int reconnectGraceSeconds;
+        private readonly string expectedMatchId;
         private readonly Dictionary<ulong, CoopApprovedIdentity> byClient = new();
         private readonly Dictionary<string, ulong> clientByAccount = new(
             StringComparer.Ordinal);
         private readonly Dictionary<string, long> usedNonces = new(
             StringComparer.Ordinal);
+        private readonly Dictionary<string, CoopReconnectReservation>
+            reservations = new(StringComparer.Ordinal);
+        private readonly HashSet<string> expiredReconnectAccounts = new(
+            StringComparer.Ordinal);
+        private readonly Queue<CoopReconnectReservation>
+            expiredReservations = new();
+        private readonly Dictionary<string, int> generationByAccount = new(
+            StringComparer.Ordinal);
 
         public CoopConnectionAdmissionService(CoopConnectionTicketCodec ticketCodec,
-            string serverVersion, int playerLimit, Func<long> clock = null)
+            string serverVersion, int playerLimit, Func<long> clock = null,
+            int reconnectWindowSeconds = 30, string matchId = "")
         {
             codec = ticketCodec ?? throw new ArgumentNullException(
                 nameof(ticketCodec));
@@ -294,9 +351,22 @@ namespace FPS.Networking.Netcode
                 throw new ArgumentOutOfRangeException(nameof(playerLimit));
             maximumPlayers = playerLimit;
             utcNowSeconds = clock ?? (() => DateTimeOffset.UtcNow.ToUnixTimeSeconds());
+            if (reconnectWindowSeconds < 1 || reconnectWindowSeconds > 300)
+                throw new ArgumentOutOfRangeException(
+                    nameof(reconnectWindowSeconds));
+            reconnectGraceSeconds = reconnectWindowSeconds;
+            expectedMatchId = matchId?.Trim() ?? string.Empty;
         }
 
         public int ApprovedCount => byClient.Count;
+        public int ReservedCount
+        {
+            get
+            {
+                PruneExpiredReservations(utcNowSeconds());
+                return reservations.Count;
+            }
+        }
 
         public CoopAdmissionDecision Approve(ulong clientId, byte[] payload)
         {
@@ -309,6 +379,7 @@ namespace FPS.Networking.Netcode
 
             long now = utcNowSeconds();
             PruneExpiredNonces(now);
+            PruneExpiredReservations(now);
             string credential;
             try
             {
@@ -328,20 +399,39 @@ namespace FPS.Networking.Netcode
                     StringComparison.Ordinal))
                 return CoopAdmissionDecision.Reject(
                     CoopAdmissionFailure.VersionMismatch);
+            if (!string.IsNullOrEmpty(expectedMatchId) &&
+                !string.Equals(claims.MatchId, expectedMatchId,
+                    StringComparison.Ordinal))
+                return CoopAdmissionDecision.Reject(
+                    CoopAdmissionFailure.SessionMismatch);
             if (usedNonces.ContainsKey(claims.Nonce))
                 return CoopAdmissionDecision.Reject(
                     CoopAdmissionFailure.CredentialReplayed);
             if (clientByAccount.ContainsKey(claims.AccountPlayerId))
                 return CoopAdmissionDecision.Reject(
                     CoopAdmissionFailure.DuplicateAccount);
-            if (byClient.Count >= maximumPlayers)
+            if (expiredReconnectAccounts.Contains(claims.AccountPlayerId))
+                return CoopAdmissionDecision.Reject(
+                    CoopAdmissionFailure.ReconnectWindowExpired);
+
+            bool reconnecting = reservations.Remove(
+                claims.AccountPlayerId, out CoopReconnectReservation reserved);
+            if (!reconnecting && byClient.Count + reservations.Count >=
+                    maximumPlayers)
                 return CoopAdmissionDecision.Reject(CoopAdmissionFailure.ServerFull);
 
-            int playerId = ResolveAvailablePlayerId();
+            int playerId = reconnecting
+                ? reserved.SimulationPlayerId
+                : ResolveAvailablePlayerId();
             if (playerId <= 0)
                 return CoopAdmissionDecision.Reject(CoopAdmissionFailure.ServerFull);
+            int generation = generationByAccount.TryGetValue(
+                claims.AccountPlayerId, out int previousGeneration)
+                ? previousGeneration + 1
+                : 1;
+            generationByAccount[claims.AccountPlayerId] = generation;
             var identity = new CoopApprovedIdentity(clientId,
-                claims.AccountPlayerId, playerId);
+                claims.AccountPlayerId, playerId, generation, reconnecting);
             byClient.Add(clientId, identity);
             clientByAccount.Add(claims.AccountPlayerId, clientId);
             usedNonces.Add(claims.Nonce, claims.ExpiresAtUnixSeconds);
@@ -357,6 +447,42 @@ namespace FPS.Networking.Netcode
             if (!byClient.Remove(clientId, out CoopApprovedIdentity identity))
                 return;
             clientByAccount.Remove(identity.AccountPlayerId);
+            reservations[identity.AccountPlayerId] =
+                new CoopReconnectReservation(
+                    identity.AccountPlayerId,
+                    identity.SimulationPlayerId,
+                    identity.ConnectionGeneration,
+                    checked(utcNowSeconds() + reconnectGraceSeconds));
+        }
+
+        public void ReleaseImmediately(ulong clientId)
+        {
+            if (!byClient.Remove(clientId, out CoopApprovedIdentity identity))
+                return;
+            clientByAccount.Remove(identity.AccountPlayerId);
+            reservations.Remove(identity.AccountPlayerId);
+            expiredReconnectAccounts.Remove(identity.AccountPlayerId);
+        }
+
+        public bool TryGetReservation(string accountPlayerId,
+            out CoopReconnectReservation reservation)
+        {
+            PruneExpiredReservations(utcNowSeconds());
+            return reservations.TryGetValue(accountPlayerId ?? string.Empty,
+                out reservation);
+        }
+
+        public bool TryDequeueExpiredReservation(
+            out CoopReconnectReservation reservation)
+        {
+            PruneExpiredReservations(utcNowSeconds());
+            if (expiredReservations.Count > 0)
+            {
+                reservation = expiredReservations.Dequeue();
+                return true;
+            }
+            reservation = default;
+            return false;
         }
 
         private int ResolveAvailablePlayerId()
@@ -369,6 +495,17 @@ namespace FPS.Networking.Netcode
                     if (identity.SimulationPlayerId != candidate) continue;
                     used = true;
                     break;
+                }
+                if (!used)
+                {
+                    foreach (CoopReconnectReservation reservation in
+                             reservations.Values)
+                    {
+                        if (reservation.SimulationPlayerId != candidate)
+                            continue;
+                        used = true;
+                        break;
+                    }
                 }
                 if (!used) return candidate;
             }
@@ -385,6 +522,22 @@ namespace FPS.Networking.Netcode
             }
             for (int index = 0; index < expired.Count; index++)
                 usedNonces.Remove(expired[index]);
+        }
+
+        private void PruneExpiredReservations(long now)
+        {
+            if (reservations.Count == 0) return;
+            var expired = new List<string>();
+            foreach (KeyValuePair<string, CoopReconnectReservation> pair in
+                     reservations)
+            {
+                if (pair.Value.ExpiresAtUnixSeconds > now) continue;
+                expired.Add(pair.Key);
+                expiredReconnectAccounts.Add(pair.Key);
+                expiredReservations.Enqueue(pair.Value);
+            }
+            for (int index = 0; index < expired.Count; index++)
+                reservations.Remove(expired[index]);
         }
     }
 

@@ -225,7 +225,8 @@ namespace FPS.Networking.Netcode
                 return false;
             network.ConfigureServerAdmission(
                 new CoopConnectionAdmissionService(ticketCodec,
-                    configuration.Version, configuration.MaximumPlayers));
+                    configuration.Version, configuration.MaximumPlayers,
+                    matchId: configuration.MatchId));
             installer = network.gameObject.AddComponent<
                 CoopNetworkRuntimeInstaller>();
 

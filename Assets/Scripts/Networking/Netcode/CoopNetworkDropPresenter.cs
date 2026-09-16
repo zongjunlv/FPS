@@ -17,6 +17,12 @@ namespace FPS.Networking.Netcode
             if (authority == null)
                 authority = FindFirstObjectByType<NetworkCoopSessionAuthority>();
             if (authority == null) return;
+            if (!authority.IsReplicatedSnapshotComplete)
+            {
+                foreach (GameObject view in views.Values)
+                    if (view != null) view.SetActive(false);
+                return;
+            }
 
             var active = new HashSet<int>();
             for (int index = 0; index < authority.ReplicatedWorldDropCount;

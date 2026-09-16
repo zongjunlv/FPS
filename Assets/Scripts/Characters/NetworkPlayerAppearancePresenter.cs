@@ -158,12 +158,13 @@ public sealed class NetworkPlayerAppearancePresenter : MonoBehaviour
         if (visualRoot == null || replica == null) return;
         bool alive = replica.PresentedAlive;
         bool owner = replica.IsLocallyControlled;
+        bool ready = replica.IsPresentationReady;
         Renderer[] renderers = visualRoot.GetComponentsInChildren<Renderer>(
             true);
         for (int index = 0; index < renderers.Length; index++)
         {
             Renderer renderer = renderers[index];
-            if (!alive)
+            if (!ready || !alive)
             {
                 renderer.enabled = false;
                 continue;

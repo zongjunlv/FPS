@@ -90,6 +90,10 @@ namespace FPS.Networking.Netcode
         public long LastShotEventSequence => lastShotEventSequence;
         public int PresentedMagazineAmmo { get; private set; }
         public int PresentedReserveAmmo { get; private set; }
+        public float PresentedHealth { get; private set; } = 100f;
+        public float PresentedMaximumHealth { get; private set; } = 100f;
+        public float PresentedArmor { get; private set; }
+        public float PresentedMaximumArmor { get; private set; }
         public uint PresentedAcknowledgedSequence { get; private set; }
         public bool PresentedReloading { get; private set; }
         public bool PresentedSwitching { get; private set; }
@@ -97,7 +101,7 @@ namespace FPS.Networking.Netcode
             NetworkPresentationIds.RifleGameplay;
         public bool IsLocallyControlled => IsOwner || ownerTestHook;
         public bool IsPresentationReady => session != null &&
-            session.Rules != null;
+            session.Rules != null && (!IsSpawned || HasConsumedServerState);
         public bool HasConsumedServerState => lastConsumedServerTick >= 0;
         public event Action<Vector3, float, float, bool, bool> PosePresented;
         public event Action<string> AppearanceChanged;
@@ -129,7 +133,8 @@ namespace FPS.Networking.Netcode
 
         private void Update()
         {
-            if (session == null || !session.TryGetPlayerState(
+            if (session == null || !session.IsReplicatedSnapshotComplete ||
+                !session.TryGetPlayerState(
                     playerId,
                     out NetcodePlayerState state))
             {
@@ -557,6 +562,7 @@ namespace FPS.Networking.Netcode
                 PresentedAlive = state.IsAlive;
                 ApplyPresentationState(state);
             }
+            bool wasReady = HasConsumedServerState;
             if (state.ServerTick > lastConsumedServerTick)
             {
                 lastConsumedServerTick = state.ServerTick;
@@ -612,6 +618,8 @@ namespace FPS.Networking.Netcode
             }
 
             ApplyPresentedPose();
+            if (!wasReady && HasConsumedServerState)
+                ApplyOwnershipPolicy();
         }
 
         public void EnableOwnerTestHook(
@@ -653,6 +661,10 @@ namespace FPS.Networking.Netcode
             PresentedLifeState = AuthoritativePlayerLifeState.Alive;
             PresentedMagazineAmmo = 0;
             PresentedReserveAmmo = 0;
+            PresentedHealth = 100f;
+            PresentedMaximumHealth = 100f;
+            PresentedArmor = 0f;
+            PresentedMaximumArmor = 0f;
             PresentedAcknowledgedSequence = 0;
             PresentedReloading = false;
             PresentedSwitching = false;
@@ -676,7 +688,8 @@ namespace FPS.Networking.Netcode
         {
             NetworkVerticalSliceInputDriver driver =
                 GetComponent<NetworkVerticalSliceInputDriver>();
-            if (driver != null) driver.enabled = IsLocallyControlled;
+            if (driver != null)
+                driver.enabled = IsLocallyControlled && IsPresentationReady;
         }
 
         private void ResolveSession()
@@ -809,6 +822,10 @@ namespace FPS.Networking.Netcode
             PresentedAiming = state.Aiming;
             PresentedMagazineAmmo = state.MagazineAmmo;
             PresentedReserveAmmo = state.ReserveAmmo;
+            PresentedHealth = state.Health;
+            PresentedMaximumHealth = state.MaximumHealth;
+            PresentedArmor = state.Armor;
+            PresentedMaximumArmor = state.MaximumArmor;
             PresentedAcknowledgedSequence = state.AcknowledgedSequence;
             PresentedReloading = state.Reloading;
             PresentedSwitching = state.Switching;
@@ -820,6 +837,9 @@ namespace FPS.Networking.Netcode
             nextPresentationSequence = Math.Max(
                 nextPresentationSequence,
                 state.AcknowledgedPresentationCommandSequence + 1);
+            nextMissionSequence = Math.Max(
+                nextMissionSequence,
+                state.AcknowledgedMissionSequence + 1);
             if (!presentationBaselineInitialized)
             {
                 presentationBaselineInitialized = true;

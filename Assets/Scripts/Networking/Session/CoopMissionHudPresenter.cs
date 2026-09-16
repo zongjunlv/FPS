@@ -28,7 +28,8 @@ namespace FPS.Networking.Session
         private void Update()
         {
             ResolveBindings();
-            if (authority == null || localPlayer == null) return;
+            if (authority == null || localPlayer == null ||
+                !localPlayer.HasConsumedServerState) return;
             NetcodeWorldState world = authority.WorldState;
             if (presentedRunGeneration != world.RunGeneration)
             {
@@ -80,7 +81,8 @@ namespace FPS.Networking.Session
 
         private void OnGUI()
         {
-            if (authority == null || localPlayer == null) return;
+            if (authority == null || localPlayer == null ||
+                !localPlayer.HasConsumedServerState) return;
             NetcodeWorldState world = authority.WorldState;
             DrawObjective(world);
             DrawInteractionHint(world);

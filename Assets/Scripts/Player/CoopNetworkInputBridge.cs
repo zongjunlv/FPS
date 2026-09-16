@@ -12,6 +12,7 @@ public sealed class CoopNetworkInputBridge : MonoBehaviour
     private PlayerInputReader input;
     private PlayerController player;
     private PlayerCombatController combat;
+    private Health health;
     private CoopSessionController session;
     private CoopSessionOverlay overlay;
     private NetworkVerticalSliceInputDriver networkDriver;
@@ -26,6 +27,11 @@ public sealed class CoopNetworkInputBridge : MonoBehaviour
     private int lastServerMagazine = -1;
     private int lastServerReserve = -1;
     private uint lastServerAcknowledgedSequence;
+    private float lastServerHealth = -1f;
+    private float lastServerMaximumHealth = -1f;
+    private float lastServerArmor = -1f;
+    private float lastServerMaximumArmor = -1f;
+    private bool lastServerAlive;
     private readonly List<PredictedShot> pendingPredictedShots = new();
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
@@ -50,6 +56,7 @@ public sealed class CoopNetworkInputBridge : MonoBehaviour
         input = GetComponent<PlayerInputReader>();
         player = GetComponent<PlayerController>();
         combat = GetComponent<PlayerCombatController>();
+        health = GetComponent<Health>();
     }
 
     private void Update()
@@ -209,6 +216,11 @@ public sealed class CoopNetworkInputBridge : MonoBehaviour
         lastServerMagazine = -1;
         lastServerReserve = -1;
         lastServerAcknowledgedSequence = 0;
+        lastServerHealth = -1f;
+        lastServerMaximumHealth = -1f;
+        lastServerArmor = -1f;
+        lastServerMaximumArmor = -1f;
+        lastServerAlive = false;
         if (subscribedReplica != null)
             subscribedReplica.PosePresented += HandleNetworkPose;
     }
@@ -222,6 +234,7 @@ public sealed class CoopNetworkInputBridge : MonoBehaviour
         int reserve = subscribedReplica.PresentedReserveAmmo;
         uint acknowledged =
             subscribedReplica.PresentedAcknowledgedSequence;
+        ReconcileVitals();
         for (int index = pendingPredictedShots.Count - 1;
              index >= 0;
              index--)
@@ -248,6 +261,29 @@ public sealed class CoopNetworkInputBridge : MonoBehaviour
         lastServerAcknowledgedSequence = acknowledged;
         combat.ReconcileAuthoritativeAmmo(
             weaponId, predictedMagazine, reserve);
+    }
+
+    private void ReconcileVitals()
+    {
+        if (health == null || subscribedReplica == null) return;
+        float currentHealth = subscribedReplica.PresentedHealth;
+        float maximumHealth = subscribedReplica.PresentedMaximumHealth;
+        float armor = subscribedReplica.PresentedArmor;
+        float maximumArmor = subscribedReplica.PresentedMaximumArmor;
+        bool alive = subscribedReplica.PresentedAlive;
+        if (Mathf.Approximately(lastServerHealth, currentHealth) &&
+            Mathf.Approximately(lastServerMaximumHealth, maximumHealth) &&
+            Mathf.Approximately(lastServerArmor, armor) &&
+            Mathf.Approximately(lastServerMaximumArmor, maximumArmor) &&
+            lastServerAlive == alive)
+            return;
+        lastServerHealth = currentHealth;
+        lastServerMaximumHealth = maximumHealth;
+        lastServerArmor = armor;
+        lastServerMaximumArmor = maximumArmor;
+        lastServerAlive = alive;
+        health.ReconcileAuthoritativeVitals(
+            maximumHealth, currentHealth, maximumArmor, armor, alive);
     }
 
     private void HandleNetworkPose(

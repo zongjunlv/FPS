@@ -1809,7 +1809,8 @@ namespace FPS.Networking.Domain
                         ? AuthoritativePlayerLifeState.Disconnected
                         : IsAlive
                             ? AuthoritativePlayerLifeState.Alive
-                            : AuthoritativePlayerLifeState.Downed);
+                            : AuthoritativePlayerLifeState.Downed,
+                    HasMissionSequence ? LastMissionSequence : 0);
             }
         }
 
