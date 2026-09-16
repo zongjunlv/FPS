@@ -8,7 +8,7 @@ public readonly struct TutorialProgressSnapshot
         int totalSteps,
         int currentStepIndex,
         TutorialStepDefinition currentStep,
-        int currentValue,
+        float currentValue,
         bool isComplete,
         string lastCompletedTitle)
     {
@@ -25,7 +25,7 @@ public readonly struct TutorialProgressSnapshot
     public int TotalSteps { get; }
     public int CurrentStepIndex { get; }
     public TutorialStepDefinition CurrentStep { get; }
-    public int CurrentValue { get; }
+    public float CurrentValue { get; }
     public bool IsComplete { get; }
     public string LastCompletedTitle { get; }
     public int CompletedStepCount => IsComplete
@@ -39,7 +39,7 @@ public sealed class TutorialProgressionStateMachine
     private readonly HashSet<string> acceptedEvidenceKeys =
         new(StringComparer.Ordinal);
     private int currentStepIndex;
-    private int currentValue;
+    private float currentValue;
     private string lastCompletedTitle = string.Empty;
 
     public TutorialProgressionStateMachine(
@@ -61,7 +61,7 @@ public sealed class TutorialProgressionStateMachine
 
     public TutorialSequenceDefinition Definition => definition;
     public int CurrentStepIndex => currentStepIndex;
-    public int CurrentValue => currentValue;
+    public float CurrentValue => currentValue;
     public bool IsComplete => currentStepIndex >= definition.Steps.Count;
     public TutorialStepDefinition CurrentStep => IsComplete
         ? null
@@ -70,10 +70,10 @@ public sealed class TutorialProgressionStateMachine
 
     public bool ReportEvidence(
         TutorialEvidenceType evidenceType,
-        int amount = 1,
+        float amount = 1f,
         string evidenceKey = null)
     {
-        if (IsComplete || amount <= 0 ||
+        if (IsComplete || amount <= 0f ||
             CurrentStep.EvidenceType != evidenceType)
         {
             return false;
@@ -99,7 +99,7 @@ public sealed class TutorialProgressionStateMachine
         StepCompleted?.Invoke(BuildSnapshot());
 
         currentStepIndex++;
-        currentValue = 0;
+        currentValue = 0f;
         acceptedEvidenceKeys.Clear();
         TutorialProgressSnapshot next = BuildSnapshot();
         if (IsComplete)
@@ -117,7 +117,7 @@ public sealed class TutorialProgressionStateMachine
     public void Reset(bool notify = true)
     {
         currentStepIndex = 0;
-        currentValue = 0;
+        currentValue = 0f;
         lastCompletedTitle = string.Empty;
         acceptedEvidenceKeys.Clear();
         if (notify)

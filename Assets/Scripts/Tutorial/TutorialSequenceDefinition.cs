@@ -16,7 +16,11 @@ public enum TutorialEvidenceType
     WeaponSwitch = 9,
     Reload = 10,
     BodyHit = 11,
-    HeadHit = 12
+    HeadHit = 12,
+    MoveForwardDistance = 13,
+    MoveBackwardDistance = 14,
+    MoveLeftDistance = 15,
+    MoveRightDistance = 16
 }
 
 [Serializable]

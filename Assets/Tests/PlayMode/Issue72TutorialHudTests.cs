@@ -38,7 +38,7 @@ namespace FPS.Tests.PlayMode
                 Is.True);
             StringAssert.Contains("第一章", hud.ChapterText.text);
             StringAssert.Contains("W", hud.InstructionText.text);
-            StringAssert.Contains("步骤 1/12", hud.ProgressText.text);
+            StringAssert.Contains("步骤 1/15", hud.ProgressText.text);
 
             SafeAreaFitter fitter = hud.SafeArea.GetComponent<SafeAreaFitter>();
             fitter.Apply(new Rect(100f, 50f, 1720f, 980f), 1920, 1080);
@@ -59,22 +59,21 @@ namespace FPS.Tests.PlayMode
             Assert.That(flow.Progression.CurrentStepIndex, Is.Zero);
 
             Assert.That(flow.ReportEvidence(
-                TutorialEvidenceType.MoveDirection, 1, "W"), Is.True);
+                TutorialEvidenceType.MoveForwardDistance, 0.5f, "first"),
+                Is.True);
             Assert.That(flow.ReportEvidence(
-                TutorialEvidenceType.MoveDirection, 1, "W"), Is.False);
+                TutorialEvidenceType.MoveForwardDistance, 0.5f, "first"),
+                Is.False);
             Assert.That(flow.ReportEvidence(
-                TutorialEvidenceType.MoveDirection, 1, "A"), Is.True);
-            Assert.That(flow.ReportEvidence(
-                TutorialEvidenceType.MoveDirection, 1, "S"), Is.True);
-            Assert.That(flow.ReportEvidence(
-                TutorialEvidenceType.MoveDirection, 1, "D"), Is.True);
+                TutorialEvidenceType.MoveForwardDistance, 0.5f, "second"),
+                Is.True);
             yield return null;
 
             Assert.That(flow.Progression.CurrentStepIndex, Is.EqualTo(1));
-            StringAssert.Contains("跳跃", flow.Hud.StepText.text);
-            StringAssert.Contains("步骤 2/12", flow.Hud.ProgressText.text);
+            StringAssert.Contains("向后移动", flow.Hud.StepText.text);
+            StringAssert.Contains("步骤 2/15", flow.Hud.ProgressText.text);
             Assert.That(flow.Hud.FeedbackText.gameObject.activeSelf, Is.True);
-            StringAssert.Contains("方向移动", flow.Hud.FeedbackText.text);
+            StringAssert.Contains("向前移动", flow.Hud.FeedbackText.text);
         }
 
         private static IEnumerator EnterTutorial()

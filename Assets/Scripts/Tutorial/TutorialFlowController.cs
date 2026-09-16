@@ -2,6 +2,7 @@ using FPS.Core.GameModes;
 using UnityEngine;
 
 [DisallowMultipleComponent]
+[DefaultExecutionOrder(-50)]
 public sealed class TutorialFlowController : MonoBehaviour
 {
     [SerializeField] private TutorialSequenceDefinition definition;
@@ -24,7 +25,7 @@ public sealed class TutorialFlowController : MonoBehaviour
 
     public bool ReportEvidence(
         TutorialEvidenceType evidenceType,
-        int amount = 1,
+        float amount = 1f,
         string evidenceKey = null)
     {
         return IsInitialized &&

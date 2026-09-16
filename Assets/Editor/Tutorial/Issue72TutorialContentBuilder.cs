@@ -86,7 +86,7 @@ public static class Issue72TutorialContentBuilder
         definition.Configure(
             "tutorial.main",
             "新手训练",
-            1,
+            2,
             CreateDefaultSteps());
         if (!definition.TryValidate(out string error))
         {
@@ -101,8 +101,14 @@ public static class Issue72TutorialContentBuilder
     {
         return new[]
         {
-            Step("tutorial.move.directions", "第一章 · 基础移动", "方向移动",
-                "使用 W、A、S、D 完成四个方向的移动", TutorialEvidenceType.MoveDirection, 4),
+            Step("tutorial.move.forward", "第一章 · 基础移动", "向前移动",
+                "按住 W，向前实际移动 1 米", TutorialEvidenceType.MoveForwardDistance, 1),
+            Step("tutorial.move.backward", "第一章 · 基础移动", "向后移动",
+                "按住 S，向后实际移动 1 米", TutorialEvidenceType.MoveBackwardDistance, 1),
+            Step("tutorial.move.left", "第一章 · 基础移动", "向左移动",
+                "按住 A，向左实际移动 1 米", TutorialEvidenceType.MoveLeftDistance, 1),
+            Step("tutorial.move.right", "第一章 · 基础移动", "向右移动",
+                "按住 D，向右实际移动 1 米", TutorialEvidenceType.MoveRightDistance, 1),
             Step("tutorial.move.jump", "第一章 · 基础移动", "跳跃",
                 "按空格键完成一次跳跃", TutorialEvidenceType.Jump, 1),
             Step("tutorial.move.sprint", "第一章 · 基础移动", "冲刺",

@@ -10,6 +10,8 @@ public sealed class TutorialTopHud : MonoBehaviour
         new(0.018f, 0.035f, 0.05f, 0.92f);
     private static readonly Color AccentColor =
         new(0.16f, 0.92f, 0.82f, 1f);
+    private static readonly Color WarningColor =
+        new(1f, 0.72f, 0.24f, 1f);
 
     private TutorialProgressionStateMachine progression;
     private TMP_FontAsset font;
@@ -54,6 +56,26 @@ public sealed class TutorialTopHud : MonoBehaviour
         progression.StepCompleted += HandleStepCompleted;
         progression.SequenceCompleted += HandleSequenceCompleted;
         Refresh(progression.Snapshot);
+    }
+
+    public void ShowActivityHint(string message)
+    {
+        if (feedbackRoutine != null || string.IsNullOrWhiteSpace(message))
+        {
+            return;
+        }
+
+        FeedbackText.color = WarningColor;
+        FeedbackText.text = message;
+        FeedbackText.gameObject.SetActive(true);
+    }
+
+    public void ClearActivityHint()
+    {
+        if (feedbackRoutine == null && FeedbackText != null)
+        {
+            FeedbackText.gameObject.SetActive(false);
+        }
     }
 
     private void Build()
@@ -215,7 +237,7 @@ public sealed class TutorialTopHud : MonoBehaviour
         InstructionText.text = step.Instruction;
         ProgressText.text =
             $"步骤 {snapshot.CurrentStepIndex + 1}/{snapshot.TotalSteps}  " +
-            $"{snapshot.CurrentValue}/{step.TargetValue}";
+            $"{FormatProgress(snapshot.CurrentValue)}/{step.TargetValue}";
     }
 
     private void HandleStepCompleted(TutorialProgressSnapshot snapshot)
@@ -238,6 +260,7 @@ public sealed class TutorialTopHud : MonoBehaviour
             StopCoroutine(feedbackRoutine);
         }
 
+        FeedbackText.color = AccentColor;
         feedbackRoutine = StartCoroutine(ShowFeedbackRoutine(message));
     }
 
@@ -248,6 +271,13 @@ public sealed class TutorialTopHud : MonoBehaviour
         yield return new WaitForSecondsRealtime(1.35f);
         FeedbackText.gameObject.SetActive(false);
         feedbackRoutine = null;
+    }
+
+    private static string FormatProgress(float value)
+    {
+        return Mathf.Approximately(value, Mathf.Round(value))
+            ? Mathf.RoundToInt(value).ToString()
+            : value.ToString("0.0");
     }
 
     private void Unbind()

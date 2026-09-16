@@ -179,6 +179,7 @@ public static class Issue71TutorialSceneBuilder
             recovery,
             ArenaBounds);
         Issue72TutorialContentBuilder.EnsureSceneContent(scene, environment);
+        Issue73TutorialMovementBuilder.EnsureSceneContent(scene);
 
         EditorUtility.SetDirty(marker);
         EditorUtility.SetDirty(environment);

@@ -20,7 +20,7 @@ public sealed class Issue72TutorialContentTests
 
         Assert.That(definition, Is.Not.Null);
         Assert.That(definition.TryValidate(out string error), Is.True, error);
-        Assert.That(definition.Steps.Count, Is.EqualTo(12));
+        Assert.That(definition.Steps.Count, Is.EqualTo(15));
         Assert.That(definition.Steps.Select(step => step.StableId).Distinct()
             .Count(), Is.EqualTo(definition.Steps.Count));
         Assert.That(definition.Steps.All(step =>

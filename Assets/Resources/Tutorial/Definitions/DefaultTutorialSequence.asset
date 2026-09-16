@@ -14,15 +14,36 @@ MonoBehaviour:
   m_EditorClassIdentifier: FPS.Composition::TutorialSequenceDefinition
   stableId: tutorial.main
   displayName: "\u65B0\u624B\u8BAD\u7EC3"
-  version: 1
+  version: 2
   steps:
-  - stableId: tutorial.move.directions
+  - stableId: tutorial.move.forward
     chapter: "\u7B2C\u4E00\u7AE0 \xB7 \u57FA\u7840\u79FB\u52A8"
-    title: "\u65B9\u5411\u79FB\u52A8"
-    instruction: "\u4F7F\u7528 W\u3001A\u3001S\u3001D \u5B8C\u6210\u56DB\u4E2A\u65B9\u5411\u7684\u79FB\u52A8"
-    evidenceType: 1
-    targetValue: 4
-    completionFeedback: "\u5DF2\u5B8C\u6210\uFF1A\u65B9\u5411\u79FB\u52A8"
+    title: "\u5411\u524D\u79FB\u52A8"
+    instruction: "\u6309\u4F4F W\uFF0C\u5411\u524D\u5B9E\u9645\u79FB\u52A8 1 \u7C73"
+    evidenceType: 13
+    targetValue: 1
+    completionFeedback: "\u5DF2\u5B8C\u6210\uFF1A\u5411\u524D\u79FB\u52A8"
+  - stableId: tutorial.move.backward
+    chapter: "\u7B2C\u4E00\u7AE0 \xB7 \u57FA\u7840\u79FB\u52A8"
+    title: "\u5411\u540E\u79FB\u52A8"
+    instruction: "\u6309\u4F4F S\uFF0C\u5411\u540E\u5B9E\u9645\u79FB\u52A8 1 \u7C73"
+    evidenceType: 14
+    targetValue: 1
+    completionFeedback: "\u5DF2\u5B8C\u6210\uFF1A\u5411\u540E\u79FB\u52A8"
+  - stableId: tutorial.move.left
+    chapter: "\u7B2C\u4E00\u7AE0 \xB7 \u57FA\u7840\u79FB\u52A8"
+    title: "\u5411\u5DE6\u79FB\u52A8"
+    instruction: "\u6309\u4F4F A\uFF0C\u5411\u5DE6\u5B9E\u9645\u79FB\u52A8 1 \u7C73"
+    evidenceType: 15
+    targetValue: 1
+    completionFeedback: "\u5DF2\u5B8C\u6210\uFF1A\u5411\u5DE6\u79FB\u52A8"
+  - stableId: tutorial.move.right
+    chapter: "\u7B2C\u4E00\u7AE0 \xB7 \u57FA\u7840\u79FB\u52A8"
+    title: "\u5411\u53F3\u79FB\u52A8"
+    instruction: "\u6309\u4F4F D\uFF0C\u5411\u53F3\u5B9E\u9645\u79FB\u52A8 1 \u7C73"
+    evidenceType: 16
+    targetValue: 1
+    completionFeedback: "\u5DF2\u5B8C\u6210\uFF1A\u5411\u53F3\u79FB\u52A8"
   - stableId: tutorial.move.jump
     chapter: "\u7B2C\u4E00\u7AE0 \xB7 \u57FA\u7840\u79FB\u52A8"
     title: "\u8DF3\u8DC3"

@@ -859,6 +859,7 @@ GameObject:
   - component: {fileID: 1091869811}
   - component: {fileID: 1091869810}
   - component: {fileID: 1091869812}
+  - component: {fileID: 1091869813}
   m_Layer: 0
   m_Name: Tutorial Environment
   m_TagString: Untagged
@@ -933,6 +934,20 @@ MonoBehaviour:
   m_EditorClassIdentifier: FPS.Composition::TutorialFlowController
   definition: {fileID: 11400000, guid: ccc8d0a0044e646d5b16fd705adbdc30, type: 2}
   environment: {fileID: 1091869810}
+--- !u!114 &1091869813
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1091869809}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d12c16207389c4c4488e2577fd1a3c1e, type: 3}
+  m_Name:
+  m_EditorClassIdentifier: FPS.Composition::TutorialMovementEvidenceTracker
+  flow: {fileID: 1091869812}
+  player: {fileID: 2010219679}
 --- !u!1 &1424309697
 GameObject:
   m_ObjectHideFlags: 0
@@ -1458,6 +1473,17 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: bd71cc685e49a4dab8a3182c1a12b94c, type: 3}
   m_Name:
   m_EditorClassIdentifier: FPS.Composition::PlayerGameplayRig
+--- !u!114 &2010219679 stripped
+MonoBehaviour:
+  m_CorrespondingSourceObject: {fileID: 1546978963370260199, guid: 9a24b859f1552480db478ba4e6f5b74d, type: 3}
+  m_PrefabInstance: {fileID: 2010219677}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: bac3c8bdfb75841aca392ec82a9c0c70, type: 3}
+  m_Name:
+  m_EditorClassIdentifier: Assembly-CSharp::PlayerController
 --- !u!1 &2054372366
 GameObject:
   m_ObjectHideFlags: 0

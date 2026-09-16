@@ -25,7 +25,7 @@ public sealed class Issue72TutorialStateMachineTests
 
         Assert.That(machine.ReportEvidence(
             TutorialEvidenceType.MoveDirection, 1, "W"), Is.True);
-        Assert.That(machine.CurrentValue, Is.EqualTo(1));
+        Assert.That(machine.CurrentValue, Is.EqualTo(1f));
         Assert.That(machine.ReportEvidence(
             TutorialEvidenceType.MoveDirection, 1, "A"), Is.True);
         Assert.That(machine.CurrentStepIndex, Is.EqualTo(1));
@@ -46,7 +46,7 @@ public sealed class Issue72TutorialStateMachineTests
             TutorialEvidenceType.MoveDirection, 1, "W"), Is.True);
         Assert.That(machine.ReportEvidence(
             TutorialEvidenceType.MoveDirection, 1, "W"), Is.False);
-        Assert.That(machine.CurrentValue, Is.EqualTo(1));
+        Assert.That(machine.CurrentValue, Is.EqualTo(1f));
         Assert.That(machine.CurrentStepIndex, Is.Zero);
     }
 
