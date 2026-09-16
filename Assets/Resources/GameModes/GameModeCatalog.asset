@@ -20,15 +20,21 @@ MonoBehaviour:
     description: "\u5728\u65E0\u654C\u4EBA\u73AF\u5883\u4E2D\u5B66\u4E60\u79FB\u52A8\u3001\u5C04\u51FB\u548C\u4F24\u5BB3\u5224\u5B9A\u3002"
     entryScenePath: Assets/Scenes/Modes/Tutorial.unity
     entryStage: 10
+    gameplayScenePath:
+    gameplayStage: 0
   - mode: 20
     stableId: solo-battle
     displayName: "\u6218\u6597\u6A21\u5F0F"
     description: "\u8FDB\u5165\u89D2\u8272\u9009\u62E9\u4E0E\u6218\u5C40\u51C6\u5907\uFF0C\u518D\u5F00\u59CB\u5B8C\u6574\u8089\u9E3D\u6218\u6597\u3002"
     entryScenePath: Assets/Scenes/Modes/BattlePreparation.unity
     entryStage: 20
+    gameplayScenePath: Assets/ImportPackages/CSAssets2026/Scenes/CityNew.unity
+    gameplayStage: 21
   - mode: 30
     stableId: coop
     displayName: "\u591A\u4EBA\u5408\u4F5C"
     description: "\u5148\u767B\u5F55\u8D26\u53F7\uFF0C\u518D\u8FDB\u5165\u53CC\u4EBA\u5408\u4F5C\u5927\u5385\u548C\u8054\u673A\u6218\u5C40\u3002"
     entryScenePath: Assets/Scenes/Modes/CoopLogin.unity
     entryStage: 30
+    gameplayScenePath:
+    gameplayStage: 0

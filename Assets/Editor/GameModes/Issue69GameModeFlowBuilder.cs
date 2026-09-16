@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using FPS.Core.GameModes;
 using UnityEditor;
@@ -79,7 +80,9 @@ public static class Issue69GameModeFlowBuilder
                     "战斗模式",
                     "进入角色选择与战局准备，再开始完整肉鸽战斗。",
                     GameModeScenePaths.BattlePreparation,
-                    GameModeStage.BattlePreparation),
+                    GameModeStage.BattlePreparation,
+                    GameModeScenePaths.CityNew,
+                    GameModeStage.Battle),
                 Definition(
                     GameModeId.Coop,
                     "多人合作",
@@ -96,7 +99,9 @@ public static class Issue69GameModeFlowBuilder
         string displayName,
         string description,
         string scenePath,
-        GameModeStage stage)
+        GameModeStage stage,
+        string gameplayScenePath = null,
+        GameModeStage gameplayStage = GameModeStage.Entry)
     {
         var definition = new GameModeDefinition();
         definition.Configure(
@@ -104,7 +109,9 @@ public static class Issue69GameModeFlowBuilder
             displayName,
             description,
             scenePath,
-            stage);
+            stage,
+            gameplayScenePath,
+            gameplayStage);
         return definition;
     }
 
@@ -115,19 +122,40 @@ public static class Issue69GameModeFlowBuilder
         GameModeStage stage,
         GameModeCatalog catalog)
     {
-        Scene scene = EditorSceneManager.NewScene(
-            NewSceneSetup.EmptyScene,
-            NewSceneMode.Single);
-        var root = new GameObject(rootName);
-        GameModeSceneMarker marker =
-            root.AddComponent<GameModeSceneMarker>();
+        Scene scene;
+        if (File.Exists(path))
+        {
+            scene = EditorSceneManager.OpenScene(path, OpenSceneMode.Single);
+        }
+        else
+        {
+            scene = EditorSceneManager.NewScene(
+                NewSceneSetup.EmptyScene,
+                NewSceneMode.Single);
+        }
+
+        GameModeSceneMarker marker = scene.GetRootGameObjects()
+            .SelectMany(root => root.GetComponentsInChildren<
+                GameModeSceneMarker>(true))
+            .FirstOrDefault();
+        GameObject root = marker != null
+            ? marker.gameObject
+            : new GameObject(rootName);
+        marker ??= root.AddComponent<GameModeSceneMarker>();
         marker.Configure(mode, stage);
         GameModeSceneBootstrap bootstrap =
+            root.GetComponent<GameModeSceneBootstrap>() ??
             root.AddComponent<GameModeSceneBootstrap>();
         bootstrap.Configure(catalog, marker);
 
-        var cameraObject = new GameObject("Menu Camera");
-        Camera camera = cameraObject.AddComponent<Camera>();
+        Camera camera = scene.GetRootGameObjects()
+            .SelectMany(sceneRoot =>
+                sceneRoot.GetComponentsInChildren<Camera>(true))
+            .FirstOrDefault();
+        GameObject cameraObject = camera != null
+            ? camera.gameObject
+            : new GameObject("Menu Camera");
+        camera ??= cameraObject.AddComponent<Camera>();
         camera.clearFlags = CameraClearFlags.SolidColor;
         camera.backgroundColor = new Color(0.018f, 0.035f, 0.05f, 1f);
         camera.orthographic = true;

@@ -128,6 +128,24 @@ namespace FPS.Tests.PlayMode.Issue69
         }
 
         [UnityTest]
+        public IEnumerator Issue70GameplayRouteRejectsEntryBypass()
+        {
+            yield return LoadAndSettle(GameModeScenePaths.Entry);
+            GameModeFlowController flow = GameModeFlowController.Instance;
+
+            Assert.That(flow.TryEnterGameplay(GameModeId.SoloBattle), Is.False);
+            yield return null;
+
+            Assert.That(SceneManager.GetActiveScene().path,
+                Is.EqualTo(GameModeScenePaths.Entry));
+            Assert.That(GameModeContext.IsActive(
+                GameModeId.None, GameModeStage.Entry), Is.True);
+            Assert.That(flow.FailureMessage, Does.Contain("准备流程"));
+            Assert.That(Object.FindFirstObjectByType<ModeEntryView>()
+                .VisibleStatus, Does.Contain("准备流程"));
+        }
+
+        [UnityTest]
         public IEnumerator MissingSceneProducesVisibleFailureWithoutLeavingMenu()
         {
             yield return LoadAndSettle(GameModeScenePaths.Entry);
@@ -140,7 +158,9 @@ namespace FPS.Tests.PlayMode.Issue69
                     GameModeStage.Tutorial),
                 Definition(GameModeId.SoloBattle,
                     GameModeScenePaths.BattlePreparation,
-                    GameModeStage.BattlePreparation),
+                    GameModeStage.BattlePreparation,
+                    GameModeScenePaths.CityNew,
+                    GameModeStage.Battle),
                 Definition(GameModeId.Coop,
                     GameModeScenePaths.CoopLogin,
                     GameModeStage.CoopLogin)
@@ -205,10 +225,19 @@ namespace FPS.Tests.PlayMode.Issue69
         private static GameModeDefinition Definition(
             GameModeId mode,
             string path,
-            GameModeStage stage)
+            GameModeStage stage,
+            string gameplayPath = null,
+            GameModeStage gameplayStage = GameModeStage.Entry)
         {
             var definition = new GameModeDefinition();
-            definition.Configure(mode, mode.ToString(), "test", path, stage);
+            definition.Configure(
+                mode,
+                mode.ToString(),
+                "test",
+                path,
+                stage,
+                gameplayPath,
+                gameplayStage);
             return definition;
         }
 

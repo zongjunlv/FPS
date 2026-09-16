@@ -123,6 +123,34 @@ public sealed class GameModeFlowController : MonoBehaviour
             "正在返回模式选择……");
     }
 
+    public bool TryEnterGameplay(GameModeId mode)
+    {
+        if (IsLoading)
+        {
+            return false;
+        }
+
+        if (catalog == null ||
+            !catalog.TryGet(mode, out GameModeDefinition route) ||
+            !route.HasGameplayRoute)
+        {
+            Fail($"模式 {GameModeIds.ToStableId(mode)} 尚未配置玩法场景。");
+            return false;
+        }
+
+        if (!GameModeContext.IsActive(route.Mode, route.EntryStage))
+        {
+            Fail($"请先进入{route.DisplayName}的准备流程。");
+            return false;
+        }
+
+        return TryStartTransition(
+            route.Mode,
+            route.GameplayStage,
+            route.GameplayScenePath,
+            $"正在进入{route.DisplayName}……");
+    }
+
     public void ClearFailure()
     {
         FailureMessage = string.Empty;

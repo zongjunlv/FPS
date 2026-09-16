@@ -111,6 +111,13 @@ public sealed class Issue69GameModeContentTests
         Assert.That(route.StableId, Is.EqualTo(GameModeIds.ToStableId(mode)));
         Assert.That(route.EntryStage, Is.EqualTo(stage));
         Assert.That(route.EntryScenePath, Is.EqualTo(path));
+        if (mode == GameModeId.SoloBattle)
+        {
+            Assert.That(route.GameplayScenePath,
+                Is.EqualTo(GameModeScenePaths.CityNew));
+            Assert.That(route.GameplayStage,
+                Is.EqualTo(GameModeStage.Battle));
+        }
     }
 
     private static void AssertMarker(

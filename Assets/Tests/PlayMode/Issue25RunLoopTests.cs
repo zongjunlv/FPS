@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using FPS.Core.GameModes;
 using NUnit.Framework;
 using UnityEngine;
 using UnityEngine.SceneManagement;
@@ -121,12 +122,32 @@ namespace FPS.Tests.PlayMode
         }
 
         [UnityTest]
-        public IEnumerator VictoryResultAndRestartCompleteTheWholeLoop()
+        public IEnumerator Issue70BattleEntryVictoryAndRestartCompleteTheWholeLoop()
         {
-            yield return LoadRuntime();
+            yield return LoadRuntimeThroughModeFlow();
             GameObject oldPlayer = GameObject.FindGameObjectWithTag("Player");
             Component mission = oldPlayer.GetComponent(RuntimeType("CityNewMissionController"));
             Component director = Find(RuntimeType("WaveDirector"));
+            Assert.That(GameModeContext.IsActive(
+                GameModeId.SoloBattle, GameModeStage.Battle), Is.True);
+            Assert.That(UnityEngine.Object.FindFirstObjectByType<
+                ModeEntryView>(), Is.Null);
+            Assert.That(UnityEngine.Object.FindFirstObjectByType<
+                ModeDestinationView>(), Is.Null);
+            Assert.That(FindComponentByTypeName("CoopSessionController"),
+                Is.Null);
+            Assert.That(FindComponentByTypeName("CoopSessionOverlay"),
+                Is.Null);
+            Component inventory = oldPlayer.GetComponent(
+                RuntimeType("PlayerInventoryController"));
+            object quickSlots = inventory.GetType()
+                .GetProperty("QuickSlots").GetValue(inventory);
+            Assert.That(quickSlots.GetType().GetMethod("GetBoundId")
+                .Invoke(quickSlots, new object[] { 0 }),
+                Is.EqualTo("medical_kit"));
+            Assert.That(quickSlots.GetType().GetMethod("GetBoundId")
+                .Invoke(quickSlots, new object[] { 1 }),
+                Is.EqualTo("armor_pack"));
             yield return CompleteAllWaves(director, oldPlayer, 55f);
             Assert.That(Get<object>(mission.GetType(), mission, "State").ToString(),
                 Is.EqualTo("ActivateTerminal"));
@@ -147,7 +168,9 @@ namespace FPS.Tests.PlayMode
             Type summaryType = summary.GetType();
             Assert.That(Get<int>(summaryType, summary, "CompletedWaves"), Is.EqualTo(3));
             Assert.That(Get<int>(summaryType, summary, "TotalWaves"), Is.EqualTo(3));
-            Assert.That(Get<int>(summaryType, summary, "Kills"), Is.EqualTo(18));
+            Assert.That(Get<int>(summaryType, summary, "Kills"),
+                Is.GreaterThanOrEqualTo(18),
+                "基础三波至少应结算 18 个敌人；动态遭遇可以追加击杀数。");
             Assert.That(((IReadOnlyList<string>)summaryType
                 .GetProperty("SelectedUpgrades").GetValue(summary)).Count,
                 Is.GreaterThan(0));
@@ -184,6 +207,58 @@ namespace FPS.Tests.PlayMode
                 yield return null;
             }
             Assert.Fail("CityNew 局内系统未在期限内完成初始化。");
+        }
+
+        private static IEnumerator LoadRuntimeThroughModeFlow()
+        {
+            yield return SceneManager.LoadSceneAsync(
+                GameModeScenePaths.Entry,
+                LoadSceneMode.Single);
+            yield return null;
+            ModeEntryView entry = UnityEngine.Object.FindFirstObjectByType<
+                ModeEntryView>();
+            Assert.That(entry, Is.Not.Null);
+            entry.GetButton(GameModeId.SoloBattle).onClick.Invoke();
+
+            float routeDeadline = Time.realtimeSinceStartup + 10f;
+            while (Time.realtimeSinceStartup < routeDeadline &&
+                   (SceneManager.GetActiveScene().path !=
+                       GameModeScenePaths.BattlePreparation ||
+                    GameModeContext.IsTransitioning ||
+                    GameModeFlowController.Instance.IsLoading))
+            {
+                yield return null;
+            }
+
+            Assert.That(SceneManager.GetActiveScene().path,
+                Is.EqualTo(GameModeScenePaths.BattlePreparation));
+            ModeDestinationView preparation =
+                UnityEngine.Object.FindFirstObjectByType<ModeDestinationView>();
+            Assert.That(preparation, Is.Not.Null);
+            Assert.That(preparation.PrimaryActionButton, Is.Not.Null);
+            preparation.PrimaryActionButton.onClick.Invoke();
+
+            float runtimeDeadline = Time.realtimeSinceStartup + 25f;
+            while (Time.realtimeSinceStartup < runtimeDeadline)
+            {
+                GameObject player = GameObject.FindGameObjectWithTag("Player");
+                Component director = Find(RuntimeType("WaveDirector"));
+                if (SceneManager.GetActiveScene().path == CityNewScene &&
+                    player != null && director != null &&
+                    player.GetComponent(RuntimeType(
+                        "CityNewMissionController")) != null &&
+                    player.GetComponent(RuntimeType(
+                        "PlayerLootRewardController")) != null &&
+                    Find(RuntimeType("UnifiedGameHud")) != null &&
+                    ActiveEnemyCount(director) > 0)
+                {
+                    yield break;
+                }
+
+                yield return null;
+            }
+
+            Assert.Fail("从战斗模式入口进入 CityNew 后，局内系统未完成初始化。");
         }
 
         private static IEnumerator WaitForNewRuntime(GameObject oldPlayer)
@@ -368,20 +443,49 @@ namespace FPS.Tests.PlayMode
 
         private static List<Component> ActiveEnemies(Component director)
         {
-            object dictionary = director.GetType().GetProperty("ActiveEnemies").GetValue(director);
             var result = new List<Component>();
-            foreach (object pair in (IEnumerable)dictionary)
-            {
-                object handle = pair.GetType().GetProperty("Value").GetValue(pair);
-                Component controller = (Component)handle.GetType()
-                    .GetProperty("Controller").GetValue(handle);
-                if (controller != null) result.Add(controller);
-            }
+            var seen = new HashSet<Component>();
+            AddEnemies("ActiveEnemies");
+            AddEnemies("EncounterEnemies");
             return result;
+
+            void AddEnemies(string propertyName)
+            {
+                object dictionary = director.GetType()
+                    .GetProperty(propertyName).GetValue(director);
+                foreach (object pair in (IEnumerable)dictionary)
+                {
+                    object handle = pair.GetType().GetProperty("Value")
+                        .GetValue(pair);
+                    Component controller = (Component)handle.GetType()
+                        .GetProperty("Controller").GetValue(handle);
+                    if (controller != null &&
+                        seen.Add(controller))
+                    {
+                        result.Add(controller);
+                    }
+                }
+            }
         }
 
         private static Component Find(Type type) =>
             (Component)UnityEngine.Object.FindAnyObjectByType(type);
+
+        private static Component FindComponentByTypeName(string typeName)
+        {
+            foreach (MonoBehaviour behaviour in
+                     UnityEngine.Object.FindObjectsByType<MonoBehaviour>(
+                         FindObjectsInactive.Include))
+            {
+                if (behaviour != null &&
+                    behaviour.GetType().Name == typeName)
+                {
+                    return behaviour;
+                }
+            }
+
+            return null;
+        }
 
         private static Type RuntimeType(string name) =>
             RuntimeTypeResolver.GetType(name) ??

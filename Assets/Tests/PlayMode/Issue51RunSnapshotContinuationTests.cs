@@ -2,6 +2,7 @@ using System;
 using System.Collections;
 using System.IO;
 using System.Linq;
+using FPS.Core.GameModes;
 using FPS.SaveGame;
 using NUnit.Framework;
 using UnityEngine;
@@ -47,7 +48,7 @@ public sealed class Issue51RunSnapshotContinuationTests
     }
 
     [UnityTest]
-    public IEnumerator MidWaveSaveCanBeLoadedTwiceAndContinueExactlyOnce()
+    public IEnumerator Issue70BattleEntryMidWaveSaveLoadsTwiceExactlyOnce()
     {
         yield return LoadCityAndWaitReady();
         RunSnapshotRuntimeAdapter adapter =
@@ -62,7 +63,7 @@ public sealed class Issue51RunSnapshotContinuationTests
         Assert.That(inventory.BindQuickSlot(0, medkit.StableId), Is.True);
 
         WaveDirector director = WaveDirector.Active;
-        EnemySpawnHandle target = director.ActiveEnemies.Values.First();
+        EnemySpawnHandle target = FirstEnemy(director);
         Health targetHealth = target.Controller.GetComponent<Health>();
         targetHealth.ApplyDamage(new DamageInfo(
             7f,
@@ -101,6 +102,11 @@ public sealed class Issue51RunSnapshotContinuationTests
             yield return null;
             yield return WaitReady(previous);
 
+            Assert.That(GameModeContext.IsActive(
+                GameModeId.SoloBattle, GameModeStage.Battle), Is.True);
+            Assert.That(SceneManager.GetActiveScene().path,
+                Is.EqualTo(GameModeScenePaths.CityNew));
+
             adapter = Object.FindAnyObjectByType<RunSnapshotRuntimeAdapter>();
             player = adapter.GetComponent<PlayerController>();
             player.SetPaused(true);
@@ -108,8 +114,8 @@ public sealed class Issue51RunSnapshotContinuationTests
             AssertPlayerAndWorldState(expected, actual);
 
             director = WaveDirector.Active;
-            Assert.That(
-                director.ActiveEnemies.TryGetValue(
+            Assert.That(TryGetEnemy(
+                    director,
                     target.SpawnId,
                     out EnemySpawnHandle restoredEnemy),
                 Is.True);
@@ -215,8 +221,30 @@ public sealed class Issue51RunSnapshotContinuationTests
     private static IEnumerator LoadCityAndWaitReady()
     {
         yield return SceneManager.LoadSceneAsync(
-            "Assets/ImportPackages/CSAssets2026/Scenes/CityNew.unity");
+            GameModeScenePaths.Entry);
+        yield return null;
+        ModeEntryView entry = Object.FindAnyObjectByType<ModeEntryView>();
+        Assert.That(entry, Is.Not.Null);
+        entry.GetButton(GameModeId.SoloBattle).onClick.Invoke();
+
+        float routeTimeout = Time.realtimeSinceStartup + 10f;
+        while (Time.realtimeSinceStartup < routeTimeout &&
+               (SceneManager.GetActiveScene().path !=
+                    GameModeScenePaths.BattlePreparation ||
+                GameModeContext.IsTransitioning ||
+                GameModeFlowController.Instance.IsLoading))
+        {
+            yield return null;
+        }
+
+        ModeDestinationView preparation =
+            Object.FindAnyObjectByType<ModeDestinationView>();
+        Assert.That(preparation, Is.Not.Null);
+        Assert.That(preparation.PrimaryActionButton, Is.Not.Null);
+        preparation.PrimaryActionButton.onClick.Invoke();
         yield return WaitReady(null);
+        Assert.That(GameModeContext.IsActive(
+            GameModeId.SoloBattle, GameModeStage.Battle), Is.True);
     }
 
     private static IEnumerator WaitReady(RunSnapshotRuntimeAdapter previous)
@@ -230,6 +258,8 @@ public sealed class Issue51RunSnapshotContinuationTests
                 Object.FindAnyObjectByType<CityNewWaveBootstrap>();
             if (current != null && !ReferenceEquals(current, previous) &&
                 bootstrap != null && bootstrap.Director.IsRunning &&
+                (bootstrap.Director.ActiveEnemies.Count > 0 ||
+                 bootstrap.Director.EncounterEnemies.Count > 0) &&
                 !RunSnapshotSession.HasPendingWorldRestore)
             {
                 yield break;
@@ -238,5 +268,21 @@ public sealed class Issue51RunSnapshotContinuationTests
         }
         Assert.Fail("Issue51 战局未在时限内恢复完成：" +
                     RunSnapshotSession.LastMessage);
+    }
+
+    private static EnemySpawnHandle FirstEnemy(WaveDirector director)
+    {
+        return director.ActiveEnemies.Values
+            .Concat(director.EncounterEnemies.Values)
+            .First();
+    }
+
+    private static bool TryGetEnemy(
+        WaveDirector director,
+        int spawnId,
+        out EnemySpawnHandle enemy)
+    {
+        return director.ActiveEnemies.TryGetValue(spawnId, out enemy) ||
+               director.EncounterEnemies.TryGetValue(spawnId, out enemy);
     }
 }

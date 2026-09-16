@@ -13,6 +13,7 @@ public sealed class ModeDestinationView : MonoBehaviour
 
     public GameModeId Mode { get; private set; }
     public GameModeStage Stage { get; private set; }
+    public UnityEngine.UI.Button PrimaryActionButton { get; private set; }
     public UnityEngine.UI.Button ReturnButton { get; private set; }
     public string VisibleStatus => statusText != null
         ? statusText.text
@@ -112,7 +113,25 @@ public sealed class ModeDestinationView : MonoBehaviour
             new Vector2(760f, 110f),
             new Vector2(0f, 22f));
 
-        ReturnButton = CreateReturnButton(panel);
+        if (stage == GameModeStage.BattlePreparation)
+        {
+            PrimaryActionButton = CreateActionButton(
+                panel,
+                "开始战斗",
+                "开始战斗",
+                new Vector2(0f, 151f),
+                new Color(0.05f, 0.42f, 0.38f, 1f),
+                () => flow.TryEnterGameplay(mode));
+        }
+
+        ReturnButton = CreateActionButton(
+            panel,
+            "返回模式选择",
+            "返回模式选择",
+            new Vector2(0f,
+                stage == GameModeStage.BattlePreparation ? 76f : 94f),
+            new Color(0.06f, 0.25f, 0.25f, 1f),
+            () => flow.TryReturnToEntry());
         statusText = ModeUiFactory.CreateText(
             "Status",
             panel,
@@ -130,15 +149,24 @@ public sealed class ModeDestinationView : MonoBehaviour
             new Vector2(0f, 34f));
 
         ModeUiFactory.EnsureEventSystem();
-        EventSystem.current.SetSelectedGameObject(ReturnButton.gameObject);
+        EventSystem.current.SetSelectedGameObject(
+            (PrimaryActionButton != null
+                ? PrimaryActionButton
+                : ReturnButton).gameObject);
         flow.StateChanged += Refresh;
         Refresh();
     }
 
-    private UnityEngine.UI.Button CreateReturnButton(RectTransform parent)
+    private UnityEngine.UI.Button CreateActionButton(
+        RectTransform parent,
+        string objectName,
+        string labelValue,
+        Vector2 position,
+        Color color,
+        UnityEngine.Events.UnityAction action)
     {
         GameObject buttonObject = new GameObject(
-            "返回模式选择",
+            objectName,
             typeof(RectTransform),
             typeof(CanvasRenderer),
             typeof(UnityEngine.UI.Image),
@@ -151,18 +179,18 @@ public sealed class ModeDestinationView : MonoBehaviour
             new Vector2(0.5f, 0f),
             new Vector2(0.5f, 0f),
             new Vector2(360f, 62f),
-            new Vector2(0f, 94f));
+            position);
         UnityEngine.UI.Image image =
             buttonObject.GetComponent<UnityEngine.UI.Image>();
-        image.color = new Color(0.06f, 0.25f, 0.25f, 1f);
+        image.color = color;
         image.raycastTarget = true;
         UnityEngine.UI.Button button =
             buttonObject.GetComponent<UnityEngine.UI.Button>();
-        button.onClick.AddListener(() => flow.TryReturnToEntry());
+        button.onClick.AddListener(action);
         TMP_Text label = ModeUiFactory.CreateText(
             "Label",
             buttonObject.transform,
-            "返回模式选择",
+            labelValue,
             21f,
             TextAlignmentOptions.Center,
             font,
@@ -179,6 +207,10 @@ public sealed class ModeDestinationView : MonoBehaviour
         }
 
         ReturnButton.interactable = !flow.IsLoading;
+        if (PrimaryActionButton != null)
+        {
+            PrimaryActionButton.interactable = !flow.IsLoading;
+        }
         statusText.text = !string.IsNullOrWhiteSpace(flow.FailureMessage)
             ? flow.FailureMessage
             : flow.IsLoading

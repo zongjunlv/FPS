@@ -23,6 +23,8 @@ public sealed class GameModeDefinition
     [SerializeField, TextArea] private string description;
     [SerializeField] private string entryScenePath;
     [SerializeField] private GameModeStage entryStage;
+    [SerializeField] private string gameplayScenePath;
+    [SerializeField] private GameModeStage gameplayStage;
 
     public GameModeId Mode => mode;
     public string StableId => stableId;
@@ -30,13 +32,19 @@ public sealed class GameModeDefinition
     public string Description => description;
     public string EntryScenePath => entryScenePath;
     public GameModeStage EntryStage => entryStage;
+    public string GameplayScenePath => gameplayScenePath;
+    public GameModeStage GameplayStage => gameplayStage;
+    public bool HasGameplayRoute =>
+        !string.IsNullOrWhiteSpace(gameplayScenePath);
 
     public void Configure(
         GameModeId configuredMode,
         string configuredDisplayName,
         string configuredDescription,
         string configuredEntryScenePath,
-        GameModeStage configuredEntryStage)
+        GameModeStage configuredEntryStage,
+        string configuredGameplayScenePath = null,
+        GameModeStage configuredGameplayStage = GameModeStage.Entry)
     {
         mode = configuredMode;
         stableId = GameModeIds.ToStableId(configuredMode);
@@ -44,6 +52,8 @@ public sealed class GameModeDefinition
         description = configuredDescription?.Trim() ?? string.Empty;
         entryScenePath = configuredEntryScenePath?.Trim() ?? string.Empty;
         entryStage = configuredEntryStage;
+        gameplayScenePath = configuredGameplayScenePath?.Trim() ?? string.Empty;
+        gameplayStage = configuredGameplayStage;
     }
 }
 
@@ -130,6 +140,23 @@ public sealed class GameModeCatalog : ScriptableObject
                 error = $"模式 {definition.Mode} 的稳定标识、名称或场景无效。";
                 return false;
             }
+
+            if (definition.Mode == GameModeId.SoloBattle &&
+                (!definition.HasGameplayRoute ||
+                 definition.GameplayStage != GameModeStage.Battle))
+            {
+                error = "单人战斗模式必须配置正式战斗场景。";
+                return false;
+            }
+
+            if (definition.HasGameplayRoute &&
+                !IsGameplayStageValid(
+                    definition.Mode,
+                    definition.GameplayStage))
+            {
+                error = $"模式 {definition.Mode} 的玩法阶段无效。";
+                return false;
+            }
         }
 
         for (int index = 0; index < required.Length; index++)
@@ -143,5 +170,18 @@ public sealed class GameModeCatalog : ScriptableObject
 
         error = string.Empty;
         return true;
+    }
+
+    private static bool IsGameplayStageValid(
+        GameModeId mode,
+        GameModeStage stage)
+    {
+        return mode switch
+        {
+            GameModeId.Tutorial => stage == GameModeStage.Tutorial,
+            GameModeId.SoloBattle => stage == GameModeStage.Battle,
+            GameModeId.Coop => stage == GameModeStage.CoopLobby,
+            _ => false
+        };
     }
 }
