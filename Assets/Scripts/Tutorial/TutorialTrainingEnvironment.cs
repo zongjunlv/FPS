@@ -10,6 +10,7 @@ public sealed class TutorialTrainingEnvironment : MonoBehaviour
     [SerializeField] private Transform spawnPoint;
     [SerializeField] private Collider movementFloor;
     [SerializeField] private Collider shootingWall;
+    [SerializeField] private TutorialShootingTarget shootingTarget;
     [SerializeField] private Transform damageTrainingPoint;
     [SerializeField] private Collider[] safetyBoundaries =
         Array.Empty<Collider>();
@@ -20,6 +21,7 @@ public sealed class TutorialTrainingEnvironment : MonoBehaviour
     public Transform SpawnPoint => spawnPoint;
     public Collider MovementFloor => movementFloor;
     public Collider ShootingWall => shootingWall;
+    public TutorialShootingTarget ShootingTarget => shootingTarget;
     public Transform DamageTrainingPoint => damageTrainingPoint;
     public IReadOnlyList<Collider> SafetyBoundaries => safetyBoundaries;
     public TutorialSafetyResetVolume RecoveryVolume => recoveryVolume;
@@ -48,6 +50,12 @@ public sealed class TutorialTrainingEnvironment : MonoBehaviour
         playableBounds = configuredPlayableBounds;
     }
 
+    public void ConfigureShootingTarget(
+        TutorialShootingTarget configuredShootingTarget)
+    {
+        shootingTarget = configuredShootingTarget;
+    }
+
     public bool ContainsPlayablePoint(Vector3 point)
     {
         return playableBounds.Contains(point);
@@ -56,10 +64,23 @@ public sealed class TutorialTrainingEnvironment : MonoBehaviour
     public bool TryValidate(out string error)
     {
         if (playerRig == null || spawnPoint == null || movementFloor == null ||
-            shootingWall == null || damageTrainingPoint == null ||
+            shootingWall == null || shootingTarget == null ||
+            damageTrainingPoint == null ||
             recoveryVolume == null)
         {
-            error = "教学场景缺少玩家、出生点、训练地面、射击墙、伤害训练位置或恢复区。";
+            error = "教学场景缺少玩家、出生点、训练地面、射击墙、教学靶、伤害训练位置或恢复区。";
+            return false;
+        }
+
+        if (!shootingTarget.TryValidate(out string targetError))
+        {
+            error = "教学射击靶无效：" + targetError;
+            return false;
+        }
+
+        if (shootingTarget.WallCollider != shootingWall)
+        {
+            error = "教学射击靶没有绑定当前训练场的射击墙。";
             return false;
         }
 

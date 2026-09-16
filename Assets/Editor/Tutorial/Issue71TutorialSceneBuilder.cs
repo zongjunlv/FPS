@@ -178,6 +178,11 @@ public static class Issue71TutorialSceneBuilder
             boundaries,
             recovery,
             ArenaBounds);
+        TutorialShootingTarget shootingTarget =
+            Issue75TutorialShootingWallBuilder.EnsureSceneContent(
+                scene,
+                environment);
+        environment.ConfigureShootingTarget(shootingTarget);
         Issue72TutorialContentBuilder.EnsureSceneContent(scene, environment);
         Issue73TutorialMovementBuilder.EnsureSceneContent(scene);
         Issue74TutorialLocomotionBuilder.EnsureSceneContent(scene);
