@@ -187,6 +187,7 @@ public static class Issue71TutorialSceneBuilder
         Issue73TutorialMovementBuilder.EnsureSceneContent(scene);
         Issue74TutorialLocomotionBuilder.EnsureSceneContent(scene);
         Issue76TutorialShootingLessonBuilder.EnsureSceneContent(scene);
+        Issue77TutorialWeaponOperationBuilder.EnsureSceneContent(scene);
 
         EditorUtility.SetDirty(marker);
         EditorUtility.SetDirty(environment);

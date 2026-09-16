@@ -86,7 +86,7 @@ public static class Issue72TutorialContentBuilder
         definition.Configure(
             "tutorial.main",
             "新手训练",
-            4,
+            5,
             CreateDefaultSteps());
         if (!definition.TryValidate(out string error))
         {
@@ -124,9 +124,9 @@ public static class Issue72TutorialContentBuilder
             Step("tutorial.shoot.burst", "第二章 · 射击训练", "连续射击",
                 "切换至 1 号位自动步枪，持续按住左键命中 4 次并感受后坐力", TutorialEvidenceType.AutomaticBurst, 4),
             Step("tutorial.weapon.switch", "第三章 · 武器操作", "切换武器",
-                "使用数字键或鼠标滚轮切换武器", TutorialEvidenceType.WeaponSwitch, 2),
+                "先按 2 装备半自动手枪，再滚动滚轮切回自动步枪", TutorialEvidenceType.WeaponSwitch, 2),
             Step("tutorial.weapon.reload", "第三章 · 武器操作", "更换弹匣",
-                "按 R 完成一次换弹", TutorialEvidenceType.Reload, 1),
+                "弹匣已自动预留空位：按 R 并等待完整换弹结束", TutorialEvidenceType.Reload, 1),
             Step("tutorial.damage.body", "第四章 · 伤害认知", "命中躯干",
                 "射击固定靶的躯干部位", TutorialEvidenceType.BodyHit, 1),
             Step("tutorial.damage.head", "第四章 · 伤害认知", "命中弱点",
