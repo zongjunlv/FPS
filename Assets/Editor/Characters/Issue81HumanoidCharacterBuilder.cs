@@ -322,48 +322,7 @@ public static class Issue81HumanoidCharacterBuilder
     private static EditorAnimatorController BuildAnimatorController(
         IReadOnlyDictionary<string, AnimationClip> clips)
     {
-        const string path = Root + "/Animation/HumanoidCombat.controller";
-        AssetDatabase.DeleteAsset(path);
-        EditorAnimatorController controller =
-            EditorAnimatorController.CreateAnimatorControllerAtPath(path);
-        controller.AddParameter("Motion", AnimatorControllerParameterType.Int);
-        AnimatorStateMachine stateMachine = controller.layers[0].stateMachine;
-        (string State, string Clip)[] states =
-        {
-            ("Idle", "Idle_Loop"),
-            ("Walk", "Walk_Loop"),
-            ("Sprint", "Sprint_Loop"),
-            ("Crouch", "Crouch_Idle_Loop"),
-            ("Jump Start", "Jump_Start"),
-            ("Jump Loop", "Jump_Loop"),
-            ("Land", "Jump_Land"),
-            ("Aim", "Pistol_Aim_Neutral"),
-            ("Shoot", "Pistol_Shoot"),
-            ("Reload", "Pistol_Reload")
-        };
-        for (int index = 0; index < states.Length; index++)
-        {
-            AnimatorState state = stateMachine.AddState(
-                states[index].State,
-                new Vector3(250f, 40f + index * 55f));
-            state.motion = clips[states[index].Clip];
-            state.writeDefaultValues = true;
-            if (index == 0)
-            {
-                stateMachine.defaultState = state;
-            }
-            AnimatorStateTransition transition =
-                stateMachine.AddAnyStateTransition(state);
-            transition.hasExitTime = false;
-            transition.duration = index is 8 or 9 ? 0.04f : 0.12f;
-            transition.canTransitionToSelf = false;
-            transition.AddCondition(
-                AnimatorConditionMode.Equals,
-                index,
-                "Motion");
-        }
-        EditorUtility.SetDirty(controller);
-        return controller;
+        return Issue91ThirdPersonAnimationBuilder.BuildController(clips);
     }
 
     private static GameObject BuildCharacterPrefab(
@@ -502,7 +461,7 @@ public static class Issue81HumanoidCharacterBuilder
             clips["Pistol_Reload"]);
         standard.Configure(
             "characters.humanoid.standard",
-            1,
+            2,
             controller,
             motions,
             characters);

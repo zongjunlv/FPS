@@ -4,8 +4,6 @@ using UnityEngine;
 
 public sealed class HumanoidCharacterPreviewController : MonoBehaviour
 {
-    public static readonly int MotionParameter = Animator.StringToHash("Motion");
-
     [SerializeField] private HumanoidCharacterStandard standard;
     [SerializeField] private GameObject[] characterInstances = Array.Empty<GameObject>();
     [SerializeField] private int selectedCharacter;
@@ -93,10 +91,67 @@ public sealed class HumanoidCharacterPreviewController : MonoBehaviour
     {
         selectedMotion = Mathf.Clamp(index, 0, 9);
         Animator active = ActiveAnimator();
-        if (active != null)
+        if (active == null) return;
+
+        active.ResetTrigger(ThirdPersonAnimationParameters.Shoot);
+        active.ResetTrigger(ThirdPersonAnimationParameters.Reload);
+        active.ResetTrigger(ThirdPersonAnimationParameters.SwitchWeapon);
+        active.SetFloat(ThirdPersonAnimationParameters.MoveX, 0f);
+        active.SetFloat(ThirdPersonAnimationParameters.MoveY, 0f);
+        active.SetFloat(ThirdPersonAnimationParameters.Speed, 0f);
+        active.SetFloat(ThirdPersonAnimationParameters.VerticalSpeed, 0f);
+        active.SetFloat(ThirdPersonAnimationParameters.AimPitch, 0f);
+        active.SetBool(ThirdPersonAnimationParameters.Crouching, false);
+        active.SetBool(ThirdPersonAnimationParameters.Grounded, true);
+        active.SetBool(ThirdPersonAnimationParameters.Aiming, false);
+
+        switch (selectedMotion)
         {
-            active.SetInteger(MotionParameter, selectedMotion);
+            case 1:
+                SetPreviewMovement(active, 0f, 0.45f, 0.45f);
+                break;
+            case 2:
+                SetPreviewMovement(active, 0f, 1f, 1f);
+                break;
+            case 3:
+                active.SetBool(ThirdPersonAnimationParameters.Crouching, true);
+                break;
+            case 4:
+                active.SetBool(ThirdPersonAnimationParameters.Grounded, false);
+                active.SetFloat(
+                    ThirdPersonAnimationParameters.VerticalSpeed, 5f);
+                break;
+            case 5:
+                active.SetBool(ThirdPersonAnimationParameters.Grounded, false);
+                active.SetFloat(
+                    ThirdPersonAnimationParameters.VerticalSpeed, -1f);
+                break;
+            case 6:
+                active.Play("Land", 0, 0f);
+                break;
+            case 7:
+                active.SetBool(ThirdPersonAnimationParameters.Aiming, true);
+                break;
+            case 8:
+                active.SetBool(ThirdPersonAnimationParameters.Aiming, true);
+                active.SetTrigger(ThirdPersonAnimationParameters.Shoot);
+                break;
+            case 9:
+                active.SetBool(ThirdPersonAnimationParameters.Aiming, true);
+                active.SetTrigger(ThirdPersonAnimationParameters.Reload);
+                break;
         }
+    }
+
+    private static void SetPreviewMovement(
+        Animator animator,
+        float x,
+        float y,
+        float speed)
+    {
+        animator.SetFloat(ThirdPersonAnimationParameters.MoveX, x);
+        animator.SetFloat(ThirdPersonAnimationParameters.MoveY, y);
+        animator.SetFloat(ThirdPersonAnimationParameters.Speed, speed);
     }
 
     private void Refresh()

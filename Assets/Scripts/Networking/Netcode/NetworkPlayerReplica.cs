@@ -55,6 +55,9 @@ namespace FPS.Networking.Netcode
         public RemoteInterpolationSample LastRemoteSample { get; private set; }
         public int PendingPredictionCount => prediction?.PendingCommands.Count ?? 0;
         public NetworkCoopSessionAuthority Session => session;
+        public float PresentationSprintSpeed => session?.Rules == null
+            ? 6f
+            : (float)session.Rules.SprintSpeed;
         public string AppearanceId => replicatedAppearanceId.Value.ToString();
         public bool IsLocallyControlled => IsOwner || ownerTestHook;
         public bool IsPresentationReady => session != null &&

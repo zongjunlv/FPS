@@ -12,6 +12,7 @@ GameObject:
   - component: {fileID: 2193618417908218665}
   - component: {fileID: 1861127003408969742}
   - component: {fileID: 5371863787805396845}
+  - component: {fileID: 247330022495881540}
   - component: {fileID: 1893842978624072677}
   m_Layer: 0
   m_Name: CoopPlayerReplica
@@ -73,7 +74,7 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: c254881f7d01479eaaa01cfb7db8ad9d, type: 3}
-  m_Name: 
+  m_Name:
   m_EditorClassIdentifier: FPS.Networking.Netcode::FPS.Networking.Netcode.NetworkPlayerReplica
   ShowTopMostFoldoutHeaderGroup: 1
   playerId: 1
@@ -90,8 +91,23 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 778d6714d7a9445d9e28ab371fa1d6da, type: 3}
-  m_Name: 
+  m_Name:
   m_EditorClassIdentifier: FPS.Networking.Netcode::FPS.Networking.Netcode.NetworkVerticalSliceInputDriver
+--- !u!114 &247330022495881540
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2893151096873945976}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 693af7e77030241c1b250c67cbc5f651, type: 3}
+  m_Name:
+  m_EditorClassIdentifier: FPS.Composition::NetworkThirdPersonAnimator
+  movementDamping: 0.12
+  aimDamping: 0.1
+  fallbackSprintSpeed: 6
 --- !u!114 &1893842978624072677
 MonoBehaviour:
   m_ObjectHideFlags: 0

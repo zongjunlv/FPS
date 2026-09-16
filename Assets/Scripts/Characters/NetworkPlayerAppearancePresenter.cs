@@ -8,9 +8,6 @@ using UnityEngine.Rendering;
 [RequireComponent(typeof(NetworkPlayerReplica))]
 public sealed class NetworkPlayerAppearancePresenter : MonoBehaviour
 {
-    private static readonly int MotionParameter =
-        Animator.StringToHash("Motion");
-
     [SerializeField] private Transform visualRoot;
     [SerializeField] private GameObject thirdPersonWeaponPrefab;
     [SerializeField] private bool ownerBodyCastsShadows = true;
@@ -25,13 +22,14 @@ public sealed class NetworkPlayerAppearancePresenter : MonoBehaviour
     private GameObject appearanceInstance;
     private GameObject weaponInstance;
     private Animator animator;
-    private bool hasMotionParameter;
+    private NetworkThirdPersonAnimator animationDriver;
 
     public Transform VisualRoot => visualRoot;
     public GameObject CurrentAppearance => appearanceInstance;
     public GameObject ThirdPersonWeapon => weaponInstance;
     public GameObject ThirdPersonWeaponPrefab => thirdPersonWeaponPrefab;
     public bool OwnerBodyCastsShadows => ownerBodyCastsShadows;
+    public NetworkThirdPersonAnimator AnimationDriver => animationDriver;
     public bool IsOwnerRepresentation =>
         replica != null && replica.IsLocallyControlled;
 
@@ -54,6 +52,7 @@ public sealed class NetworkPlayerAppearancePresenter : MonoBehaviour
     private void Awake()
     {
         replica = GetComponent<NetworkPlayerReplica>();
+        animationDriver = GetComponent<NetworkThirdPersonAnimator>();
         EnsureVisualRoot();
     }
 
@@ -108,13 +107,10 @@ public sealed class NetworkPlayerAppearancePresenter : MonoBehaviour
             out _,
             out _);
         animator = appearanceInstance.GetComponent<Animator>();
-        hasMotionParameter = animator != null &&
-            Array.Exists(animator.parameters,
-                value => value.nameHash == MotionParameter &&
-                         value.type == AnimatorControllerParameterType.Int);
+        animationDriver ??= GetComponent<NetworkThirdPersonAnimator>();
+        animationDriver?.BindAnimator(animator);
         CreateThirdPersonWeapon();
         ApplyVisibilityPolicy();
-        UpdateAnimation();
     }
 
     private void HandleAppearanceChanged(string _)
@@ -130,25 +126,7 @@ public sealed class NetworkPlayerAppearancePresenter : MonoBehaviour
         bool ____,
         bool _____)
     {
-        UpdateAnimation();
         ApplyVisibilityPolicy();
-    }
-
-    private void UpdateAnimation()
-    {
-        if (!hasMotionParameter || animator == null || replica == null) return;
-        Vector3 horizontal = replica.PresentedVelocity;
-        horizontal.y = 0f;
-        int motion = !replica.PresentedGrounded
-            ? 5
-            : replica.PresentedCrouching
-                ? 6
-                : horizontal.sqrMagnitude > 10.24f
-                    ? 2
-                    : horizontal.sqrMagnitude > 0.01f
-                        ? 1
-                        : 0;
-        animator.SetInteger(MotionParameter, motion);
     }
 
     private void ApplyVisibilityPolicy()

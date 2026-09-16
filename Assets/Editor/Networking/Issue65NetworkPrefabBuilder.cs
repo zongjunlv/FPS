@@ -48,6 +48,7 @@ namespace FPS.Editor.Networking
                 replica.AddComponent<NetworkObject>();
                 replica.AddComponent<NetworkPlayerReplica>();
                 replica.AddComponent<NetworkVerticalSliceInputDriver>();
+                replica.AddComponent<NetworkThirdPersonAnimator>();
                 Transform visualRoot = new GameObject(
                     "ThirdPersonVisualRoot").transform;
                 visualRoot.SetParent(replica.transform, false);
