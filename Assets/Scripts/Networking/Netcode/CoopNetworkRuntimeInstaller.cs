@@ -83,14 +83,19 @@ namespace FPS.Networking.Netcode
 
         private readonly Dictionary<ulong, NetworkObject> playerObjects = new();
         private readonly Dictionary<ulong, int> playerIds = new();
+        private readonly HashSet<ulong> waitingClients = new();
         private OptionalNetworkBootstrap bootstrap;
         private NetworkCoopSessionAuthority sessionAuthority;
         private bool callbacksBound;
+        private bool deferPlayerSpawns;
+        private bool playerSpawnBarrierReleased;
 
         public NetworkCoopSessionAuthority SessionAuthority => sessionAuthority;
         public string LastFailure { get; private set; } = string.Empty;
         public int SpawnedPlayerCount => playerObjects.Count;
         public int MaximumPlayers => maximumPlayers;
+        public bool IsPlayerSpawnDeferred => deferPlayerSpawns &&
+                                             !playerSpawnBarrierReleased;
 
         private void Awake()
         {
@@ -158,6 +163,29 @@ namespace FPS.Networking.Netcode
             maximumPlayers = Mathf.Clamp(value, 1, 16);
         }
 
+        public void ConfigurePlayerSpawnBarrier(bool defer)
+        {
+            if (bootstrap != null && bootstrap.IsListening)
+                throw new InvalidOperationException(
+                    "Player spawn barrier must be configured before startup.");
+            deferPlayerSpawns = defer;
+            playerSpawnBarrierReleased = !defer;
+        }
+
+        public void ReleasePlayerSpawnBarrier()
+        {
+            if (bootstrap?.NetworkManager == null ||
+                !bootstrap.NetworkManager.IsServer)
+                throw new InvalidOperationException(
+                    "Only the server can release the player spawn barrier.");
+            playerSpawnBarrierReleased = true;
+            ulong[] clients = new ulong[waitingClients.Count];
+            waitingClients.CopyTo(clients);
+            waitingClients.Clear();
+            for (int index = 0; index < clients.Length; index++)
+                SpawnApprovedClient(clients[index]);
+        }
+
         public bool RegisterConfiguredPrefabs()
         {
             if (bootstrap == null)
@@ -208,7 +236,8 @@ namespace FPS.Networking.Netcode
                 return false;
             }
 
-            instance.Spawn(destroyWithScene: true);
+            DontDestroyOnLoad(instance.gameObject);
+            instance.Spawn(destroyWithScene: false);
             try
             {
                 sessionAuthority.ConfigureServer(
@@ -227,10 +256,15 @@ namespace FPS.Networking.Netcode
             }
             if (bootstrap.NetworkManager.IsHost)
             {
-                sessionAuthority.RegisterPlayerClient(
-                    NetworkManager.ServerClientId,
-                    1);
-                SpawnPlayer(NetworkManager.ServerClientId, 1);
+                if (IsPlayerSpawnDeferred)
+                    waitingClients.Add(NetworkManager.ServerClientId);
+                else
+                {
+                    sessionAuthority.RegisterPlayerClient(
+                        NetworkManager.ServerClientId,
+                        1);
+                    SpawnPlayer(NetworkManager.ServerClientId, 1);
+                }
             }
             LastFailure = string.Empty;
             return true;
@@ -290,8 +324,27 @@ namespace FPS.Networking.Netcode
             {
                 return;
             }
+            if (deferPlayerSpawns && playerSpawnBarrierReleased)
+            {
+                bootstrap.NetworkManager.DisconnectClient(clientId,
+                    "战局已经开始，请返回房间等待下一局。");
+                return;
+            }
+            if (IsPlayerSpawnDeferred)
+            {
+                waitingClients.Add(clientId);
+                return;
+            }
+            SpawnApprovedClient(clientId);
+        }
+
+        private void SpawnApprovedClient(ulong clientId)
+        {
+            if (playerObjects.ContainsKey(clientId) || sessionAuthority == null)
+                return;
             if (clientId == NetworkManager.ServerClientId)
             {
+                sessionAuthority.RegisterPlayerClient(clientId, 1);
                 SpawnPlayer(clientId, 1);
                 return;
             }
@@ -345,6 +398,7 @@ namespace FPS.Networking.Netcode
                 playerObject.Despawn(destroy: true);
             }
             playerIds.Remove(clientId);
+            waitingClients.Remove(clientId);
             if (sessionAuthority != null)
             {
                 sessionAuthority.UnregisterPlayerClient(clientId);
@@ -369,9 +423,10 @@ namespace FPS.Networking.Netcode
             }
 
             replica.ConfigureServerIdentity(sessionAuthority, playerId);
+            DontDestroyOnLoad(playerObject.gameObject);
             playerObject.SpawnAsPlayerObject(
                 clientId,
-                destroyWithScene: true);
+                destroyWithScene: false);
             playerObjects.Add(clientId, playerObject);
             playerIds[clientId] = playerId;
         }
@@ -387,6 +442,7 @@ namespace FPS.Networking.Netcode
             }
             playerObjects.Clear();
             playerIds.Clear();
+            waitingClients.Clear();
             if (sessionAuthority != null && sessionAuthority.IsSpawned)
             {
                 sessionAuthority.NetworkObject.Despawn(destroy: true);

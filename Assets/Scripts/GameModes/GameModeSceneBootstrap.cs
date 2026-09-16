@@ -56,6 +56,8 @@ public sealed class GameModeSceneBootstrap : MonoBehaviour
         if (marker.Mode == GameModeId.Coop)
         {
             coopSession = CoopSessionRuntimeBootstrap.EnsureForCurrentMode();
+            if (coopSession.GetComponent<CoopSceneLoadCoordinator>() == null)
+                coopSession.gameObject.AddComponent<CoopSceneLoadCoordinator>();
         }
 
         if (marker.Stage == GameModeStage.Entry)

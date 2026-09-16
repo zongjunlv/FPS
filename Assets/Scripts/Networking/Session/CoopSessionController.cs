@@ -38,6 +38,13 @@ namespace FPS.Networking.Session
         public const string PhaseProperty = "phase";
         public const string PhaseLobby = "lobby";
         public const string PhaseStarting = "starting";
+        public const string PhaseLoading = "loading";
+        public const string PhaseBattle = "battle";
+        public const string PhaseCancelled = "cancelled";
+        public const string SeedProperty = "seed";
+        public const string LoadEpochProperty = "load_epoch";
+        public const string ReadyEpochProperty = "ready_epoch";
+        public const string LoadFailureProperty = "load_failure";
 
         private ISession activeSession;
         private OptionalNetworkBootstrap networkBootstrap;
@@ -52,10 +59,20 @@ namespace FPS.Networking.Session
         private bool lobbyOperationInProgress;
         private bool lobbyEnforcementInProgress;
         private bool lobbyStartEventRaised;
+        private readonly CoopSceneLoadBarrier sceneLoadBarrier = new();
+        private CoopNetworkRuntimeInstaller networkInstaller;
+        private string sceneLoadFailure = string.Empty;
+        private string observedLoadEpoch = string.Empty;
+        private bool sceneBarrierEvaluationInProgress;
+        private bool sceneCancellationInProgress;
+        private bool battleReadyEventRaised;
+        private bool sceneCancellationEventRaised;
 
         public event Action<CoopSessionState> StateChanged;
         public event Action LobbyChanged;
         public event Action LobbyStartRequested;
+        public event Action BattleSceneReady;
+        public event Action<string> SceneLoadCancelled;
 
         public CoopSessionState State { get; private set; } =
             CoopSessionState.Offline;
@@ -69,6 +86,7 @@ namespace FPS.Networking.Session
             State == CoopSessionState.Connected;
         public string LastFailure { get; private set; } = string.Empty;
         public ISession ActiveSession => activeSession;
+        public bool HasActiveSession => activeSession != null;
         public IReadOnlyList<CoopLobbyMemberSnapshot> LobbyMembers =>
             lobbyRoster.Members;
         public string LobbyMapId => lobbyMapId;
@@ -93,6 +111,17 @@ namespace FPS.Networking.Session
         public bool CanHostStart => activeSession != null && IsHost &&
             lobbyRoster.CanStart(LocalPlayerId, out _);
         public string LobbyFailureMessage { get; private set; } = string.Empty;
+        public string SceneLoadEpoch => activeSession == null
+            ? string.Empty
+            : Property(activeSession.Properties, LoadEpochProperty, string.Empty);
+        public int SceneSeed => activeSession != null && int.TryParse(
+            Property(activeSession.Properties, SeedProperty, "0"), out int seed)
+            ? seed
+            : 0;
+        public string LobbyPhase => activeSession == null
+            ? PhaseLobby
+            : Property(activeSession.Properties, PhaseProperty, PhaseLobby);
+        public string SceneLoadFailure => sceneLoadFailure;
 
         public void ConfigureLobby(IEnumerable<string> allowedAppearanceIds,
             string defaultAppearanceId, string mapId = DefaultMapId)
@@ -169,7 +198,7 @@ namespace FPS.Networking.Session
 
             try
             {
-                EnsureNetworkPrerequisite();
+                EnsureNetworkPrerequisite(deferPlayerSpawn: true);
                 await EnsureServicesAsync(profile);
                 if (!IsCurrentOperation(generation)) return false;
                 SetState(CoopSessionState.Hosting);
@@ -235,7 +264,7 @@ namespace FPS.Networking.Session
             SetState(CoopSessionState.Initializing);
             try
             {
-                EnsureNetworkPrerequisite();
+                EnsureNetworkPrerequisite(deferPlayerSpawn: true);
                 await EnsureServicesAsync(profile);
                 if (!IsCurrentOperation(generation)) return false;
                 SetState(CoopSessionState.Joining);
@@ -356,7 +385,7 @@ namespace FPS.Networking.Session
             operationInProgress = true;
             try
             {
-                EnsureNetworkPrerequisite();
+                EnsureNetworkPrerequisite(deferPlayerSpawn: false);
                 networkBootstrap.Configure(endpoint);
                 bool started = asHost
                     ? networkBootstrap.StartHost()
@@ -460,8 +489,26 @@ namespace FPS.Networking.Session
             {
                 IHostSession host = activeSession.AsHost();
                 host.IsLocked = true;
+                string epoch = Guid.NewGuid().ToString("N");
+                int seed = BitConverter.ToInt32(Guid.NewGuid().ToByteArray(), 0) &
+                           int.MaxValue;
+                host.SetProperty(MapProperty,
+                    new SessionProperty(DefaultMapId));
+                host.SetProperty(SeedProperty,
+                    new SessionProperty(seed.ToString()));
+                host.SetProperty(LoadEpochProperty,
+                    new SessionProperty(epoch));
+                host.SetProperty(LoadFailureProperty,
+                    new SessionProperty(string.Empty));
                 host.SetProperty(PhaseProperty,
-                    new SessionProperty(PhaseStarting));
+                    new SessionProperty(PhaseLoading));
+                observedLoadEpoch = epoch;
+                sceneLoadFailure = string.Empty;
+                battleReadyEventRaised = false;
+                sceneCancellationEventRaised = false;
+                sceneLoadBarrier.Begin(epoch, DefaultMapId, seed,
+                    activeSession.Players.Select(value => value.Id),
+                    Time.realtimeSinceStartupAsDouble, 30d);
                 await host.SavePropertiesAsync();
                 LobbyFailureMessage = string.Empty;
                 NotifyLobbyChanged();
@@ -478,6 +525,72 @@ namespace FPS.Networking.Session
                 lobbyOperationInProgress = false;
                 NotifyLobbyChanged();
             }
+        }
+
+        public async Task<bool> ReportSceneReadyAsync(string epoch)
+        {
+            if (!CanMutateLobby()) return false;
+            if (!string.Equals(SceneLoadEpoch, epoch, StringComparison.Ordinal) ||
+                !string.Equals(LobbyPhase, PhaseLoading,
+                    StringComparison.Ordinal))
+                return FailSceneLoad("场景就绪回报已过期，服务器已忽略。");
+            try
+            {
+                activeSession.CurrentPlayer.SetProperty(ReadyEpochProperty,
+                    new PlayerProperty(epoch));
+                await activeSession.SaveCurrentPlayerDataAsync();
+                RefreshLobbyFromSession();
+                await EvaluateHostSceneLoadBarrierAsync();
+                return true;
+            }
+            catch (Exception exception)
+            {
+                return FailSceneLoad(exception.Message);
+            }
+        }
+
+        public async Task<bool> CancelSceneLoadAsync(string reason)
+        {
+            if (activeSession == null || !activeSession.IsHost) return false;
+            if (string.Equals(LobbyPhase, PhaseCancelled,
+                    StringComparison.Ordinal)) return true;
+            if (sceneCancellationInProgress) return false;
+            sceneCancellationInProgress = true;
+            sceneLoadBarrier.Cancel();
+            sceneLoadFailure = string.IsNullOrWhiteSpace(reason)
+                ? "服务器取消了场景加载。"
+                : reason.Trim();
+            try
+            {
+                IHostSession host = activeSession.AsHost();
+                host.IsLocked = false;
+                host.SetProperty(LoadFailureProperty,
+                    new SessionProperty(sceneLoadFailure));
+                host.SetProperty(PhaseProperty,
+                    new SessionProperty(PhaseCancelled));
+                await host.SavePropertiesAsync();
+                RaiseSceneLoadCancelledOnce();
+                NotifyLobbyChanged();
+                return true;
+            }
+            catch (Exception exception)
+            {
+                return FailSceneLoad(exception.Message);
+            }
+            finally
+            {
+                sceneCancellationInProgress = false;
+            }
+        }
+
+        public void TickSceneLoadTimeout(double nowSeconds)
+        {
+            if (activeSession == null || !activeSession.IsHost ||
+                !string.Equals(LobbyPhase, PhaseLoading,
+                    StringComparison.Ordinal)) return;
+            EnsureHostSceneLoadBarrier();
+            if (sceneLoadBarrier.Tick(nowSeconds))
+                _ = CancelSceneLoadAsync("等待成员加载 CityNew 超时，战局已取消。");
         }
 
         private bool CanBegin()
@@ -523,9 +636,13 @@ namespace FPS.Networking.Session
             return manager.IsConnectedClient ? 2 : 1;
         }
 
-        private void EnsureNetworkPrerequisite()
+        private void EnsureNetworkPrerequisite(bool deferPlayerSpawn)
         {
-            if (networkBootstrap != null) return;
+            if (networkBootstrap != null)
+            {
+                networkInstaller?.ConfigurePlayerSpawnBarrier(deferPlayerSpawn);
+                return;
+            }
             networkBootstrap = OptionalNetworkBootstrap.CreateRuntime(
                 NetworkEndpointSettings.Localhost,
                 "FPS Coop Network Runtime");
@@ -555,11 +672,17 @@ namespace FPS.Networking.Session
             CoopNetworkRuntimeInstaller installer =
                 networkBootstrap.gameObject.AddComponent<
                     CoopNetworkRuntimeInstaller>();
+            networkInstaller = installer;
             installer.ConfigurePrefabs(authorityPrefab, replicaPrefab);
             installer.ConfigureScenario(
-                BuildPlayerSpawns(),
-                BuildTargetSpawns(),
+                deferPlayerSpawn
+                    ? BuildCityNewPlayerSpawns()
+                    : BuildPlayerSpawns(),
+                deferPlayerSpawn
+                    ? BuildCityNewTargetSpawns()
+                    : BuildTargetSpawns(),
                 1);
+            installer.ConfigurePlayerSpawnBarrier(deferPlayerSpawn);
             networkBootstrap.gameObject.AddComponent<
                 CoopNetworkWorldPresenter>();
             if (!installer.RegisterConfiguredPrefabs())
@@ -592,6 +715,26 @@ namespace FPS.Networking.Session
             };
         }
 
+        private static CoopPlayerSpawnDefinition[] BuildCityNewPlayerSpawns()
+        {
+            Vector3 origin = new(49.761f, 0.16f, 59.719f);
+            return new[]
+            {
+                new CoopPlayerSpawnDefinition
+                {
+                    PlayerId = 1,
+                    Position = origin + Vector3.left * 1.25f,
+                    Health = 100f
+                },
+                new CoopPlayerSpawnDefinition
+                {
+                    PlayerId = 2,
+                    Position = origin + Vector3.right * 1.25f,
+                    Health = 100f
+                }
+            };
+        }
+
         private static CoopTargetSpawnDefinition[] BuildTargetSpawns()
         {
             Vector3 origin = ResolveArenaOrigin(out Vector3 forward);
@@ -601,6 +744,21 @@ namespace FPS.Networking.Session
                 {
                     TargetId = 1,
                     Position = origin + forward * 15f,
+                    Radius = 1.25f,
+                    Health = 68f,
+                    DropDefinitionId = "medkit"
+                }
+            };
+        }
+
+        private static CoopTargetSpawnDefinition[] BuildCityNewTargetSpawns()
+        {
+            return new[]
+            {
+                new CoopTargetSpawnDefinition
+                {
+                    TargetId = 1,
+                    Position = new Vector3(49.761f, 0.16f, 74.719f),
                     Radius = 1.25f,
                     Health = 68f,
                     DropDefinitionId = "medkit"
@@ -682,7 +840,14 @@ namespace FPS.Networking.Session
         {
             RefreshLobbyFromSession();
             _ = EnforceHostLobbyRulesAsync();
-            if (HasStartingPhase()) RaiseLobbyStartOnce();
+            if (HasLoadingPhase()) RaiseLobbyStartOnce();
+            _ = EvaluateHostSceneLoadBarrierAsync();
+            if (string.Equals(LobbyPhase, PhaseBattle,
+                    StringComparison.Ordinal))
+                RaiseBattleReadyOnce();
+            if (string.Equals(LobbyPhase, PhaseCancelled,
+                    StringComparison.Ordinal))
+                RaiseSceneLoadCancelledOnce();
             StateChanged?.Invoke(State);
         }
 
@@ -727,9 +892,31 @@ namespace FPS.Networking.Session
 
             lobbyMapId = Property(activeSession.Properties, MapProperty,
                 lobbyMapId);
-            bool starting = string.Equals(Property(activeSession.Properties,
-                    PhaseProperty, PhaseLobby), PhaseStarting,
-                StringComparison.Ordinal);
+            string phase = Property(activeSession.Properties,
+                PhaseProperty, PhaseLobby);
+            string loadEpoch = Property(activeSession.Properties,
+                LoadEpochProperty, string.Empty);
+            if (string.Equals(phase, PhaseLoading, StringComparison.Ordinal) &&
+                !string.Equals(observedLoadEpoch, loadEpoch,
+                    StringComparison.Ordinal))
+            {
+                observedLoadEpoch = loadEpoch;
+                sceneLoadFailure = string.Empty;
+                battleReadyEventRaised = false;
+                sceneCancellationEventRaised = false;
+            }
+            else if (string.Equals(phase, PhaseCancelled,
+                         StringComparison.Ordinal))
+            {
+                sceneLoadFailure = Property(activeSession.Properties,
+                    LoadFailureProperty, "服务器取消了场景加载。");
+            }
+            bool starting = string.Equals(phase, PhaseStarting,
+                StringComparison.Ordinal) ||
+                string.Equals(phase, PhaseLoading,
+                    StringComparison.Ordinal) ||
+                string.Equals(phase, PhaseBattle,
+                    StringComparison.Ordinal);
             if (!starting) lobbyStartEventRaised = false;
             var members = new List<CoopLobbyMemberSnapshot>();
             for (int index = 0; index < activeSession.Players.Count; index++)
@@ -787,9 +974,80 @@ namespace FPS.Networking.Session
             }
         }
 
-        private bool HasStartingPhase() => activeSession != null &&
+        private bool HasLoadingPhase() => activeSession != null &&
             string.Equals(Property(activeSession.Properties, PhaseProperty,
-                PhaseLobby), PhaseStarting, StringComparison.Ordinal);
+                PhaseLobby), PhaseLoading, StringComparison.Ordinal);
+
+        private void EnsureHostSceneLoadBarrier()
+        {
+            if (activeSession == null || !activeSession.IsHost ||
+                string.Equals(sceneLoadBarrier.Epoch, SceneLoadEpoch,
+                    StringComparison.Ordinal) &&
+                sceneLoadBarrier.State != CoopSceneLoadState.Idle) return;
+            if (!string.Equals(LobbyPhase, PhaseLoading,
+                    StringComparison.Ordinal) ||
+                string.IsNullOrWhiteSpace(SceneLoadEpoch)) return;
+            sceneLoadBarrier.Begin(SceneLoadEpoch, LobbyMapId, SceneSeed,
+                activeSession.Players.Select(value => value.Id),
+                Time.realtimeSinceStartupAsDouble, 30d);
+        }
+
+        private async Task EvaluateHostSceneLoadBarrierAsync()
+        {
+            if (activeSession == null || !activeSession.IsHost ||
+                sceneBarrierEvaluationInProgress ||
+                sceneCancellationInProgress ||
+                !string.Equals(LobbyPhase, PhaseLoading,
+                    StringComparison.Ordinal)) return;
+            sceneBarrierEvaluationInProgress = true;
+            try
+            {
+                EnsureHostSceneLoadBarrier();
+                if (activeSession == null ||
+                    activeSession.PlayerCount != MaximumPlayers)
+                {
+                    await CancelSceneLoadAsync(
+                        "成员在加载期间离开，服务器已取消本次战局。");
+                    return;
+                }
+                for (int index = 0; index < activeSession.Players.Count; index++)
+                {
+                    IReadOnlyPlayer player = activeSession.Players[index];
+                    string readyEpoch = Property(player.Properties,
+                        ReadyEpochProperty, string.Empty);
+                    if (!string.Equals(readyEpoch, SceneLoadEpoch,
+                            StringComparison.Ordinal)) continue;
+                    sceneLoadBarrier.ReportReady(player.Id, readyEpoch);
+                }
+                if (sceneLoadBarrier.State != CoopSceneLoadState.Ready ||
+                    activeSession == null || !activeSession.IsHost ||
+                    !string.Equals(LobbyPhase, PhaseLoading,
+                        StringComparison.Ordinal)) return;
+                IHostSession host = activeSession.AsHost();
+                host.SetProperty(PhaseProperty,
+                    new SessionProperty(PhaseBattle));
+                await host.SavePropertiesAsync();
+                RaiseBattleReadyOnce();
+                NotifyLobbyChanged();
+            }
+            catch (Exception exception)
+            {
+                FailSceneLoad(exception.Message);
+            }
+            finally
+            {
+                sceneBarrierEvaluationInProgress = false;
+            }
+        }
+
+        private bool FailSceneLoad(string message)
+        {
+            sceneLoadFailure = string.IsNullOrWhiteSpace(message)
+                ? "场景加载失败。"
+                : message.Trim();
+            NotifyLobbyChanged();
+            return false;
+        }
 
         private bool FailLobby(CoopLobbyFailure failure)
         {
@@ -812,7 +1070,27 @@ namespace FPS.Networking.Session
             lobbyRoster.Reset(Array.Empty<CoopLobbyMemberSnapshot>(), false);
             LobbyFailureMessage = string.Empty;
             lobbyStartEventRaised = false;
+            sceneLoadFailure = string.Empty;
+            observedLoadEpoch = string.Empty;
+            sceneBarrierEvaluationInProgress = false;
+            sceneCancellationInProgress = false;
+            battleReadyEventRaised = false;
+            sceneCancellationEventRaised = false;
             NotifyLobbyChanged();
+        }
+
+        private void RaiseBattleReadyOnce()
+        {
+            if (battleReadyEventRaised) return;
+            battleReadyEventRaised = true;
+            BattleSceneReady?.Invoke();
+        }
+
+        private void RaiseSceneLoadCancelledOnce()
+        {
+            if (sceneCancellationEventRaised) return;
+            sceneCancellationEventRaised = true;
+            SceneLoadCancelled?.Invoke(sceneLoadFailure);
         }
 
         private void RaiseLobbyStartOnce()

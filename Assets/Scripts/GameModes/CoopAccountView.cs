@@ -270,9 +270,12 @@ public sealed class CoopAccountView : MonoBehaviour
             lobbyAppearanceIndex = index;
             break;
         }
-        session.ConfigureLobby(definitions.Select(value => value.StableId),
-            definitions[lobbyAppearanceIndex].StableId,
-            CoopSessionController.DefaultMapId);
+        if (!session.HasActiveSession)
+        {
+            session.ConfigureLobby(definitions.Select(value => value.StableId),
+                definitions[lobbyAppearanceIndex].StableId,
+                CoopSessionController.DefaultMapId);
+        }
     }
 
     private void BuildLobbyPanel(Transform parent)

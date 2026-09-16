@@ -26,9 +26,19 @@ public sealed class GameModeSceneMarker : MonoBehaviour
 
     public bool ActivateContext()
     {
+        GameModeId effectiveMode = mode;
+        GameModeStage effectiveStage = stage;
+        if (mode == GameModeId.SoloBattle &&
+            stage == GameModeStage.Battle &&
+            GameModeContext.RequestedMode == GameModeId.Coop &&
+            GameModeContext.RequestedStage == GameModeStage.CoopLobby)
+        {
+            effectiveMode = GameModeId.Coop;
+            effectiveStage = GameModeStage.CoopLobby;
+        }
         IsActivated = GameModeContext.TryActivate(
-            mode,
-            stage,
+            effectiveMode,
+            effectiveStage,
             out string error);
         ActivationError = error;
 
