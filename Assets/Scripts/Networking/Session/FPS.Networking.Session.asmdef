@@ -5,6 +5,7 @@
     "FPS.Networking.Domain",
     "FPS.Networking.Netcode",
     "Unity.Netcode.Runtime",
+    "Unity.Collections",
     "Unity.InputSystem",
     "Unity.Services.Core",
     "Unity.Services.Authentication",

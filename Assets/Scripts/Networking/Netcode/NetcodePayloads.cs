@@ -385,6 +385,266 @@ namespace FPS.Networking.Netcode
         }
     }
 
+    public struct NetcodeEconomyCommand : INetworkSerializable,
+        IEquatable<NetcodeEconomyCommand>
+    {
+        public int PlayerId;
+        public uint Sequence;
+        public ulong Nonce;
+        public AuthoritativeEconomyCommandKind Kind;
+        public int EntityId;
+        public int SourceSlot;
+        public int DestinationSlot;
+        public int Quantity;
+        public int CandidateIndex;
+        public int ExpectedInventoryRevision;
+        public int ExpectedDropRevision;
+        public int ChoiceGeneration;
+        public FixedString64Bytes ExpectedItemId;
+
+        public static NetcodeEconomyCommand FromDomain(
+            AuthoritativeEconomyCommand value) => new()
+        {
+            PlayerId = value.PlayerId,
+            Sequence = value.Sequence,
+            Nonce = value.Nonce,
+            Kind = value.Kind,
+            EntityId = value.EntityId,
+            SourceSlot = value.SourceSlot,
+            DestinationSlot = value.DestinationSlot,
+            Quantity = value.Quantity,
+            CandidateIndex = value.CandidateIndex,
+            ExpectedInventoryRevision = value.ExpectedInventoryRevision,
+            ExpectedDropRevision = value.ExpectedDropRevision,
+            ChoiceGeneration = value.ChoiceGeneration,
+            ExpectedItemId = value.ExpectedItemId
+        };
+
+        public AuthoritativeEconomyCommand ToDomain() => new(
+            PlayerId, Sequence, Nonce, Kind, EntityId, SourceSlot,
+            DestinationSlot, Quantity, CandidateIndex,
+            ExpectedInventoryRevision, ExpectedDropRevision,
+            ChoiceGeneration, ExpectedItemId.ToString());
+
+        public void NetworkSerialize<T>(BufferSerializer<T> serializer)
+            where T : IReaderWriter
+        {
+            serializer.SerializeValue(ref PlayerId);
+            serializer.SerializeValue(ref Sequence);
+            serializer.SerializeValue(ref Nonce);
+            serializer.SerializeValue(ref Kind);
+            serializer.SerializeValue(ref EntityId);
+            serializer.SerializeValue(ref SourceSlot);
+            serializer.SerializeValue(ref DestinationSlot);
+            serializer.SerializeValue(ref Quantity);
+            serializer.SerializeValue(ref CandidateIndex);
+            serializer.SerializeValue(ref ExpectedInventoryRevision);
+            serializer.SerializeValue(ref ExpectedDropRevision);
+            serializer.SerializeValue(ref ChoiceGeneration);
+            serializer.SerializeValue(ref ExpectedItemId);
+        }
+
+        public bool Equals(NetcodeEconomyCommand other) =>
+            PlayerId == other.PlayerId && Sequence == other.Sequence &&
+            Nonce == other.Nonce && Kind == other.Kind &&
+            EntityId == other.EntityId && SourceSlot == other.SourceSlot &&
+            DestinationSlot == other.DestinationSlot &&
+            Quantity == other.Quantity &&
+            CandidateIndex == other.CandidateIndex &&
+            ExpectedInventoryRevision == other.ExpectedInventoryRevision &&
+            ExpectedDropRevision == other.ExpectedDropRevision &&
+            ChoiceGeneration == other.ChoiceGeneration &&
+            ExpectedItemId.Equals(other.ExpectedItemId);
+    }
+
+    public struct NetcodeInventorySlotState : INetworkSerializable,
+        IEquatable<NetcodeInventorySlotState>
+    {
+        public int PlayerId;
+        public int SlotIndex;
+        public FixedString64Bytes ItemId;
+        public int Quantity;
+        public int MaximumStack;
+
+        public static NetcodeInventorySlotState FromDomain(
+            AuthoritativeInventorySlotState value) => new()
+        {
+            PlayerId = value.PlayerId,
+            SlotIndex = value.SlotIndex,
+            ItemId = value.ItemId,
+            Quantity = value.Quantity,
+            MaximumStack = value.MaximumStack
+        };
+
+        public void NetworkSerialize<T>(BufferSerializer<T> serializer)
+            where T : IReaderWriter
+        {
+            serializer.SerializeValue(ref PlayerId);
+            serializer.SerializeValue(ref SlotIndex);
+            serializer.SerializeValue(ref ItemId);
+            serializer.SerializeValue(ref Quantity);
+            serializer.SerializeValue(ref MaximumStack);
+        }
+
+        public bool Equals(NetcodeInventorySlotState other) =>
+            PlayerId == other.PlayerId && SlotIndex == other.SlotIndex &&
+            ItemId.Equals(other.ItemId) && Quantity == other.Quantity &&
+            MaximumStack == other.MaximumStack;
+    }
+
+    public struct NetcodeWorldDropState : INetworkSerializable,
+        IEquatable<NetcodeWorldDropState>
+    {
+        public int DropId;
+        public FixedString64Bytes ItemId;
+        public int Quantity;
+        public Vector3 Position;
+        public int OwnerPlayerId;
+        public bool Available;
+        public int Revision;
+
+        public static NetcodeWorldDropState FromDomain(
+            AuthoritativeWorldDropState value) => new()
+        {
+            DropId = value.DropId,
+            ItemId = value.ItemId,
+            Quantity = value.Quantity,
+            Position = NetcodeConversions.ToUnity(value.Position),
+            OwnerPlayerId = value.OwnerPlayerId,
+            Available = value.Available,
+            Revision = value.Revision
+        };
+
+        public void NetworkSerialize<T>(BufferSerializer<T> serializer)
+            where T : IReaderWriter
+        {
+            serializer.SerializeValue(ref DropId);
+            serializer.SerializeValue(ref ItemId);
+            serializer.SerializeValue(ref Quantity);
+            serializer.SerializeValue(ref Position);
+            serializer.SerializeValue(ref OwnerPlayerId);
+            serializer.SerializeValue(ref Available);
+            serializer.SerializeValue(ref Revision);
+        }
+
+        public bool Equals(NetcodeWorldDropState other) =>
+            DropId == other.DropId && ItemId.Equals(other.ItemId) &&
+            Quantity == other.Quantity && Position.Equals(other.Position) &&
+            OwnerPlayerId == other.OwnerPlayerId &&
+            Available == other.Available && Revision == other.Revision;
+    }
+
+    public struct NetcodeProgressionState : INetworkSerializable,
+        IEquatable<NetcodeProgressionState>
+    {
+        public int PlayerId;
+        public int Level;
+        public int CurrentExperience;
+        public int ExperienceToNextLevel;
+        public int TotalExperience;
+        public int PendingUpgradeChoices;
+        public FixedString64Bytes Candidate0;
+        public FixedString64Bytes Candidate1;
+        public FixedString64Bytes Candidate2;
+        public FixedString512Bytes BuildTags;
+        public uint AcknowledgedEconomySequence;
+        public int InventoryRevision;
+        public int ChoiceGeneration;
+        public long NextConsumableUseTick;
+
+        public static NetcodeProgressionState FromDomain(
+            AuthoritativeProgressionState value) => new()
+        {
+            PlayerId = value.PlayerId,
+            Level = value.Level,
+            CurrentExperience = value.CurrentExperience,
+            ExperienceToNextLevel = value.ExperienceToNextLevel,
+            TotalExperience = value.TotalExperience,
+            PendingUpgradeChoices = value.PendingUpgradeChoices,
+            Candidate0 = Candidate(value, 0),
+            Candidate1 = Candidate(value, 1),
+            Candidate2 = Candidate(value, 2),
+            BuildTags = string.Join("|", value.BuildTags),
+            AcknowledgedEconomySequence =
+                value.AcknowledgedEconomySequence,
+            InventoryRevision = value.InventoryRevision,
+            ChoiceGeneration = value.ChoiceGeneration,
+            NextConsumableUseTick = value.NextConsumableUseTick
+        };
+
+        private static string Candidate(
+            AuthoritativeProgressionState value,
+            int index) => index < value.CandidateIds.Count
+            ? value.CandidateIds[index]
+            : string.Empty;
+
+        public void NetworkSerialize<T>(BufferSerializer<T> serializer)
+            where T : IReaderWriter
+        {
+            serializer.SerializeValue(ref PlayerId);
+            serializer.SerializeValue(ref Level);
+            serializer.SerializeValue(ref CurrentExperience);
+            serializer.SerializeValue(ref ExperienceToNextLevel);
+            serializer.SerializeValue(ref TotalExperience);
+            serializer.SerializeValue(ref PendingUpgradeChoices);
+            serializer.SerializeValue(ref Candidate0);
+            serializer.SerializeValue(ref Candidate1);
+            serializer.SerializeValue(ref Candidate2);
+            serializer.SerializeValue(ref BuildTags);
+            serializer.SerializeValue(ref AcknowledgedEconomySequence);
+            serializer.SerializeValue(ref InventoryRevision);
+            serializer.SerializeValue(ref ChoiceGeneration);
+            serializer.SerializeValue(ref NextConsumableUseTick);
+        }
+
+        public bool Equals(NetcodeProgressionState other) =>
+            PlayerId == other.PlayerId && Level == other.Level &&
+            CurrentExperience == other.CurrentExperience &&
+            ExperienceToNextLevel == other.ExperienceToNextLevel &&
+            TotalExperience == other.TotalExperience &&
+            PendingUpgradeChoices == other.PendingUpgradeChoices &&
+            Candidate0.Equals(other.Candidate0) &&
+            Candidate1.Equals(other.Candidate1) &&
+            Candidate2.Equals(other.Candidate2) &&
+            BuildTags.Equals(other.BuildTags) &&
+            AcknowledgedEconomySequence ==
+                other.AcknowledgedEconomySequence &&
+            InventoryRevision == other.InventoryRevision &&
+            ChoiceGeneration == other.ChoiceGeneration &&
+            NextConsumableUseTick == other.NextConsumableUseTick;
+    }
+
+    public struct NetcodeUpgradeStackState : INetworkSerializable,
+        IEquatable<NetcodeUpgradeStackState>
+    {
+        public int PlayerId;
+        public FixedString64Bytes UpgradeId;
+        public int Level;
+        public FixedString64Bytes BuildTag;
+
+        public static NetcodeUpgradeStackState FromDomain(
+            AuthoritativeUpgradeStackState value) => new()
+        {
+            PlayerId = value.PlayerId,
+            UpgradeId = value.UpgradeId,
+            Level = value.Level,
+            BuildTag = value.BuildTag
+        };
+
+        public void NetworkSerialize<T>(BufferSerializer<T> serializer)
+            where T : IReaderWriter
+        {
+            serializer.SerializeValue(ref PlayerId);
+            serializer.SerializeValue(ref UpgradeId);
+            serializer.SerializeValue(ref Level);
+            serializer.SerializeValue(ref BuildTag);
+        }
+
+        public bool Equals(NetcodeUpgradeStackState other) =>
+            PlayerId == other.PlayerId && UpgradeId.Equals(other.UpgradeId) &&
+            Level == other.Level && BuildTag.Equals(other.BuildTag);
+    }
+
     public struct NetcodePlayerState : INetworkSerializable,
         IEquatable<NetcodePlayerState>
     {
@@ -415,6 +675,9 @@ namespace FPS.Networking.Netcode
         public FixedString64Bytes PendingCombatWeaponId;
         public long SwitchEndTick;
         public long LastShotEventSequence;
+        public float MaximumHealth;
+        public float Armor;
+        public float MaximumArmor;
 
         public bool IsAlive => Health > 0f;
 
@@ -445,7 +708,10 @@ namespace FPS.Networking.Netcode
                 ReloadEndTick = value.ReloadEndTick,
                 Switching = value.Switching,
                 PendingCombatWeaponId = value.PendingWeaponId,
-                SwitchEndTick = value.SwitchEndTick
+                SwitchEndTick = value.SwitchEndTick,
+                MaximumHealth = (float)value.MaximumHealth,
+                Armor = (float)value.Armor,
+                MaximumArmor = (float)value.MaximumArmor
             };
         }
 
@@ -462,7 +728,21 @@ namespace FPS.Networking.Netcode
                 (PlayerStance)Stance,
                 Grounded,
                 LastJumpTick,
-                GroundHeight);
+                GroundHeight,
+                CombatWeaponId.IsEmpty
+                    ? NetworkPresentationIds.RifleGameplay
+                    : CombatWeaponId.ToString(),
+                MagazineAmmo,
+                ReserveAmmo,
+                Reloading,
+                ReloadEndTick,
+                Switching,
+                PendingCombatWeaponId.ToString(),
+                SwitchEndTick,
+                Array.Empty<AuthoritativeWeaponState>(),
+                MaximumHealth,
+                Armor,
+                MaximumArmor);
         }
 
         public RemotePlayerSnapshot ToRemoteSnapshot()
@@ -500,6 +780,9 @@ namespace FPS.Networking.Netcode
             serializer.SerializeValue(ref PendingCombatWeaponId);
             serializer.SerializeValue(ref SwitchEndTick);
             serializer.SerializeValue(ref LastShotEventSequence);
+            serializer.SerializeValue(ref MaximumHealth);
+            serializer.SerializeValue(ref Armor);
+            serializer.SerializeValue(ref MaximumArmor);
 
             int positionX = 0;
             int positionY = 0;
@@ -590,7 +873,10 @@ namespace FPS.Networking.Netcode
                 Switching == other.Switching &&
                 PendingCombatWeaponId.Equals(other.PendingCombatWeaponId) &&
                 SwitchEndTick == other.SwitchEndTick &&
-                LastShotEventSequence == other.LastShotEventSequence;
+                LastShotEventSequence == other.LastShotEventSequence &&
+                MaximumHealth.Equals(other.MaximumHealth) &&
+                Armor.Equals(other.Armor) &&
+                MaximumArmor.Equals(other.MaximumArmor);
         }
 
         private static int QuantizeInt(float value, float scale)
@@ -694,6 +980,7 @@ namespace FPS.Networking.Netcode
         public int PendingEnemyCount;
         public int RemainingEnemyCount;
         public long LastEventSequence;
+        public int EconomyRevision;
 
         public void NetworkSerialize<T>(BufferSerializer<T> serializer)
             where T : IReaderWriter
@@ -707,6 +994,7 @@ namespace FPS.Networking.Netcode
             serializer.SerializeValue(ref PendingEnemyCount);
             serializer.SerializeValue(ref RemainingEnemyCount);
             serializer.SerializeValue(ref LastEventSequence);
+            serializer.SerializeValue(ref EconomyRevision);
         }
 
         public bool Equals(NetcodeWorldState other)
@@ -719,7 +1007,8 @@ namespace FPS.Networking.Netcode
                 ActiveEnemyCount == other.ActiveEnemyCount &&
                 PendingEnemyCount == other.PendingEnemyCount &&
                 RemainingEnemyCount == other.RemainingEnemyCount &&
-                LastEventSequence == other.LastEventSequence;
+                LastEventSequence == other.LastEventSequence &&
+                EconomyRevision == other.EconomyRevision;
         }
     }
 

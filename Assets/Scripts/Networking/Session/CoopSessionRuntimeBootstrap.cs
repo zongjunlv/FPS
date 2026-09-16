@@ -25,12 +25,15 @@ namespace FPS.Networking.Session
                     CoopSessionController>();
             if (existing != null)
             {
+                if (existing.GetComponent<CoopEconomyHudPresenter>() == null)
+                    existing.gameObject.AddComponent<CoopEconomyHudPresenter>();
                 return existing;
             }
 
             var runtime = new GameObject("Optional Coop Session");
             runtime.AddComponent<CoopSessionController>();
             runtime.AddComponent<CoopSessionOverlay>();
+            runtime.AddComponent<CoopEconomyHudPresenter>();
             UnityEngine.Object.DontDestroyOnLoad(runtime);
             CoopSessionController controller =
                 runtime.GetComponent<CoopSessionController>();

@@ -49,9 +49,25 @@ namespace FPS.Networking.Netcode
         private readonly NetworkList<NetcodeShotFeedbackEvent> shotEvents =
             new(null, NetworkVariableReadPermission.Everyone,
                 NetworkVariableWritePermission.Server);
+        private readonly NetworkList<NetcodeInventorySlotState>
+            inventoryStates = new(null,
+                NetworkVariableReadPermission.Everyone,
+                NetworkVariableWritePermission.Server);
+        private readonly NetworkList<NetcodeWorldDropState> worldDropStates =
+            new(null, NetworkVariableReadPermission.Everyone,
+                NetworkVariableWritePermission.Server);
+        private readonly NetworkList<NetcodeProgressionState>
+            progressionStates = new(null,
+                NetworkVariableReadPermission.Everyone,
+                NetworkVariableWritePermission.Server);
+        private readonly NetworkList<NetcodeUpgradeStackState> upgradeStates =
+            new(null, NetworkVariableReadPermission.Everyone,
+                NetworkVariableWritePermission.Server);
 
         private readonly Dictionary<ulong, int> playerByClient = new();
         private readonly List<PlayerInputCommand> pendingCommands = new();
+        private readonly List<AuthoritativeEconomyCommand>
+            pendingEconomyCommands = new();
         private readonly Dictionary<(int playerId, uint sequence),
             NetcodePlayerCommand> pendingPresentationInputs = new();
         private readonly Dictionary<int, ServerPresentationState>
@@ -91,6 +107,18 @@ namespace FPS.Networking.Netcode
         public int ReplicatedShotEventCount => IsSpawned
             ? shotEvents.Count
             : offlineShotEvents.Count;
+        public int ReplicatedInventorySlotCount => IsSpawned
+            ? inventoryStates.Count
+            : LastAuthoritativeSnapshot?.Economy.InventorySlots.Count ?? 0;
+        public int ReplicatedWorldDropCount => IsSpawned
+            ? worldDropStates.Count
+            : LastAuthoritativeSnapshot?.Economy.WorldDrops.Count ?? 0;
+        public int ReplicatedProgressionCount => IsSpawned
+            ? progressionStates.Count
+            : LastAuthoritativeSnapshot?.Economy.Progression.Count ?? 0;
+        public int ReplicatedUpgradeCount => IsSpawned
+            ? upgradeStates.Count
+            : LastAuthoritativeSnapshot?.Economy.Upgrades.Count ?? 0;
         public AuthoritativeTickResult LastServerResult => lastResult;
         public AuthoritativeWorldSnapshot LastAuthoritativeSnapshot =>
             lastSnapshot ?? simulation?.CaptureSnapshot();
@@ -148,6 +176,7 @@ namespace FPS.Networking.Netcode
                 rulesState.Reset(replicatedRules);
             }
             pendingCommands.Clear();
+            pendingEconomyCommands.Clear();
             pendingPresentationInputs.Clear();
             playerPresentation.Clear();
             offlinePresentationEvents.Clear();
@@ -217,6 +246,17 @@ namespace FPS.Networking.Netcode
                 payload);
         }
 
+        [Rpc(SendTo.Server, InvokePermission = RpcInvokePermission.Everyone,
+            Delivery = RpcDelivery.Reliable)]
+        public void SubmitEconomyRpc(
+            NetcodeEconomyCommand payload,
+            RpcParams rpcParams = default)
+        {
+            TryQueueEconomyCommand(
+                rpcParams.Receive.SenderClientId,
+                payload);
+        }
+
         /// <summary>
         /// Server-side transport/authentication seam. This is public so a
         /// multi-process PlayMode fixture can inject the actual sender id.
@@ -239,6 +279,23 @@ namespace FPS.Networking.Netcode
             pendingCommands.Add(payload.ToDomain(forceFire));
             pendingPresentationInputs[(payload.PlayerId, payload.Sequence)] =
                 payload;
+            return true;
+        }
+
+        public bool TryQueueEconomyCommand(
+            ulong senderClientId,
+            NetcodeEconomyCommand payload)
+        {
+            if (!CanServerWrite || simulation == null ||
+                !playerByClient.TryGetValue(senderClientId, out int playerId) ||
+                payload.PlayerId != playerId)
+            {
+                UnauthorizedCommandRejected?.Invoke(
+                    senderClientId,
+                    payload.PlayerId);
+                return false;
+            }
+            pendingEconomyCommands.Add(payload.ToDomain());
             return true;
         }
 
@@ -341,7 +398,10 @@ namespace FPS.Networking.Netcode
 
             PlayerInputCommand[] commands = pendingCommands.ToArray();
             pendingCommands.Clear();
-            lastResult = simulation.Step(commands);
+            AuthoritativeEconomyCommand[] economyCommands =
+                pendingEconomyCommands.ToArray();
+            pendingEconomyCommands.Clear();
+            lastResult = simulation.Step(commands, economyCommands);
             ApplyAcceptedPresentationInputs(lastResult.Commands);
             PublishShotEvents(lastResult);
             pendingPresentationInputs.Clear();
@@ -349,6 +409,38 @@ namespace FPS.Networking.Netcode
             PublishSnapshot(lastResult.Snapshot, lastResult.Events);
             ServerTickCompleted?.Invoke(lastResult);
             return lastResult;
+        }
+
+        public int SpawnServerWorldDrop(
+            string itemId,
+            int quantity,
+            Vector3 position,
+            int ownerPlayerId = 0)
+        {
+            RequireServerWrite();
+            if (simulation == null)
+                throw new InvalidOperationException(
+                    "ConfigureServer must be called before spawning drops.");
+            int dropId = simulation.SpawnServerWorldDrop(
+                itemId, quantity, NetcodeConversions.ToDomain(position),
+                ownerPlayerId);
+            lastSnapshot = simulation.CaptureSnapshot();
+            PublishSnapshot(lastSnapshot,
+                Array.Empty<AuthoritativeEvent>());
+            return dropId;
+        }
+
+        public int GrantServerExperience(int playerId, int amount)
+        {
+            RequireServerWrite();
+            if (simulation == null)
+                throw new InvalidOperationException(
+                    "ConfigureServer must be called before granting XP.");
+            int levels = simulation.GrantServerExperience(playerId, amount);
+            lastSnapshot = simulation.CaptureSnapshot();
+            PublishSnapshot(lastSnapshot,
+                Array.Empty<AuthoritativeEvent>());
+            return levels;
         }
 
         public IReadOnlyList<AuthoritativeEvent> ApplyServerDamageToPlayer(
@@ -602,6 +694,50 @@ namespace FPS.Networking.Netcode
         public NetcodeAuthorityEvent GetReplicatedEvent(int index) =>
             authorityEvents[index];
 
+        public NetcodeInventorySlotState GetReplicatedInventorySlot(int index)
+        {
+            if (IsSpawned) return inventoryStates[index];
+            return NetcodeInventorySlotState.FromDomain(
+                LastAuthoritativeSnapshot.Economy.InventorySlots[index]);
+        }
+
+        public NetcodeWorldDropState GetReplicatedWorldDrop(int index)
+        {
+            if (IsSpawned) return worldDropStates[index];
+            return NetcodeWorldDropState.FromDomain(
+                LastAuthoritativeSnapshot.Economy.WorldDrops[index]);
+        }
+
+        public NetcodeProgressionState GetReplicatedProgression(int index)
+        {
+            if (IsSpawned) return progressionStates[index];
+            return NetcodeProgressionState.FromDomain(
+                LastAuthoritativeSnapshot.Economy.Progression[index]);
+        }
+
+        public NetcodeUpgradeStackState GetReplicatedUpgrade(int index)
+        {
+            if (IsSpawned) return upgradeStates[index];
+            return NetcodeUpgradeStackState.FromDomain(
+                LastAuthoritativeSnapshot.Economy.Upgrades[index]);
+        }
+
+        public bool TryGetProgression(
+            int playerId,
+            out NetcodeProgressionState state)
+        {
+            for (int index = 0; index < ReplicatedProgressionCount; index++)
+            {
+                NetcodeProgressionState candidate =
+                    GetReplicatedProgression(index);
+                if (candidate.PlayerId != playerId) continue;
+                state = candidate;
+                return true;
+            }
+            state = default;
+            return false;
+        }
+
         /// <summary>Enables an offline authoritative fixture without NGO.</summary>
         public void EnableServerTestHook()
         {
@@ -618,6 +754,7 @@ namespace FPS.Networking.Netcode
         public void ResetServerTestHook()
         {
             pendingCommands.Clear();
+            pendingEconomyCommands.Clear();
             pendingPresentationInputs.Clear();
             playerByClient.Clear();
             playerPresentation.Clear();
@@ -698,6 +835,57 @@ namespace FPS.Networking.Netcode
                 targetStates.RemoveAt(targetStates.Count - 1);
             }
 
+            AuthoritativeEconomySnapshot economy = snapshot.Economy;
+            for (int index = 0; index < economy.InventorySlots.Count; index++)
+            {
+                NetcodeInventorySlotState replicated =
+                    NetcodeInventorySlotState.FromDomain(
+                        economy.InventorySlots[index]);
+                if (index >= inventoryStates.Count)
+                    inventoryStates.Add(replicated);
+                else if (!inventoryStates[index].Equals(replicated))
+                    inventoryStates[index] = replicated;
+            }
+            while (inventoryStates.Count > economy.InventorySlots.Count)
+                inventoryStates.RemoveAt(inventoryStates.Count - 1);
+
+            for (int index = 0; index < economy.WorldDrops.Count; index++)
+            {
+                NetcodeWorldDropState replicated =
+                    NetcodeWorldDropState.FromDomain(economy.WorldDrops[index]);
+                if (index >= worldDropStates.Count)
+                    worldDropStates.Add(replicated);
+                else if (!worldDropStates[index].Equals(replicated))
+                    worldDropStates[index] = replicated;
+            }
+            while (worldDropStates.Count > economy.WorldDrops.Count)
+                worldDropStates.RemoveAt(worldDropStates.Count - 1);
+
+            for (int index = 0; index < economy.Progression.Count; index++)
+            {
+                NetcodeProgressionState replicated =
+                    NetcodeProgressionState.FromDomain(
+                        economy.Progression[index]);
+                if (index >= progressionStates.Count)
+                    progressionStates.Add(replicated);
+                else if (!progressionStates[index].Equals(replicated))
+                    progressionStates[index] = replicated;
+            }
+            while (progressionStates.Count > economy.Progression.Count)
+                progressionStates.RemoveAt(progressionStates.Count - 1);
+
+            for (int index = 0; index < economy.Upgrades.Count; index++)
+            {
+                NetcodeUpgradeStackState replicated =
+                    NetcodeUpgradeStackState.FromDomain(economy.Upgrades[index]);
+                if (index >= upgradeStates.Count)
+                    upgradeStates.Add(replicated);
+                else if (!upgradeStates[index].Equals(replicated))
+                    upgradeStates[index] = replicated;
+            }
+            while (upgradeStates.Count > economy.Upgrades.Count)
+                upgradeStates.RemoveAt(upgradeStates.Count - 1);
+
             for (int index = 0; index < events.Count; index++)
             {
                 NetcodeAuthorityEvent replicated =
@@ -721,7 +909,8 @@ namespace FPS.Networking.Netcode
                 ActiveEnemyCount = snapshot.ActiveTargets,
                 PendingEnemyCount = snapshot.PendingTargets,
                 RemainingEnemyCount = snapshot.RemainingTargets,
-                LastEventSequence = lastEventSequence
+                LastEventSequence = lastEventSequence,
+                EconomyRevision = worldState.Value.EconomyRevision + 1
             };
         }
 

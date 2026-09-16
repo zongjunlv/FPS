@@ -167,6 +167,7 @@ namespace FPS.Networking.Domain
         private readonly Dictionary<int, MutableTarget> targets;
         private readonly Dictionary<string, AuthoritativeWeaponDefinition>
             weaponDefinitions;
+        private readonly AuthoritativeCoopEconomy economy;
         private readonly LinkedList<HistoryFrame> history = new();
         private readonly int requiredKills;
         private long currentTick;
@@ -187,7 +188,11 @@ namespace FPS.Networking.Domain
             IEnumerable<CoopPlayerSpawn> configuredPlayers,
             IEnumerable<CoopTargetSpawn> configuredTargets,
             int requiredKills = 0,
-            IEnumerable<AuthoritativeWeaponDefinition> configuredWeapons = null)
+            IEnumerable<AuthoritativeWeaponDefinition> configuredWeapons = null,
+            IEnumerable<AuthoritativeItemDefinition> configuredItems = null,
+            IEnumerable<AuthoritativeUpgradeDefinition> configuredUpgrades = null,
+            int runSeed = 18018,
+            int inventoryCapacity = 12)
         {
             this.rules = rules ?? throw new ArgumentNullException(nameof(rules));
             weaponDefinitions = (configuredWeapons ??
@@ -215,6 +220,12 @@ namespace FPS.Networking.Domain
                 throw new ArgumentException(
                     "At least one target is required.",
                     nameof(configuredTargets));
+            economy = new AuthoritativeCoopEconomy(
+                players.Keys,
+                configuredItems,
+                configuredUpgrades,
+                runSeed,
+                inventoryCapacity);
             if (requiredKills < 0 || requiredKills > targets.Count)
                 throw new ArgumentOutOfRangeException(nameof(requiredKills));
             this.requiredKills = requiredKills == 0
@@ -297,12 +308,19 @@ namespace FPS.Networking.Domain
                 if (weapon.IsReloading)
                     return RejectWeaponAction(action, weapon.Definition.WeaponId,
                         CommandRejectionReason.Reloading);
-                if (weapon.MagazineAmmo >= weapon.Definition.MagazineCapacity ||
+                int magazineCapacity = Math.Max(1, (int)Math.Round(
+                    weapon.Definition.MagazineCapacity *
+                    economy.Modifier(playerId,
+                        AuthoritativeUpgradeEffect.MagazineCapacity)));
+                if (weapon.MagazineAmmo >= magazineCapacity ||
                     weapon.ReserveAmmo <= 0)
                     return RejectWeaponAction(action, weapon.Definition.WeaponId,
                         CommandRejectionReason.CannotReload);
                 weapon.ReloadEndTick = currentTick +
-                    weapon.Definition.ReloadDurationTicks;
+                    Math.Max(1, (int)Math.Ceiling(
+                        weapon.Definition.ReloadDurationTicks /
+                        economy.Modifier(playerId,
+                            AuthoritativeUpgradeEffect.ReloadSpeed)));
                 events?.Add(Emit(AuthoritativeEventKind.ReloadStarted,
                     playerId, 0, weapon.ReloadEndTick,
                     weapon.Definition.WeaponId));
@@ -337,6 +355,14 @@ namespace FPS.Networking.Domain
         public AuthoritativeTickResult Step(
             IReadOnlyList<PlayerInputCommand> receivedCommands)
         {
+            return Step(receivedCommands,
+                Array.Empty<AuthoritativeEconomyCommand>());
+        }
+
+        public AuthoritativeTickResult Step(
+            IReadOnlyList<PlayerInputCommand> receivedCommands,
+            IReadOnlyList<AuthoritativeEconomyCommand> economyCommands)
+        {
             currentTick++;
             var events = new List<AuthoritativeEvent>();
             AdvanceCombatState(events);
@@ -368,12 +394,49 @@ namespace FPS.Networking.Domain
                 }
             }
 
+            var economyResolutions = new List<AuthoritativeEconomyResolution>();
+            AuthoritativeEconomyCommand[] orderedEconomy =
+                (economyCommands ?? Array.Empty<AuthoritativeEconomyCommand>())
+                .OrderBy(value => value.Kind ==
+                    AuthoritativeEconomyCommandKind.Pickup ? 0 : 1)
+                .ThenBy(value => value.EntityId)
+                .ThenBy(value => value.PlayerId)
+                .ThenBy(value => value.Sequence)
+                .ToArray();
+            foreach (AuthoritativeEconomyCommand command in orderedEconomy)
+            {
+                AuthoritativeEconomyResolution resolution = economy.Apply(
+                    command,
+                    currentTick,
+                    PlayerPosition,
+                    ApplyAuthoritativeItem,
+                    ApplyAuthoritativeUpgrade);
+                economyResolutions.Add(resolution);
+                EmitEconomyResult(resolution, events);
+            }
+
             CaptureHistory(currentTick);
             return new AuthoritativeTickResult(
                 currentTick,
                 resolutions,
                 events,
-                CaptureSnapshot());
+                CaptureSnapshot(),
+                economyResolutions);
+        }
+
+        public int SpawnServerWorldDrop(
+            string itemId,
+            int quantity,
+            NetVector3 position,
+            int ownerPlayerId = 0)
+        {
+            return economy.SpawnDrop(itemId, quantity, position,
+                ownerPlayerId);
+        }
+
+        public int GrantServerExperience(int playerId, int amount)
+        {
+            return economy.GrantExperience(playerId, amount);
         }
 
         public IReadOnlyList<AuthoritativeEvent> ApplyServerDamageToPlayer(
@@ -411,7 +474,129 @@ namespace FPS.Networking.Domain
                 targets.Values.Select(value => value.Snapshot()),
                 waveStatus,
                 killedTargets,
-                requiredKills);
+                requiredKills,
+                economy.Snapshot());
+        }
+
+        private NetVector3 PlayerPosition(int playerId) =>
+            players.TryGetValue(playerId, out MutablePlayer player)
+                ? player.Position
+                : default;
+
+        private bool ApplyAuthoritativeItem(
+            int playerId,
+            AuthoritativeItemDefinition item)
+        {
+            if (!players.TryGetValue(playerId, out MutablePlayer player) ||
+                !player.IsAlive)
+                return false;
+            switch (item.Effect)
+            {
+                case AuthoritativeItemEffect.RestoreHealth:
+                    if (player.Health >= player.MaximumHealth) return false;
+                    player.Health = Math.Min(player.MaximumHealth,
+                        player.Health + item.EffectAmount);
+                    return true;
+                case AuthoritativeItemEffect.RestoreArmor:
+                    if (player.Armor >= player.MaximumArmor) return false;
+                    player.Armor = Math.Min(player.MaximumArmor,
+                        player.Armor + item.EffectAmount);
+                    return true;
+                case AuthoritativeItemEffect.AddRifleAmmo:
+                    return AddReserveAmmo(player, "weapon.rifle",
+                        item.EffectAmount);
+                case AuthoritativeItemEffect.AddHandgunAmmo:
+                    return AddReserveAmmo(player, "weapon.pistol",
+                        item.EffectAmount);
+                default:
+                    return false;
+            }
+        }
+
+        private bool ApplyAuthoritativeUpgrade(
+            int playerId,
+            AuthoritativeUpgradeDefinition upgrade)
+        {
+            if (!players.TryGetValue(playerId, out MutablePlayer player) ||
+                !player.IsAlive)
+                return false;
+            switch (upgrade.Effect)
+            {
+                case AuthoritativeUpgradeEffect.MaximumHealth:
+                {
+                    double amount = player.BaseMaximumHealth *
+                        upgrade.EffectAmount;
+                    player.MaximumHealth += amount;
+                    player.Health = Math.Min(player.MaximumHealth,
+                        player.Health + amount);
+                    return true;
+                }
+                case AuthoritativeUpgradeEffect.MaximumArmor:
+                {
+                    double amount = player.BaseMaximumArmor *
+                        upgrade.EffectAmount;
+                    player.MaximumArmor += amount;
+                    player.Armor = Math.Min(player.MaximumArmor,
+                        player.Armor + amount);
+                    return true;
+                }
+                case AuthoritativeUpgradeEffect.HealthRestore:
+                    if (player.Health >= player.MaximumHealth) return false;
+                    player.Health = Math.Min(player.MaximumHealth,
+                        player.Health + upgrade.EffectAmount);
+                    return true;
+                case AuthoritativeUpgradeEffect.ArmorRestore:
+                    if (player.Armor >= player.MaximumArmor) return false;
+                    player.Armor = Math.Min(player.MaximumArmor,
+                        player.Armor + upgrade.EffectAmount);
+                    return true;
+                default:
+                    return true;
+            }
+        }
+
+        private static bool AddReserveAmmo(
+            MutablePlayer player,
+            string weaponId,
+            double amount)
+        {
+            if (!player.Weapons.TryGetValue(weaponId,
+                    out MutableWeapon weapon))
+                return false;
+            int increase = Math.Max(0, (int)Math.Round(amount));
+            if (increase == 0) return false;
+            weapon.ReserveAmmo += increase;
+            return true;
+        }
+
+        private void EmitEconomyResult(
+            AuthoritativeEconomyResolution resolution,
+            ICollection<AuthoritativeEvent> events)
+        {
+            AuthoritativeEconomyCommand command = resolution.Command;
+            if (!resolution.Accepted)
+            {
+                events.Add(Emit(
+                    AuthoritativeEventKind.EconomyCommandRejected,
+                    command.PlayerId,
+                    command.EntityId,
+                    (double)resolution.Rejection,
+                    resolution.DefinitionId));
+                return;
+            }
+
+            AuthoritativeEventKind kind = command.Kind switch
+            {
+                AuthoritativeEconomyCommandKind.Pickup =>
+                    AuthoritativeEventKind.WorldDropClaimed,
+                AuthoritativeEconomyCommandKind.Use =>
+                    AuthoritativeEventKind.ConsumableUsed,
+                AuthoritativeEconomyCommandKind.SelectUpgrade =>
+                    AuthoritativeEventKind.UpgradeApplied,
+                _ => AuthoritativeEventKind.InventoryChanged
+            };
+            events.Add(Emit(kind, command.PlayerId, command.EntityId,
+                resolution.AffectedQuantity, resolution.DefinitionId));
         }
 
         private void AdvanceEnemySpawns(ICollection<AuthoritativeEvent> events)
@@ -563,9 +748,12 @@ namespace FPS.Networking.Domain
             ICollection<AuthoritativeEvent> events)
         {
             if (!target.IsAlive || damage <= 0d) return;
+            double armorDamage = Math.Min(target.Armor, damage);
+            target.Armor -= armorDamage;
+            damage -= armorDamage;
             double before = target.Health;
             target.Health = CoopGameplayRules.ApplyDamage(before, damage);
-            double applied = before - target.Health;
+            double applied = armorDamage + before - target.Health;
             events.Add(Emit(
                 AuthoritativeEventKind.PlayerDamaged,
                 sourceTargetId,
@@ -762,9 +950,12 @@ namespace FPS.Networking.Domain
                     NetVector3.Distance(command.ShotOrigin,
                         command.ClaimedPosition) > 2.5d)
                     return CommandRejectionReason.InvalidShotOrigin;
+                int fireInterval = Math.Max(1, (int)Math.Ceiling(
+                    definition.FireIntervalTicks /
+                    economy.Modifier(player.Id,
+                        AuthoritativeUpgradeEffect.WeaponFireRate)));
                 if (weapon.LastFireTick != long.MinValue &&
-                    command.ClientTick - weapon.LastFireTick <
-                        definition.FireIntervalTicks)
+                    command.ClientTick - weapon.LastFireTick < fireInterval)
                     return CommandRejectionReason.FireRateExceeded;
             }
             return CommandRejectionReason.None;
@@ -875,6 +1066,8 @@ namespace FPS.Networking.Domain
 
             double before = selected.Health;
             double damage = weapon.BaseDamage *
+                economy.Modifier(shooter.Id,
+                    AuthoritativeUpgradeEffect.WeaponDamage) *
                 (selectedRegion == AuthoritativeHitRegion.Head
                     ? weapon.HeadDamageMultiplier
                     : 1d);
@@ -915,12 +1108,44 @@ namespace FPS.Networking.Domain
                 0d));
             if (!string.IsNullOrEmpty(selected.DropDefinitionId))
             {
+                int dropId = economy.SpawnDrop(
+                    selected.DropDefinitionId,
+                    selected.DropQuantity,
+                    selected.Position);
                 events.Add(Emit(
                     AuthoritativeEventKind.LootDropped,
                     shooter.Id,
                     selected.Id,
                     1d,
                     selected.DropDefinitionId));
+                if (dropId > 0)
+                    events.Add(Emit(
+                        AuthoritativeEventKind.WorldDropSpawned,
+                        shooter.Id,
+                        dropId,
+                        selected.DropQuantity,
+                        selected.DropDefinitionId));
+            }
+            int levelsGained = economy.GrantExperience(
+                shooter.Id, selected.RewardExperience);
+            if (selected.RewardExperience > 0)
+                events.Add(Emit(
+                    AuthoritativeEventKind.ExperienceGranted,
+                    shooter.Id,
+                    selected.Id,
+                    selected.RewardExperience));
+            if (levelsGained > 0)
+            {
+                events.Add(Emit(
+                    AuthoritativeEventKind.PlayerLevelGained,
+                    shooter.Id,
+                    selected.Id,
+                    levelsGained));
+                events.Add(Emit(
+                    AuthoritativeEventKind.UpgradeChoicesOffered,
+                    shooter.Id,
+                    0,
+                    levelsGained));
             }
             if (killedTargets >= requiredKills &&
                 waveStatus == AuthoritativeWaveStatus.Fighting)
@@ -966,7 +1191,11 @@ namespace FPS.Networking.Domain
                 {
                     if (!weapon.IsReloading ||
                         currentTick < weapon.ReloadEndTick) continue;
-                    int needed = weapon.Definition.MagazineCapacity -
+                    int capacity = Math.Max(1, (int)Math.Round(
+                        weapon.Definition.MagazineCapacity *
+                        economy.Modifier(player.Id,
+                            AuthoritativeUpgradeEffect.MagazineCapacity)));
+                    int needed = capacity -
                         weapon.MagazineAmmo;
                     int transferred = Math.Min(needed, weapon.ReserveAmmo);
                     weapon.MagazineAmmo += transferred;
@@ -1093,6 +1322,11 @@ namespace FPS.Networking.Domain
                 LastJumpTick = long.MinValue;
                 LastClaimedPosition = spawn.Position;
                 Health = spawn.Health;
+                BaseMaximumHealth = spawn.Health;
+                MaximumHealth = spawn.Health;
+                Armor = spawn.Armor;
+                BaseMaximumArmor = spawn.MaximumArmor;
+                MaximumArmor = spawn.MaximumArmor;
                 foreach (KeyValuePair<string, AuthoritativeWeaponDefinition>
                          pair in definitions)
                     Weapons[pair.Key] = new MutableWeapon(pair.Value);
@@ -1107,6 +1341,11 @@ namespace FPS.Networking.Domain
             public long LastJumpTick;
             public NetVector3 LastClaimedPosition;
             public double Health;
+            public double BaseMaximumHealth;
+            public double MaximumHealth;
+            public double Armor;
+            public double BaseMaximumArmor;
+            public double MaximumArmor;
             public bool HasSequence;
             public uint LastSequence;
             public uint AcknowledgedSequence;
@@ -1172,7 +1411,10 @@ namespace FPS.Networking.Domain
                     Weapons.Values
                         .OrderBy(value => value.Definition.WeaponId)
                         .Select(value => value.Snapshot())
-                        .ToArray());
+                        .ToArray(),
+                    MaximumHealth,
+                    Armor,
+                    MaximumArmor);
             }
         }
 
@@ -1224,6 +1466,8 @@ namespace FPS.Networking.Domain
                 AttackRange = spawn.AttackRange;
                 AttackDamage = spawn.AttackDamage;
                 AttackIntervalTicks = spawn.AttackIntervalTicks;
+                RewardExperience = spawn.RewardExperience;
+                DropQuantity = spawn.DropQuantity;
                 Spawned = spawn.SpawnTick == 0;
                 Active = Spawned;
                 SpawnGeneration = Spawned ? 1 : 0;
@@ -1246,6 +1490,8 @@ namespace FPS.Networking.Domain
             public double AttackRange;
             public double AttackDamage;
             public int AttackIntervalTicks;
+            public int RewardExperience;
+            public int DropQuantity;
             public long NextAttackTick;
             public long RecycleTick;
             public bool Spawned;

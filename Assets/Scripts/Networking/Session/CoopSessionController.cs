@@ -687,6 +687,8 @@ namespace FPS.Networking.Session
             installer.ConfigurePlayerSpawnBarrier(deferPlayerSpawn);
             networkBootstrap.gameObject.AddComponent<
                 CoopNetworkWorldPresenter>();
+            networkBootstrap.gameObject.AddComponent<
+                CoopNetworkDropPresenter>();
             if (!installer.RegisterConfiguredPrefabs())
             {
                 string failure = installer.LastFailure;
@@ -748,12 +750,13 @@ namespace FPS.Networking.Session
                     Position = origin + forward * 15f,
                     Radius = 1.25f,
                     Health = 68f,
-                    DropDefinitionId = "medkit",
+                    DropDefinitionId = "medical_kit",
                     HeadOffset = new Vector3(0f, 0.85f, 0f),
                     HeadRadius = 0.32f,
                     Role = AuthoritativeEnemyRole.Assault,
                     AttackRange = 1.8f,
-                    AttackIntervalTicks = 60
+                    AttackIntervalTicks = 60,
+                    RewardExperience = 40
                 }
             };
         }
@@ -768,14 +771,15 @@ namespace FPS.Networking.Session
                     Position = new Vector3(49.761f, 0.16f, 74.719f),
                     Radius = 1.25f,
                     Health = 68f,
-                    DropDefinitionId = "medkit",
+                    DropDefinitionId = "medical_kit",
                     HeadOffset = new Vector3(0f, 0.85f, 0f),
                     HeadRadius = 0.32f,
                     Role = AuthoritativeEnemyRole.Assault,
                     MoveSpeed = 2.35f,
                     AttackRange = 1.8f,
                     AttackDamage = 6f,
-                    AttackIntervalTicks = 60
+                    AttackIntervalTicks = 60,
+                    RewardExperience = 40
                 },
                 new CoopTargetSpawnDefinition
                 {
@@ -790,7 +794,8 @@ namespace FPS.Networking.Session
                     MoveSpeed = 3.1f,
                     AttackRange = 1.55f,
                     AttackDamage = 5f,
-                    AttackIntervalTicks = 48
+                    AttackIntervalTicks = 48,
+                    RewardExperience = 40
                 },
                 new CoopTargetSpawnDefinition
                 {
@@ -798,7 +803,7 @@ namespace FPS.Networking.Session
                     Position = new Vector3(42.2f, 0.16f, 76f),
                     Radius = 1.15f,
                     Health = 82f,
-                    DropDefinitionId = "armor_plate",
+                    DropDefinitionId = "armor_pack",
                     HeadOffset = new Vector3(0f, 0.9f, 0f),
                     HeadRadius = 0.34f,
                     Role = AuthoritativeEnemyRole.Support,
@@ -806,7 +811,8 @@ namespace FPS.Networking.Session
                     MoveSpeed = 1.9f,
                     AttackRange = 2.1f,
                     AttackDamage = 5f,
-                    AttackIntervalTicks = 72
+                    AttackIntervalTicks = 72,
+                    RewardExperience = 50
                 },
                 new CoopTargetSpawnDefinition
                 {
@@ -821,7 +827,8 @@ namespace FPS.Networking.Session
                     MoveSpeed = 1.75f,
                     AttackRange = 2.6f,
                     AttackDamage = 7f,
-                    AttackIntervalTicks = 70
+                    AttackIntervalTicks = 70,
+                    RewardExperience = 55
                 },
                 new CoopTargetSpawnDefinition
                 {
@@ -836,7 +843,8 @@ namespace FPS.Networking.Session
                     MoveSpeed = 3.2f,
                     AttackRange = 1.55f,
                     AttackDamage = 5f,
-                    AttackIntervalTicks = 48
+                    AttackIntervalTicks = 48,
+                    RewardExperience = 40
                 },
                 new CoopTargetSpawnDefinition
                 {
@@ -844,7 +852,7 @@ namespace FPS.Networking.Session
                     Position = new Vector3(49.761f, 0.16f, 88f),
                     Radius = 1.45f,
                     Health = 135f,
-                    DropDefinitionId = "medkit",
+                    DropDefinitionId = "medical_kit",
                     HeadOffset = new Vector3(0f, 1.05f, 0f),
                     HeadRadius = 0.38f,
                     Role = AuthoritativeEnemyRole.Elite,
@@ -852,7 +860,8 @@ namespace FPS.Networking.Session
                     MoveSpeed = 2.55f,
                     AttackRange = 2f,
                     AttackDamage = 9f,
-                    AttackIntervalTicks = 64
+                    AttackIntervalTicks = 64,
+                    RewardExperience = 80
                 }
             };
         }

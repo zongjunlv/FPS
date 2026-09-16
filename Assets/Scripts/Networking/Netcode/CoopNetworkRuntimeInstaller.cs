@@ -12,13 +12,17 @@ namespace FPS.Networking.Netcode
         public int PlayerId;
         public Vector3 Position;
         public float Health;
+        public float Armor;
+        public float MaximumArmor;
 
         public CoopPlayerSpawn ToDomain()
         {
             return new CoopPlayerSpawn(
                 PlayerId,
                 NetcodeConversions.ToDomain(Position),
-                Health <= 0f ? 100d : Health);
+                Health <= 0f ? 100d : Health,
+                Mathf.Max(0f, Armor),
+                MaximumArmor <= 0f ? 100d : MaximumArmor);
         }
     }
 
@@ -38,6 +42,8 @@ namespace FPS.Networking.Netcode
         [Min(0.1f)] public float AttackRange;
         [Min(0f)] public float AttackDamage;
         [Min(1)] public int AttackIntervalTicks;
+        [Min(0)] public int RewardExperience;
+        [Min(1)] public int DropQuantity;
 
         public CoopTargetSpawn ToDomain()
         {
@@ -54,7 +60,9 @@ namespace FPS.Networking.Netcode
                 Mathf.Max(0f, MoveSpeed),
                 AttackRange <= 0f ? 1.8d : AttackRange,
                 Mathf.Max(0f, AttackDamage),
-                Mathf.Max(1, AttackIntervalTicks));
+                Mathf.Max(1, AttackIntervalTicks),
+                Mathf.Max(0, RewardExperience),
+                Mathf.Max(1, DropQuantity));
         }
     }
 

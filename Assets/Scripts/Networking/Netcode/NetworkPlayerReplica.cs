@@ -35,6 +35,7 @@ namespace FPS.Networking.Netcode
         private uint nextSequence = 1;
         private ulong nonceSalt = 0x65C00FUL;
         private uint nextPresentationSequence = 1;
+        private uint nextEconomySequence = 1;
         private long lastConsumedServerTick = -1;
         private long lastPresentationEventSequence;
         private long lastShotEventSequence;
@@ -442,6 +443,65 @@ namespace FPS.Networking.Netcode
             return payload;
         }
 
+        public NetcodeEconomyCommand BuildEconomyCommand(
+            AuthoritativeEconomyCommandKind kind,
+            int entityId = 0,
+            int sourceSlot = -1,
+            int destinationSlot = -1,
+            int quantity = 0,
+            int candidateIndex = -1,
+            int expectedDropRevision = 0,
+            string expectedItemId = "")
+        {
+            RequireLocalOwner();
+            int inventoryRevision = 0;
+            int choiceGeneration = 0;
+            if (session != null && session.TryGetProgression(
+                    playerId, out NetcodeProgressionState progression))
+            {
+                nextEconomySequence = Math.Max(nextEconomySequence,
+                    progression.AcknowledgedEconomySequence + 1);
+                inventoryRevision = progression.InventoryRevision;
+                choiceGeneration = progression.ChoiceGeneration;
+            }
+            uint sequence = nextEconomySequence++;
+            return NetcodeEconomyCommand.FromDomain(
+                new AuthoritativeEconomyCommand(
+                    playerId,
+                    sequence,
+                    NextNonce(sequence, session?.WorldState.ServerTick ?? 0),
+                    kind,
+                    entityId,
+                    sourceSlot,
+                    destinationSlot,
+                    quantity,
+                    candidateIndex,
+                    inventoryRevision,
+                    expectedDropRevision,
+                    choiceGeneration,
+                    expectedItemId));
+        }
+
+        public NetcodeEconomyCommand SubmitEconomyAction(
+            AuthoritativeEconomyCommandKind kind,
+            int entityId = 0,
+            int sourceSlot = -1,
+            int destinationSlot = -1,
+            int quantity = 0,
+            int candidateIndex = -1,
+            int expectedDropRevision = 0,
+            string expectedItemId = "")
+        {
+            NetcodeEconomyCommand payload = BuildEconomyCommand(
+                kind, entityId, sourceSlot, destinationSlot, quantity,
+                candidateIndex, expectedDropRevision, expectedItemId);
+            if (session == null || !session.IsSpawned)
+                throw new InvalidOperationException(
+                    "A spawned session authority is required to submit RPCs.");
+            session.SubmitEconomyRpc(payload);
+            return payload;
+        }
+
         public void ConsumeServerState(
             NetcodePlayerState state,
             bool treatAsLocalOwner,
@@ -539,6 +599,7 @@ namespace FPS.Networking.Netcode
             estimatedServerTick = 0d;
             nextSequence = 1;
             nextPresentationSequence = 1;
+            nextEconomySequence = 1;
             lastPresentationEventSequence = 0;
             lastShotEventSequence = 0;
             presentationBaselineInitialized = false;

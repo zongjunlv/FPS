@@ -232,20 +232,30 @@ namespace FPS.Networking.Domain
     public readonly struct CoopPlayerSpawn
     {
         public CoopPlayerSpawn(int playerId, NetVector3 position,
-            double health = 100d)
+            double health = 100d, double armor = 0d,
+            double maximumArmor = 100d)
         {
             if (playerId <= 0) throw new ArgumentOutOfRangeException(nameof(playerId));
             if (!position.IsFinite) throw new ArgumentOutOfRangeException(nameof(position));
             if (health <= 0d || double.IsNaN(health) || double.IsInfinity(health))
                 throw new ArgumentOutOfRangeException(nameof(health));
+            if (armor < 0d || double.IsNaN(armor) || double.IsInfinity(armor))
+                throw new ArgumentOutOfRangeException(nameof(armor));
+            if (maximumArmor <= 0d || double.IsNaN(maximumArmor) ||
+                double.IsInfinity(maximumArmor))
+                throw new ArgumentOutOfRangeException(nameof(maximumArmor));
             PlayerId = playerId;
             Position = position;
             Health = health;
+            Armor = Math.Min(armor, maximumArmor);
+            MaximumArmor = maximumArmor;
         }
 
         public int PlayerId { get; }
         public NetVector3 Position { get; }
         public double Health { get; }
+        public double Armor { get; }
+        public double MaximumArmor { get; }
     }
 
     public readonly struct CoopTargetSpawn
@@ -263,7 +273,9 @@ namespace FPS.Networking.Domain
             double moveSpeed = 0d,
             double attackRange = 1.8d,
             double attackDamage = 0d,
-            int attackIntervalTicks = 60)
+            int attackIntervalTicks = 60,
+            int rewardExperience = 0,
+            int dropQuantity = 1)
         {
             if (targetId <= 0) throw new ArgumentOutOfRangeException(nameof(targetId));
             if (!position.IsFinite) throw new ArgumentOutOfRangeException(nameof(position));
@@ -287,6 +299,11 @@ namespace FPS.Networking.Domain
             if (attackIntervalTicks < 1)
                 throw new ArgumentOutOfRangeException(
                     nameof(attackIntervalTicks));
+            if (rewardExperience < 0)
+                throw new ArgumentOutOfRangeException(
+                    nameof(rewardExperience));
+            if (dropQuantity < 1)
+                throw new ArgumentOutOfRangeException(nameof(dropQuantity));
             TargetId = targetId;
             Position = position;
             Radius = radius;
@@ -300,6 +317,8 @@ namespace FPS.Networking.Domain
             AttackRange = attackRange;
             AttackDamage = attackDamage;
             AttackIntervalTicks = attackIntervalTicks;
+            RewardExperience = rewardExperience;
+            DropQuantity = dropQuantity;
         }
 
         public int TargetId { get; }
@@ -315,6 +334,8 @@ namespace FPS.Networking.Domain
         public double AttackRange { get; }
         public double AttackDamage { get; }
         public int AttackIntervalTicks { get; }
+        public int RewardExperience { get; }
+        public int DropQuantity { get; }
 
         private static bool PositiveFinite(double value) =>
             value > 0d && !double.IsNaN(value) && !double.IsInfinity(value);
@@ -543,7 +564,16 @@ namespace FPS.Networking.Domain
         CommandRejected,
         TargetSpawned,
         TargetBehaviorChanged,
-        TargetAttacked
+        TargetAttacked,
+        WorldDropSpawned,
+        WorldDropClaimed,
+        InventoryChanged,
+        ConsumableUsed,
+        ExperienceGranted,
+        PlayerLevelGained,
+        UpgradeChoicesOffered,
+        UpgradeApplied,
+        EconomyCommandRejected
     }
 
     public readonly struct AuthoritativeEvent
@@ -636,7 +666,10 @@ namespace FPS.Networking.Domain
             bool switching,
             string pendingWeaponId,
             long switchEndTick,
-            IReadOnlyList<AuthoritativeWeaponState> weapons)
+            IReadOnlyList<AuthoritativeWeaponState> weapons,
+            double maximumHealth = 0d,
+            double armor = 0d,
+            double maximumArmor = 100d)
         {
             PlayerId = playerId;
             Position = position;
@@ -658,6 +691,9 @@ namespace FPS.Networking.Domain
             PendingWeaponId = pendingWeaponId ?? string.Empty;
             SwitchEndTick = switchEndTick;
             Weapons = weapons ?? Array.Empty<AuthoritativeWeaponState>();
+            MaximumHealth = maximumHealth > 0d ? maximumHealth : health;
+            Armor = Math.Max(0d, Math.Min(armor, maximumArmor));
+            MaximumArmor = Math.Max(0d, maximumArmor);
         }
 
         public int PlayerId { get; }
@@ -680,6 +716,9 @@ namespace FPS.Networking.Domain
         public string PendingWeaponId { get; }
         public long SwitchEndTick { get; }
         public IReadOnlyList<AuthoritativeWeaponState> Weapons { get; }
+        public double MaximumHealth { get; }
+        public double Armor { get; }
+        public double MaximumArmor { get; }
         public bool IsCrouching => Stance == PlayerStance.Crouching;
         public bool IsAlive => Health > 0d;
 
@@ -762,7 +801,8 @@ namespace FPS.Networking.Domain
             IEnumerable<AuthoritativeTargetState> targets,
             AuthoritativeWaveStatus waveStatus,
             int killedTargets,
-            int requiredKills = 0)
+            int requiredKills = 0,
+            AuthoritativeEconomySnapshot economy = null)
         {
             Tick = tick;
             this.players = (players ?? throw new ArgumentNullException(nameof(players)))
@@ -774,6 +814,11 @@ namespace FPS.Networking.Domain
             RequiredKills = requiredKills <= 0
                 ? this.targets.Length
                 : Math.Min(requiredKills, this.targets.Length);
+            Economy = economy ?? new AuthoritativeEconomySnapshot(
+                Array.Empty<AuthoritativeInventorySlotState>(),
+                Array.Empty<AuthoritativeWorldDropState>(),
+                Array.Empty<AuthoritativeProgressionState>(),
+                Array.Empty<AuthoritativeUpgradeStackState>());
         }
 
         public long Tick { get; }
@@ -782,6 +827,7 @@ namespace FPS.Networking.Domain
         public AuthoritativeWaveStatus WaveStatus { get; }
         public int KilledTargets { get; }
         public int RequiredKills { get; }
+        public AuthoritativeEconomySnapshot Economy { get; }
         public int EnemyPoolCapacity => targets.Length;
         public int SpawnedTargets => targets.Count(value =>
             value.SpawnGeneration > 0);
@@ -800,22 +846,28 @@ namespace FPS.Networking.Domain
     {
         private readonly CommandResolution[] commands;
         private readonly AuthoritativeEvent[] events;
+        private readonly AuthoritativeEconomyResolution[] economyCommands;
 
         public AuthoritativeTickResult(
             long tick,
             IEnumerable<CommandResolution> commands,
             IEnumerable<AuthoritativeEvent> events,
-            AuthoritativeWorldSnapshot snapshot)
+            AuthoritativeWorldSnapshot snapshot,
+            IEnumerable<AuthoritativeEconomyResolution> economyCommands = null)
         {
             Tick = tick;
             this.commands = (commands ?? Array.Empty<CommandResolution>()).ToArray();
             this.events = (events ?? Array.Empty<AuthoritativeEvent>()).ToArray();
+            this.economyCommands = (economyCommands ??
+                Array.Empty<AuthoritativeEconomyResolution>()).ToArray();
             Snapshot = snapshot ?? throw new ArgumentNullException(nameof(snapshot));
         }
 
         public long Tick { get; }
         public IReadOnlyList<CommandResolution> Commands => commands;
         public IReadOnlyList<AuthoritativeEvent> Events => events;
+        public IReadOnlyList<AuthoritativeEconomyResolution> EconomyCommands =>
+            economyCommands;
         public AuthoritativeWorldSnapshot Snapshot { get; }
     }
 }
