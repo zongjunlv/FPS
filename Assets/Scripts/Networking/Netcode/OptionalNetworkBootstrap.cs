@@ -13,7 +13,9 @@ namespace FPS.Networking.Netcode
         StartingClient = 3,
         Client = 4,
         Stopping = 5,
-        Failed = 6
+        Failed = 6,
+        StartingServer = 7,
+        DedicatedServer = 8
     }
 
     [Serializable]
@@ -188,6 +190,13 @@ namespace FPS.Networking.Netcode
         {
             return TryStart(OptionalNetworkState.StartingClient, () =>
                 networkManager.StartClient(), OptionalNetworkState.Client);
+        }
+
+        public bool StartServer()
+        {
+            return TryStart(OptionalNetworkState.StartingServer, () =>
+                networkManager.StartServer(),
+                OptionalNetworkState.DedicatedServer);
         }
 
         public void Shutdown()

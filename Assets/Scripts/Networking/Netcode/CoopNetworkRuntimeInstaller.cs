@@ -79,8 +79,10 @@ namespace FPS.Networking.Netcode
             }
         };
         [SerializeField] private int requiredKills = 1;
+        [SerializeField] private int maximumPlayers = 2;
 
         private readonly Dictionary<ulong, NetworkObject> playerObjects = new();
+        private readonly Dictionary<ulong, int> playerIds = new();
         private OptionalNetworkBootstrap bootstrap;
         private NetworkCoopSessionAuthority sessionAuthority;
         private bool callbacksBound;
@@ -88,6 +90,7 @@ namespace FPS.Networking.Netcode
         public NetworkCoopSessionAuthority SessionAuthority => sessionAuthority;
         public string LastFailure { get; private set; } = string.Empty;
         public int SpawnedPlayerCount => playerObjects.Count;
+        public int MaximumPlayers => maximumPlayers;
 
         private void Awake()
         {
@@ -144,6 +147,15 @@ namespace FPS.Networking.Netcode
             targets = targetDefinitions ?? throw new ArgumentNullException(
                 nameof(targetDefinitions));
             requiredKills = killsRequired;
+            maximumPlayers = Mathf.Clamp(players.Length, 1, 16);
+        }
+
+        public void ConfigureMaximumPlayers(int value)
+        {
+            if (bootstrap != null && bootstrap.IsListening)
+                throw new InvalidOperationException(
+                    "Maximum players must be configured before startup.");
+            maximumPlayers = Mathf.Clamp(value, 1, 16);
         }
 
         public bool RegisterConfiguredPrefabs()
@@ -196,17 +208,30 @@ namespace FPS.Networking.Netcode
                 return false;
             }
 
-            sessionAuthority.ConfigureServer(
-                new CoopServerRules(
-                    tickRate: (int)bootstrap.NetworkManager.NetworkConfig.TickRate),
-                ConvertPlayers(players),
-                ConvertTargets(targets),
-                requiredKills);
-            sessionAuthority.RegisterPlayerClient(
-                NetworkManager.ServerClientId,
-                1);
             instance.Spawn(destroyWithScene: true);
-            SpawnPlayer(NetworkManager.ServerClientId, 1);
+            try
+            {
+                sessionAuthority.ConfigureServer(
+                    new CoopServerRules(
+                        tickRate: (int)bootstrap.NetworkManager.NetworkConfig.TickRate),
+                    ConvertPlayers(players),
+                    ConvertTargets(targets),
+                    requiredKills);
+            }
+            catch
+            {
+                if (instance.IsSpawned)
+                    instance.Despawn(destroy: true);
+                sessionAuthority = null;
+                throw;
+            }
+            if (bootstrap.NetworkManager.IsHost)
+            {
+                sessionAuthority.RegisterPlayerClient(
+                    NetworkManager.ServerClientId,
+                    1);
+                SpawnPlayer(NetworkManager.ServerClientId, 1);
+            }
             LastFailure = string.Empty;
             return true;
         }
@@ -270,16 +295,23 @@ namespace FPS.Networking.Netcode
                 SpawnPlayer(clientId, 1);
                 return;
             }
-            if (playerObjects.Count >= 2)
+            if (playerObjects.Count >= maximumPlayers)
             {
                 bootstrap.NetworkManager.DisconnectClient(
                     clientId,
-                    "This vertical slice supports Host + 1 Client.");
+                    "The dedicated server has reached its player limit.");
                 return;
             }
 
-            sessionAuthority.RegisterPlayerClient(clientId, 2);
-            SpawnPlayer(clientId, 2);
+            int playerId = ResolveAvailablePlayerId();
+            if (playerId <= 0)
+            {
+                bootstrap.NetworkManager.DisconnectClient(clientId,
+                    "No authoritative player slot is available.");
+                return;
+            }
+            sessionAuthority.RegisterPlayerClient(clientId, playerId);
+            SpawnPlayer(clientId, playerId);
         }
 
         private void HandleClientDisconnected(ulong clientId)
@@ -295,6 +327,7 @@ namespace FPS.Networking.Netcode
             {
                 playerObject.Despawn(destroy: true);
             }
+            playerIds.Remove(clientId);
             if (sessionAuthority != null)
             {
                 sessionAuthority.UnregisterPlayerClient(clientId);
@@ -323,6 +356,7 @@ namespace FPS.Networking.Netcode
                 clientId,
                 destroyWithScene: true);
             playerObjects.Add(clientId, playerObject);
+            playerIds[clientId] = playerId;
         }
 
         private void DespawnAll()
@@ -335,11 +369,23 @@ namespace FPS.Networking.Netcode
                 }
             }
             playerObjects.Clear();
+            playerIds.Clear();
             if (sessionAuthority != null && sessionAuthority.IsSpawned)
             {
                 sessionAuthority.NetworkObject.Despawn(destroy: true);
             }
             sessionAuthority = null;
+        }
+
+        private int ResolveAvailablePlayerId()
+        {
+            for (int index = 0; index < players.Length; index++)
+            {
+                int candidate = players[index].PlayerId;
+                if (candidate > 0 && !playerIds.ContainsValue(candidate))
+                    return candidate;
+            }
+            return -1;
         }
 
         private static IEnumerable<CoopPlayerSpawn> ConvertPlayers(
