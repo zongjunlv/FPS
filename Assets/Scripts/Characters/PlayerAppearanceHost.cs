@@ -30,7 +30,7 @@ public sealed class PlayerAppearanceHost : MonoBehaviour
     private void Awake()
     {
         EnsureVisualRoot();
-        if (spawnOnAwake) Apply(requestedAppearanceId);
+        if (spawnOnAwake && catalog != null) Apply(requestedAppearanceId);
     }
 
     public GameObject Apply(string appearanceId)
@@ -43,6 +43,14 @@ public sealed class PlayerAppearanceHost : MonoBehaviour
         CurrentDefinition = definition;
         UsedFallback = usedFallback;
         return currentInstance;
+    }
+
+    public void SetPresentationVisible(bool visible)
+    {
+        if (currentInstance == null) return;
+        foreach (Renderer renderer in currentInstance
+                     .GetComponentsInChildren<Renderer>(true))
+            renderer.enabled = visible;
     }
 
     private void EnsureVisualRoot()

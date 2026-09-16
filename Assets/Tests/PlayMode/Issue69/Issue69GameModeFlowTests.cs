@@ -116,9 +116,12 @@ namespace FPS.Tests.PlayMode.Issue69
                     Is.True, paths[index]);
                 ModeDestinationView destination = Object.FindFirstObjectByType<
                     ModeDestinationView>();
+                BattleCharacterSelectionView characterSelection =
+                    Object.FindFirstObjectByType<BattleCharacterSelectionView>();
                 if (modes[index] == GameModeId.Tutorial)
                 {
                     Assert.That(destination, Is.Null, paths[index]);
+                    Assert.That(characterSelection, Is.Null, paths[index]);
                     Assert.That(Object.FindFirstObjectByType<
                         PlayerGameplayRig>(), Is.Not.Null, paths[index]);
                     Assert.That(Object.FindFirstObjectByType<PlayerController>(),
@@ -126,9 +129,18 @@ namespace FPS.Tests.PlayMode.Issue69
                     Assert.That(GameModeFlowController.Instance
                         .TryReturnToEntry(), Is.True);
                 }
+                else if (modes[index] == GameModeId.SoloBattle)
+                {
+                    Assert.That(destination, Is.Null, paths[index]);
+                    Assert.That(characterSelection, Is.Not.Null, paths[index]);
+                    Assert.That(Object.FindFirstObjectByType<PlayerController>(),
+                        Is.Null, paths[index]);
+                    characterSelection.ReturnButton.onClick.Invoke();
+                }
                 else
                 {
                     Assert.That(destination, Is.Not.Null, paths[index]);
+                    Assert.That(characterSelection, Is.Null, paths[index]);
                     Assert.That(Object.FindFirstObjectByType<PlayerController>(),
                         Is.Null, paths[index]);
                     destination.ReturnButton.onClick.Invoke();
@@ -231,6 +243,8 @@ namespace FPS.Tests.PlayMode.Issue69
                 Is.Not.Null);
             Assert.That(Object.FindFirstObjectByType<
                 CityNewPlayerModeInstaller>(), Is.Not.Null);
+            Assert.That(Object.FindFirstObjectByType<PlayerAppearanceHost>(),
+                Is.Not.Null);
             Assert.That(Object.FindFirstObjectByType<UnifiedGameHud>(),
                 Is.Not.Null);
         }
@@ -265,7 +279,8 @@ namespace FPS.Tests.PlayMode.Issue69
 
         private static IEnumerator WaitForScene(string path)
         {
-            for (int frame = 0; frame < 600; frame++)
+            float deadline = Time.realtimeSinceStartup + 20f;
+            while (Time.realtimeSinceStartup < deadline)
             {
                 if (SceneManager.GetActiveScene().path == path &&
                     !GameModeContext.IsTransitioning)

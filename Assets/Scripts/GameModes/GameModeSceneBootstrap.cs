@@ -57,9 +57,21 @@ public sealed class GameModeSceneBootstrap : MonoBehaviour
             CoopSessionRuntimeBootstrap.EnsureForCurrentMode();
         }
 
-        View = marker.Stage == GameModeStage.Entry
-            ? ModeEntryView.Create(Flow, catalog)
-            : ModeDestinationView.Create(Flow, marker.Mode, marker.Stage);
+        if (marker.Stage == GameModeStage.Entry)
+        {
+            View = ModeEntryView.Create(Flow, catalog);
+        }
+        else if (marker.Stage == GameModeStage.BattlePreparation)
+        {
+            PlayerAppearanceCatalog appearances =
+                Resources.Load<PlayerAppearanceCatalog>(
+                    PlayerAppearanceCatalog.ResourcesPath);
+            View = BattleCharacterSelectionView.Create(Flow, appearances);
+        }
+        else
+        {
+            View = ModeDestinationView.Create(Flow, marker.Mode, marker.Stage);
+        }
         IsInitialized = View != null;
         InitializationError = IsInitialized
             ? string.Empty

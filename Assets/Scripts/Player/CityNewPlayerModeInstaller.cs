@@ -7,6 +7,7 @@ public sealed class CityNewPlayerModeInstaller : MonoBehaviour
 {
     public bool IsInitialized { get; private set; }
     public string InitializationError { get; private set; }
+    public PlayerAppearanceHost AppearanceHost { get; private set; }
 
     private void Start()
     {
@@ -51,8 +52,52 @@ public sealed class CityNewPlayerModeInstaller : MonoBehaviour
 
         GetOrAdd<CityNewTerminalMissionBootstrap>(player);
         GetOrAdd<CityNewInventoryBootstrap>(player);
+        if (!TryInstallAppearance(player))
+        {
+            enabled = false;
+            return false;
+        }
         IsInitialized = true;
         InitializationError = string.Empty;
+        return true;
+    }
+
+    private bool TryInstallAppearance(GameObject player)
+    {
+        PlayerAppearanceCatalog catalog = Resources.Load<PlayerAppearanceCatalog>(
+            PlayerAppearanceCatalog.ResourcesPath);
+        string catalogError = "外观目录资源不存在。";
+        if (catalog == null || !catalog.TryValidate(out catalogError))
+        {
+            InitializationError = string.IsNullOrWhiteSpace(catalogError)
+                ? "CityNew 玩家外观目录缺失。"
+                : $"CityNew 玩家外观目录无效：{catalogError}";
+            Debug.LogError($"[{nameof(CityNewPlayerModeInstaller)}] " +
+                           InitializationError, this);
+            return false;
+        }
+
+        PlayerAppearanceDefinition selected =
+            PlayerAppearanceSelection.LoadOrDefault(catalog,
+                out bool usedFallback);
+        Transform visualRoot = player.transform.Find(
+            PlayerAppearanceHost.VisualRootName);
+        if (visualRoot == null)
+        {
+            var visualObject = new GameObject(PlayerAppearanceHost.VisualRootName);
+            visualRoot = visualObject.transform;
+            visualRoot.SetParent(player.transform, false);
+        }
+
+        AppearanceHost = player.GetComponent<PlayerAppearanceHost>();
+        if (AppearanceHost == null)
+            AppearanceHost = player.AddComponent<PlayerAppearanceHost>();
+        AppearanceHost.Configure(catalog, visualRoot, selected.StableId, false);
+        AppearanceHost.Apply(selected.StableId);
+        AppearanceHost.SetPresentationVisible(false);
+        if (usedFallback && !string.IsNullOrWhiteSpace(
+                PlayerAppearanceSelection.LastWarning))
+            Debug.LogWarning(PlayerAppearanceSelection.LastWarning, this);
         return true;
     }
 
