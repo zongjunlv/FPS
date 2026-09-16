@@ -23,6 +23,8 @@ public sealed class ContentValidationWindow : EditorWindow
         {
             if (GUILayout.Button("扫描正式内容", EditorStyles.toolbarButton, GUILayout.Width(110)))
                 report = ContentAssetValidator.Validate();
+            if (GUILayout.Button("第三方授权清单", EditorStyles.toolbarButton, GUILayout.Width(120)))
+                ThirdPartyAssetLicenseWindow.Open();
             errorsOnly = GUILayout.Toggle(errorsOnly, "仅错误", EditorStyles.toolbarButton, GUILayout.Width(65));
             search = GUILayout.TextField(search, EditorStyles.toolbarTextField);
         }

@@ -1,0 +1,78 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 0aa9a2809d3b74352a26a6366c9acec7, type: 3}
+  m_Name: ThirdPartyAssetLicenseManifest
+  m_EditorClassIdentifier: FPS.Composition::ThirdPartyAssetLicenseManifest
+  stableId: content.third_party.character_intake
+  sources:
+  - stableId: source.kenney.blocky-characters
+    displayName: Kenney Blocky Characters
+    author: Kenney
+    version: 2.0
+    sourcePageUrl: https://kenney.nl/assets/blocky-characters
+    sourceDownloadUrl: https://kenney.nl/media/pages/assets/blocky-characters/8369c0cf30-1749547469/kenney_blocky-characters_20.zip
+    licenseSpdxId: CC0-1.0
+    licenseUrl: https://creativecommons.org/publicdomain/zero/1.0/legalcode
+    bundledLicensePath: Assets/ThirdParty/Kenney/BlockyCharacters/License/License.txt
+    bundledLicenseSha256: 610fec89c16826112e9d6b80497b726c43fea0e42c9cd9d7cb081f8ad550c0ec
+    legalCodePath: Assets/ThirdParty/Kenney/BlockyCharacters/License/CC0-1.0-Legal-Code.txt
+    legalCodeSha256: a2010f343487d3f7618affe54f789f5487602331c0a8d03f49e9a7c547cf0499
+    downloadedOn: 2026-09-16
+    archiveSha256: 5e123859aa0c1598342b600c6db197024a1d63eb9ec531398b310725f589887e
+    commercialUseAllowed: 1
+    redistributionAllowed: 1
+    modificationAllowed: 1
+    attributionRequired: 0
+    verified: 1
+  assets:
+  - stableId: model.kenney.blocky.a
+    displayName: "Blocky Character A\uFF08\u80E1\u987B\u6210\u4EBA\uFF09"
+    kind: 0
+    sourceStableId: source.kenney.blocky-characters
+    assetPath: Assets/ThirdParty/Kenney/BlockyCharacters/Models/character-a.fbx
+    fileSha256: ff5010002ca7b42d6055691d9f781a1dfa3a1266abb2ac32a7bf7a565bc62724
+    approvedForProduction: 1
+    requiredSubAssets: []
+  - stableId: model.kenney.blocky.b
+    displayName: "Blocky Character B\uFF08\u6DF1\u80A4\u8272\u6210\u4EBA\uFF09"
+    kind: 0
+    sourceStableId: source.kenney.blocky-characters
+    assetPath: Assets/ThirdParty/Kenney/BlockyCharacters/Models/character-b.fbx
+    fileSha256: 4e44fe749cef19bc911a748f53737be78c2db194d78a10ec1fa875811d760645
+    approvedForProduction: 1
+    requiredSubAssets: []
+  - stableId: model.kenney.blocky.c
+    displayName: "Blocky Character C\uFF08\u5E74\u957F\u6210\u4EBA\uFF09"
+    kind: 0
+    sourceStableId: source.kenney.blocky-characters
+    assetPath: Assets/ThirdParty/Kenney/BlockyCharacters/Models/character-c.fbx
+    fileSha256: 4f7067c692d70d24c4f0d8a0fb5acd1a027246e51a93c06a81a883d777a3db0d
+    approvedForProduction: 1
+    requiredSubAssets: []
+  - stableId: animation.kenney.blocky.core
+    displayName: "Blocky Characters \u6838\u5FC3\u52A8\u4F5C\u96C6"
+    kind: 1
+    sourceStableId: source.kenney.blocky-characters
+    assetPath: Assets/ThirdParty/Kenney/BlockyCharacters/Models/character-a.fbx
+    fileSha256: ff5010002ca7b42d6055691d9f781a1dfa3a1266abb2ac32a7bf7a565bc62724
+    approvedForProduction: 1
+    requiredSubAssets:
+    - idle
+    - walk
+    - sprint
+    - holding-both
+    - holding-both-shoot
+    - die
+  formalCharacterStableIds:
+  - model.kenney.blocky.a
+  - model.kenney.blocky.b
+  - model.kenney.blocky.c

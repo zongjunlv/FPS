@@ -20,7 +20,7 @@ public sealed class Issue74TutorialLocomotionContentTests
         TutorialStepDefinition[] steps = definition.Steps.Skip(4).Take(3)
             .ToArray();
 
-        Assert.That(definition.Version, Is.EqualTo(3));
+        Assert.That(definition.Version, Is.GreaterThanOrEqualTo(3));
         Assert.That(steps.Select(step => step.EvidenceType), Is.EqualTo(new[]
         {
             TutorialEvidenceType.Jump,

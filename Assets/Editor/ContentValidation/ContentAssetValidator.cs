@@ -89,6 +89,7 @@ public static class ContentAssetValidator
             }
             catch (Exception exception) { report.Add("ASSET_READ_FAILED", exception.Message, asset); }
         }
+        ThirdPartyAssetLicenseAuditor.AppendTo(report);
         return report;
     }
 

@@ -13,7 +13,7 @@ output="${CONTENT_VALIDATION_OUTPUT_DIR:-$project_root/artifacts/content-validat
 mkdir -p "$output"
 run_output="$(mktemp -d "$output/run.XXXXXX")"
 printf '内容校验报告：%s\n' "$run_output"
-"$unity" -batchmode -nographics -quit -projectPath "$project_root" \
+"$unity" -batchmode -nographics -disable-audio -quit -projectPath "$project_root" \
   -executeMethod ContentValidationCli.Run \
   -contentValidationReport "$run_output/report.json" \
   -logFile "$run_output/unity.log"
