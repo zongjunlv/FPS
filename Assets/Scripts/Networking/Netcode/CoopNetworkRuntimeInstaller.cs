@@ -32,6 +32,12 @@ namespace FPS.Networking.Netcode
         public string DropDefinitionId;
         public Vector3 HeadOffset;
         public float HeadRadius;
+        public AuthoritativeEnemyRole Role;
+        [Min(0)] public long SpawnTick;
+        [Min(0f)] public float MoveSpeed;
+        [Min(0.1f)] public float AttackRange;
+        [Min(0f)] public float AttackDamage;
+        [Min(1)] public int AttackIntervalTicks;
 
         public CoopTargetSpawn ToDomain()
         {
@@ -42,7 +48,13 @@ namespace FPS.Networking.Netcode
                 Health <= 0f ? 100d : Health,
                 DropDefinitionId,
                 NetcodeConversions.ToDomain(HeadOffset),
-                Mathf.Max(0f, HeadRadius));
+                Mathf.Max(0f, HeadRadius),
+                Role,
+                Math.Max(0L, SpawnTick),
+                Mathf.Max(0f, MoveSpeed),
+                AttackRange <= 0f ? 1.8d : AttackRange,
+                Mathf.Max(0f, AttackDamage),
+                Mathf.Max(1, AttackIntervalTicks));
         }
     }
 
@@ -84,7 +96,10 @@ namespace FPS.Networking.Netcode
                 Health = 68f,
                 DropDefinitionId = "medkit",
                 HeadOffset = new Vector3(0f, 0.85f, 0f),
-                HeadRadius = 0.32f
+                HeadRadius = 0.32f,
+                Role = AuthoritativeEnemyRole.Assault,
+                AttackRange = 1.8f,
+                AttackIntervalTicks = 60
             }
         };
         [SerializeField] private int requiredKills = 1;

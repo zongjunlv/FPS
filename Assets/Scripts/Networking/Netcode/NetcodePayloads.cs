@@ -617,8 +617,14 @@ namespace FPS.Networking.Netcode
         public FixedString64Bytes DropDefinitionId;
         public Vector3 HeadOffset;
         public float HeadRadius;
+        public bool Active;
+        public float YawDegrees;
+        public AuthoritativeEnemyRole Role;
+        public AuthoritativeEnemyBehavior Behavior;
+        public int TargetPlayerId;
+        public int SpawnGeneration;
 
-        public bool IsAlive => Health > 0f;
+        public bool IsAlive => Active && Health > 0f;
 
         public static NetcodeTargetState FromDomain(
             AuthoritativeTargetState value)
@@ -631,7 +637,13 @@ namespace FPS.Networking.Netcode
                 Health = (float)value.Health,
                 DropDefinitionId = value.DropDefinitionId,
                 HeadOffset = NetcodeConversions.ToUnity(value.HeadOffset),
-                HeadRadius = (float)value.HeadRadius
+                HeadRadius = (float)value.HeadRadius,
+                Active = value.Active,
+                YawDegrees = (float)value.YawDegrees,
+                Role = value.Role,
+                Behavior = value.Behavior,
+                TargetPlayerId = value.TargetPlayerId,
+                SpawnGeneration = value.SpawnGeneration
             };
         }
 
@@ -645,6 +657,12 @@ namespace FPS.Networking.Netcode
             serializer.SerializeValue(ref DropDefinitionId);
             serializer.SerializeValue(ref HeadOffset);
             serializer.SerializeValue(ref HeadRadius);
+            serializer.SerializeValue(ref Active);
+            serializer.SerializeValue(ref YawDegrees);
+            serializer.SerializeValue(ref Role);
+            serializer.SerializeValue(ref Behavior);
+            serializer.SerializeValue(ref TargetPlayerId);
+            serializer.SerializeValue(ref SpawnGeneration);
         }
 
         public bool Equals(NetcodeTargetState other)
@@ -654,7 +672,13 @@ namespace FPS.Networking.Netcode
                 Health.Equals(other.Health) &&
                 DropDefinitionId.Equals(other.DropDefinitionId) &&
                 HeadOffset.Equals(other.HeadOffset) &&
-                HeadRadius.Equals(other.HeadRadius);
+                HeadRadius.Equals(other.HeadRadius) &&
+                Active == other.Active &&
+                YawDegrees.Equals(other.YawDegrees) &&
+                Role == other.Role &&
+                Behavior == other.Behavior &&
+                TargetPlayerId == other.TargetPlayerId &&
+                SpawnGeneration == other.SpawnGeneration;
         }
     }
 
@@ -664,6 +688,11 @@ namespace FPS.Networking.Netcode
         public long ServerTick;
         public AuthoritativeWaveStatus WaveStatus;
         public int KilledTargets;
+        public int RequiredKills;
+        public int EnemyPoolCapacity;
+        public int ActiveEnemyCount;
+        public int PendingEnemyCount;
+        public int RemainingEnemyCount;
         public long LastEventSequence;
 
         public void NetworkSerialize<T>(BufferSerializer<T> serializer)
@@ -672,6 +701,11 @@ namespace FPS.Networking.Netcode
             serializer.SerializeValue(ref ServerTick);
             serializer.SerializeValue(ref WaveStatus);
             serializer.SerializeValue(ref KilledTargets);
+            serializer.SerializeValue(ref RequiredKills);
+            serializer.SerializeValue(ref EnemyPoolCapacity);
+            serializer.SerializeValue(ref ActiveEnemyCount);
+            serializer.SerializeValue(ref PendingEnemyCount);
+            serializer.SerializeValue(ref RemainingEnemyCount);
             serializer.SerializeValue(ref LastEventSequence);
         }
 
@@ -680,6 +714,11 @@ namespace FPS.Networking.Netcode
             return ServerTick == other.ServerTick &&
                 WaveStatus == other.WaveStatus &&
                 KilledTargets == other.KilledTargets &&
+                RequiredKills == other.RequiredKills &&
+                EnemyPoolCapacity == other.EnemyPoolCapacity &&
+                ActiveEnemyCount == other.ActiveEnemyCount &&
+                PendingEnemyCount == other.PendingEnemyCount &&
+                RemainingEnemyCount == other.RemainingEnemyCount &&
                 LastEventSequence == other.LastEventSequence;
         }
     }

@@ -161,6 +161,7 @@ namespace FPS.Networking.Domain
     /// </summary>
     public sealed class AuthoritativeCoopSimulation
     {
+        private const int EnemyRecycleDelayTicks = 15;
         private readonly CoopServerRules rules;
         private readonly Dictionary<int, MutablePlayer> players;
         private readonly Dictionary<int, MutableTarget> targets;
@@ -176,6 +177,8 @@ namespace FPS.Networking.Domain
         private Func<int, NetVector3, NetVector3,
             AuthoritativeShotObstruction> shotObstructionResolver =
             (_, _, _) => AuthoritativeShotObstruction.Clear;
+        private Func<int, NetVector3, NetVector3, NetVector3>
+            enemyMovementResolver = (_, _, desired) => desired;
         private AuthoritativeWaveStatus waveStatus =
             AuthoritativeWaveStatus.Fighting;
 
@@ -217,6 +220,9 @@ namespace FPS.Networking.Domain
             this.requiredKills = requiredKills == 0
                 ? targets.Count
                 : requiredKills;
+            waveStatus = targets.Values.Any(value => value.IsPending)
+                ? AuthoritativeWaveStatus.Spawning
+                : AuthoritativeWaveStatus.Fighting;
             CaptureHistory(0);
         }
 
@@ -224,6 +230,13 @@ namespace FPS.Networking.Domain
         public long CurrentTick => currentTick;
         public int HistoryCount => history.Count;
         public AuthoritativeWaveStatus WaveStatus => waveStatus;
+        public int EnemyPoolCapacity => targets.Count;
+        public int ActiveEnemyCount =>
+            targets.Values.Count(value => value.IsAlive);
+        public int PendingEnemyCount =>
+            targets.Values.Count(value => value.IsPending);
+        public int AvailableEnemySlots =>
+            targets.Count - ActiveEnemyCount;
 
         public void SetStandingClearanceValidator(
             Func<int, NetVector3, bool> validator)
@@ -251,6 +264,13 @@ namespace FPS.Networking.Domain
         {
             shotObstructionResolver = resolver ??
                 ((_, _, _) => AuthoritativeShotObstruction.Clear);
+        }
+
+        public void SetEnemyMovementResolver(
+            Func<int, NetVector3, NetVector3, NetVector3> resolver)
+        {
+            enemyMovementResolver = resolver ??
+                ((_, _, desired) => desired);
         }
 
         public WeaponActionResolution ApplyWeaponAction(
@@ -320,6 +340,9 @@ namespace FPS.Networking.Domain
             currentTick++;
             var events = new List<AuthoritativeEvent>();
             AdvanceCombatState(events);
+            AdvanceEnemyLifecycle(events);
+            AdvanceEnemySpawns(events);
+            AdvanceEnemyAi(events);
             var resolutions = new List<CommandResolution>();
             PlayerInputCommand[] commands = (receivedCommands ??
                     Array.Empty<PlayerInputCommand>())
@@ -363,34 +386,7 @@ namespace FPS.Networking.Domain
                 throw new ArgumentOutOfRangeException(nameof(damage));
 
             var events = new List<AuthoritativeEvent>();
-            if (!player.IsAlive || damage <= 0d)
-                return events;
-            double before = player.Health;
-            player.Health = CoopGameplayRules.ApplyDamage(before, damage);
-            double applied = before - player.Health;
-            events.Add(Emit(
-                AuthoritativeEventKind.PlayerDamaged,
-                0,
-                playerId,
-                applied));
-            if (!player.IsAlive)
-            {
-                events.Add(Emit(
-                    AuthoritativeEventKind.PlayerKilled,
-                    0,
-                    playerId,
-                    0d));
-                if (players.Values.All(value => !value.IsAlive) &&
-                    waveStatus == AuthoritativeWaveStatus.Fighting)
-                {
-                    waveStatus = AuthoritativeWaveStatus.Failed;
-                    events.Add(Emit(
-                        AuthoritativeEventKind.WaveFailed,
-                        0,
-                        0,
-                        0d));
-                }
-            }
+            ApplyDamageToPlayer(player, damage, 0, events);
 
             ReplaceCurrentHistory();
             return events;
@@ -414,7 +410,192 @@ namespace FPS.Networking.Domain
                 players.Values.Select(value => value.Snapshot()),
                 targets.Values.Select(value => value.Snapshot()),
                 waveStatus,
-                killedTargets);
+                killedTargets,
+                requiredKills);
+        }
+
+        private void AdvanceEnemySpawns(ICollection<AuthoritativeEvent> events)
+        {
+            if (waveStatus == AuthoritativeWaveStatus.Completed ||
+                waveStatus == AuthoritativeWaveStatus.Failed)
+                return;
+            bool spawnedAny = false;
+            foreach (MutableTarget target in targets.Values
+                         .Where(value => value.IsPending &&
+                                         value.SpawnTick <= currentTick)
+                         .OrderBy(value => value.SpawnTick)
+                         .ThenBy(value => value.Id))
+            {
+                target.Spawn();
+                spawnedAny = true;
+                events.Add(Emit(
+                    AuthoritativeEventKind.TargetSpawned,
+                    target.Id,
+                    0,
+                    target.SpawnGeneration,
+                    target.Role.ToString()));
+            }
+            if (spawnedAny || targets.Values.Any(value => value.IsAlive))
+                waveStatus = AuthoritativeWaveStatus.Fighting;
+        }
+
+        private void AdvanceEnemyLifecycle(
+            ICollection<AuthoritativeEvent> events)
+        {
+            foreach (MutableTarget target in targets.Values
+                         .Where(value => value.Spawned && !value.Active &&
+                                         value.Behavior ==
+                                         AuthoritativeEnemyBehavior.Dead &&
+                                         value.RecycleTick <= currentTick)
+                         .OrderBy(value => value.Id))
+            {
+                target.Behavior = AuthoritativeEnemyBehavior.Pooled;
+                events.Add(Emit(
+                    AuthoritativeEventKind.TargetBehaviorChanged,
+                    target.Id,
+                    0,
+                    (double)AuthoritativeEnemyBehavior.Pooled,
+                    target.Role.ToString()));
+            }
+        }
+
+        private void AdvanceEnemyAi(ICollection<AuthoritativeEvent> events)
+        {
+            if (waveStatus == AuthoritativeWaveStatus.Completed ||
+                waveStatus == AuthoritativeWaveStatus.Failed)
+                return;
+            MutablePlayer[] livingPlayers = players.Values
+                .Where(value => value.IsAlive)
+                .OrderBy(value => value.Id)
+                .ToArray();
+            if (livingPlayers.Length == 0) return;
+
+            foreach (MutableTarget target in targets.Values
+                         .Where(value => value.IsAlive)
+                         .OrderBy(value => value.Id))
+            {
+                MutablePlayer selected = null;
+                double selectedDistance = double.PositiveInfinity;
+                foreach (MutablePlayer candidate in livingPlayers)
+                {
+                    double distance = PlanarDistance(
+                        target.Position, candidate.Position);
+                    if (distance < selectedDistance - 0.000001d ||
+                        Math.Abs(distance - selectedDistance) <= 0.000001d &&
+                        (selected == null || candidate.Id < selected.Id))
+                    {
+                        selected = candidate;
+                        selectedDistance = distance;
+                    }
+                }
+
+                AuthoritativeEnemyDecision decision =
+                    AuthoritativeEnemyUtility.Decide(
+                        target.Role,
+                        selected?.Id ?? 0,
+                        selectedDistance,
+                        target.AttackRange,
+                        target.MoveSpeed > 0d);
+                if (decision.Behavior != target.Behavior ||
+                    decision.TargetPlayerId != target.TargetPlayerId)
+                {
+                    target.Behavior = decision.Behavior;
+                    target.TargetPlayerId = decision.TargetPlayerId;
+                    events.Add(Emit(
+                        AuthoritativeEventKind.TargetBehaviorChanged,
+                        target.Id,
+                        decision.TargetPlayerId,
+                        (double)decision.Behavior,
+                        target.Role.ToString()));
+                }
+                if (selected == null) continue;
+
+                NetVector3 planarDelta = new(
+                    selected.Position.X - target.Position.X,
+                    0d,
+                    selected.Position.Z - target.Position.Z);
+                if (planarDelta.SqrMagnitude > 0.000001d)
+                {
+                    target.YawDegrees = Math.Atan2(
+                        planarDelta.X, planarDelta.Z) * 180d / Math.PI;
+                }
+
+                if (decision.Behavior ==
+                    AuthoritativeEnemyBehavior.Pursue)
+                {
+                    double speed = target.MoveSpeed *
+                        AuthoritativeEnemyUtility.MoveSpeedMultiplier(
+                            target.Role);
+                    double travel = Math.Min(
+                        speed * rules.FixedDeltaSeconds,
+                        Math.Max(0d,
+                            selectedDistance - target.AttackRange * 0.9d));
+                    NetVector3 desired = target.Position +
+                        planarDelta.Normalized * travel;
+                    NetVector3 resolved = enemyMovementResolver(
+                        target.Id, target.Position, desired);
+                    if (resolved.IsFinite) target.Position = resolved;
+                }
+
+                if (decision.Behavior !=
+                        AuthoritativeEnemyBehavior.Attack ||
+                    target.AttackDamage <= 0d ||
+                    currentTick < target.NextAttackTick)
+                    continue;
+                target.NextAttackTick = currentTick +
+                    target.AttackIntervalTicks;
+                double damage = target.AttackDamage *
+                    AuthoritativeEnemyUtility.DamageMultiplier(target.Role);
+                events.Add(Emit(
+                    AuthoritativeEventKind.TargetAttacked,
+                    target.Id,
+                    selected.Id,
+                    damage,
+                    target.Role.ToString()));
+                ApplyDamageToPlayer(selected, damage, target.Id, events);
+            }
+        }
+
+        private void ApplyDamageToPlayer(
+            MutablePlayer target,
+            double damage,
+            int sourceTargetId,
+            ICollection<AuthoritativeEvent> events)
+        {
+            if (!target.IsAlive || damage <= 0d) return;
+            double before = target.Health;
+            target.Health = CoopGameplayRules.ApplyDamage(before, damage);
+            double applied = before - target.Health;
+            events.Add(Emit(
+                AuthoritativeEventKind.PlayerDamaged,
+                sourceTargetId,
+                target.Id,
+                applied));
+            if (target.IsAlive) return;
+            events.Add(Emit(
+                AuthoritativeEventKind.PlayerKilled,
+                sourceTargetId,
+                target.Id,
+                0d));
+            if (players.Values.Any(value => value.IsAlive)) return;
+            if (waveStatus == AuthoritativeWaveStatus.Completed ||
+                waveStatus == AuthoritativeWaveStatus.Failed)
+                return;
+            waveStatus = AuthoritativeWaveStatus.Failed;
+            events.Add(Emit(
+                AuthoritativeEventKind.WaveFailed,
+                sourceTargetId,
+                0,
+                0d));
+        }
+
+        private static double PlanarDistance(
+            NetVector3 left,
+            NetVector3 right)
+        {
+            double x = left.X - right.X;
+            double z = left.Z - right.Z;
+            return Math.Sqrt(x * x + z * z);
         }
 
         private CommandResolution ResolveCommand(
@@ -609,7 +790,7 @@ namespace FPS.Networking.Domain
             foreach (MutableTarget target in targets.Values
                          .OrderBy(value => value.Id))
             {
-                if (!target.IsAlive ||
+                if (!target.IsAlive || command.ClientTick < target.SpawnTick ||
                     !frame.TryGetTargetPosition(target.Id, out NetVector3 center))
                     continue;
                 double headDistance = 0d;
@@ -722,6 +903,10 @@ namespace FPS.Networking.Domain
                     AuthoritativeSurface.Flesh);
             }
 
+            selected.Active = false;
+            selected.Behavior = AuthoritativeEnemyBehavior.Dead;
+            selected.TargetPlayerId = 0;
+            selected.RecycleTick = currentTick + EnemyRecycleDelayTicks;
             killedTargets++;
             events.Add(Emit(
                 AuthoritativeEventKind.TargetKilled,
@@ -1028,20 +1213,62 @@ namespace FPS.Networking.Domain
                 Id = spawn.TargetId;
                 Position = spawn.Position;
                 Radius = spawn.Radius;
+                MaximumHealth = spawn.Health;
                 Health = spawn.Health;
                 DropDefinitionId = spawn.DropDefinitionId;
                 HeadOffset = spawn.HeadOffset;
                 HeadRadius = spawn.HeadRadius;
+                Role = spawn.Role;
+                SpawnTick = spawn.SpawnTick;
+                MoveSpeed = spawn.MoveSpeed;
+                AttackRange = spawn.AttackRange;
+                AttackDamage = spawn.AttackDamage;
+                AttackIntervalTicks = spawn.AttackIntervalTicks;
+                Spawned = spawn.SpawnTick == 0;
+                Active = Spawned;
+                SpawnGeneration = Spawned ? 1 : 0;
+                Behavior = Spawned
+                    ? AuthoritativeEnemyBehavior.Patrol
+                    : AuthoritativeEnemyBehavior.Pooled;
             }
 
             public int Id;
             public NetVector3 Position;
             public double Radius;
+            public double MaximumHealth;
             public double Health;
             public string DropDefinitionId;
             public NetVector3 HeadOffset;
             public double HeadRadius;
-            public bool IsAlive => Health > 0d;
+            public AuthoritativeEnemyRole Role;
+            public long SpawnTick;
+            public double MoveSpeed;
+            public double AttackRange;
+            public double AttackDamage;
+            public int AttackIntervalTicks;
+            public long NextAttackTick;
+            public long RecycleTick;
+            public bool Spawned;
+            public bool Active;
+            public double YawDegrees;
+            public AuthoritativeEnemyBehavior Behavior;
+            public int TargetPlayerId;
+            public int SpawnGeneration;
+            public bool IsAlive => Active && Health > 0d;
+            public bool IsPending => !Spawned;
+
+            public void Spawn()
+            {
+                if (Spawned) return;
+                Spawned = true;
+                Active = true;
+                Health = MaximumHealth;
+                Behavior = AuthoritativeEnemyBehavior.Patrol;
+                TargetPlayerId = 0;
+                NextAttackTick = 0;
+                RecycleTick = 0;
+                SpawnGeneration++;
+            }
 
             public AuthoritativeTargetState Snapshot() => new(
                 Id,
@@ -1050,7 +1277,13 @@ namespace FPS.Networking.Domain
                 Health,
                 DropDefinitionId,
                 HeadOffset,
-                HeadRadius);
+                HeadRadius,
+                Active,
+                YawDegrees,
+                Role,
+                Behavior,
+                TargetPlayerId,
+                SpawnGeneration);
         }
 
         private sealed class HistoryFrame

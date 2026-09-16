@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using FPS.Networking.Domain;
 using FPS.Networking.Netcode;
 using Unity.Services.Authentication;
 using Unity.Services.Core;
@@ -674,14 +675,15 @@ namespace FPS.Networking.Session
                     CoopNetworkRuntimeInstaller>();
             networkInstaller = installer;
             installer.ConfigurePrefabs(authorityPrefab, replicaPrefab);
+            CoopTargetSpawnDefinition[] targetDefinitions = deferPlayerSpawn
+                ? BuildCityNewTargetSpawns()
+                : BuildTargetSpawns();
             installer.ConfigureScenario(
                 deferPlayerSpawn
                     ? BuildCityNewPlayerSpawns()
                     : BuildPlayerSpawns(),
-                deferPlayerSpawn
-                    ? BuildCityNewTargetSpawns()
-                    : BuildTargetSpawns(),
-                1);
+                targetDefinitions,
+                deferPlayerSpawn ? targetDefinitions.Length : 1);
             installer.ConfigurePlayerSpawnBarrier(deferPlayerSpawn);
             networkBootstrap.gameObject.AddComponent<
                 CoopNetworkWorldPresenter>();
@@ -748,7 +750,10 @@ namespace FPS.Networking.Session
                     Health = 68f,
                     DropDefinitionId = "medkit",
                     HeadOffset = new Vector3(0f, 0.85f, 0f),
-                    HeadRadius = 0.32f
+                    HeadRadius = 0.32f,
+                    Role = AuthoritativeEnemyRole.Assault,
+                    AttackRange = 1.8f,
+                    AttackIntervalTicks = 60
                 }
             };
         }
@@ -765,7 +770,89 @@ namespace FPS.Networking.Session
                     Health = 68f,
                     DropDefinitionId = "medkit",
                     HeadOffset = new Vector3(0f, 0.85f, 0f),
-                    HeadRadius = 0.32f
+                    HeadRadius = 0.32f,
+                    Role = AuthoritativeEnemyRole.Assault,
+                    MoveSpeed = 2.35f,
+                    AttackRange = 1.8f,
+                    AttackDamage = 6f,
+                    AttackIntervalTicks = 60
+                },
+                new CoopTargetSpawnDefinition
+                {
+                    TargetId = 2,
+                    Position = new Vector3(57.5f, 0.16f, 76f),
+                    Radius = 1.05f,
+                    Health = 54f,
+                    HeadOffset = new Vector3(0f, 0.8f, 0f),
+                    HeadRadius = 0.3f,
+                    Role = AuthoritativeEnemyRole.Raider,
+                    SpawnTick = 45,
+                    MoveSpeed = 3.1f,
+                    AttackRange = 1.55f,
+                    AttackDamage = 5f,
+                    AttackIntervalTicks = 48
+                },
+                new CoopTargetSpawnDefinition
+                {
+                    TargetId = 3,
+                    Position = new Vector3(42.2f, 0.16f, 76f),
+                    Radius = 1.15f,
+                    Health = 82f,
+                    DropDefinitionId = "armor_plate",
+                    HeadOffset = new Vector3(0f, 0.9f, 0f),
+                    HeadRadius = 0.34f,
+                    Role = AuthoritativeEnemyRole.Support,
+                    SpawnTick = 90,
+                    MoveSpeed = 1.9f,
+                    AttackRange = 2.1f,
+                    AttackDamage = 5f,
+                    AttackIntervalTicks = 72
+                },
+                new CoopTargetSpawnDefinition
+                {
+                    TargetId = 4,
+                    Position = new Vector3(61f, 0.16f, 82f),
+                    Radius = 1.2f,
+                    Health = 76f,
+                    HeadOffset = new Vector3(0f, 0.9f, 0f),
+                    HeadRadius = 0.34f,
+                    Role = AuthoritativeEnemyRole.Suppressor,
+                    SpawnTick = 135,
+                    MoveSpeed = 1.75f,
+                    AttackRange = 2.6f,
+                    AttackDamage = 7f,
+                    AttackIntervalTicks = 70
+                },
+                new CoopTargetSpawnDefinition
+                {
+                    TargetId = 5,
+                    Position = new Vector3(38.5f, 0.16f, 82f),
+                    Radius = 1.1f,
+                    Health = 64f,
+                    HeadOffset = new Vector3(0f, 0.85f, 0f),
+                    HeadRadius = 0.32f,
+                    Role = AuthoritativeEnemyRole.Raider,
+                    SpawnTick = 180,
+                    MoveSpeed = 3.2f,
+                    AttackRange = 1.55f,
+                    AttackDamage = 5f,
+                    AttackIntervalTicks = 48
+                },
+                new CoopTargetSpawnDefinition
+                {
+                    TargetId = 6,
+                    Position = new Vector3(49.761f, 0.16f, 88f),
+                    Radius = 1.45f,
+                    Health = 135f,
+                    DropDefinitionId = "medkit",
+                    HeadOffset = new Vector3(0f, 1.05f, 0f),
+                    HeadRadius = 0.38f,
+                    Role = AuthoritativeEnemyRole.Elite,
+                    SpawnTick = 225,
+                    MoveSpeed = 2.55f,
+                    AttackRange = 2f,
+                    AttackDamage = 9f,
+                    AttackIntervalTicks = 64
                 }
             };
         }

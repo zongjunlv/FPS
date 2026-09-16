@@ -2,6 +2,7 @@ using System;
 using System.Collections;
 using System.IO;
 using System.Threading;
+using FPS.Networking.Domain;
 using Unity.Netcode;
 using UnityEngine;
 using UnityEngine.SceneManagement;
@@ -245,8 +246,10 @@ namespace FPS.Networking.Netcode
             }
 
             installer.ConfigurePrefabs(authorityPrefab, replicaPrefab);
+            CoopTargetSpawnDefinition[] targets =
+                BuildTargets(configuration.Seed);
             installer.ConfigureScenario(BuildPlayers(configuration.MaximumPlayers),
-                BuildTargets(configuration.Seed), 1);
+                targets, targets.Length);
             installer.ConfigureMaximumPlayers(configuration.MaximumPlayers);
             if (!installer.RegisterConfiguredPrefabs())
             {
@@ -261,12 +264,14 @@ namespace FPS.Networking.Netcode
         {
             var result = new CoopPlayerSpawnDefinition[count];
             float center = (count - 1) * 0.5f;
+            Vector3 cityNewOrigin = new(49.761f, 0.16f, 59.719f);
             for (int index = 0; index < count; index++)
             {
                 result[index] = new CoopPlayerSpawnDefinition
                 {
                     PlayerId = index + 1,
-                    Position = new Vector3((index - center) * 2.5f, 0f, 0f),
+                    Position = cityNewOrigin +
+                        Vector3.right * ((index - center) * 2.5f),
                     Health = 100f
                 };
             }
@@ -276,18 +281,35 @@ namespace FPS.Networking.Netcode
         private static CoopTargetSpawnDefinition[] BuildTargets(int seed)
         {
             var random = new System.Random(seed);
-            float offset = (float)(random.NextDouble() * 8d - 4d);
-            return new[]
+            var result = new CoopTargetSpawnDefinition[6];
+            Vector3 cityNewWaveCenter = new(49.761f, 0.16f, 74.719f);
+            for (int index = 0; index < result.Length; index++)
             {
-                new CoopTargetSpawnDefinition
+                double angle = random.NextDouble() * Math.PI * 2d;
+                float radius = 12f + (float)random.NextDouble() * 6f;
+                result[index] = new CoopTargetSpawnDefinition
                 {
-                    TargetId = 1,
-                    Position = new Vector3(offset, 0f, 15f),
-                    Radius = 1.25f,
-                    Health = 68f,
-                    DropDefinitionId = "medkit"
-                }
-            };
+                    TargetId = index + 1,
+                    Position = cityNewWaveCenter + new Vector3(
+                        Mathf.Sin((float)angle) * radius,
+                        0f,
+                        Mathf.Cos((float)angle) * radius),
+                    Radius = index == 5 ? 1.45f : 1.1f,
+                    Health = index == 5 ? 135f : 68f,
+                    DropDefinitionId = index % 3 == 0
+                        ? "medkit"
+                        : string.Empty,
+                    Role = index == 5
+                        ? AuthoritativeEnemyRole.Elite
+                        : (AuthoritativeEnemyRole)(index % 4),
+                    SpawnTick = index * 45L,
+                    MoveSpeed = index % 2 == 0 ? 2.4f : 2.9f,
+                    AttackRange = 1.8f,
+                    AttackDamage = index == 5 ? 9f : 6f,
+                    AttackIntervalTicks = index == 5 ? 64 : 60
+                };
+            }
+            return result;
         }
 
         public void RequestShutdown(string reason, int requestedExitCode = 0)

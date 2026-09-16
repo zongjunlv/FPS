@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using FPS.Networking.Domain;
 using Unity.Netcode;
 using UnityEngine;
+using UnityEngine.AI;
 
 namespace FPS.Networking.Netcode
 {
@@ -135,6 +136,7 @@ namespace FPS.Networking.Netcode
                 requiredKills);
             simulation.SetStandingClearanceValidator(HasStandingClearance);
             simulation.SetShotObstructionResolver(ResolveShotObstruction);
+            simulation.SetEnemyMovementResolver(ResolveEnemyMovement);
             NetcodeRulesState replicatedRules =
                 NetcodeRulesState.FromDomain(rules);
             if (IsSpawned)
@@ -414,6 +416,32 @@ namespace FPS.Networking.Netcode
             return true;
         }
 
+        private static NetVector3 ResolveEnemyMovement(
+            int _,
+            NetVector3 current,
+            NetVector3 desired)
+        {
+            Vector3 start = NetcodeConversions.ToUnity(current);
+            Vector3 end = NetcodeConversions.ToUnity(desired);
+            if (!NavMesh.SamplePosition(start, out NavMeshHit startHit,
+                    1.5f, NavMesh.AllAreas) ||
+                !NavMesh.SamplePosition(end, out NavMeshHit endHit,
+                    1.5f, NavMesh.AllAreas))
+                return desired;
+
+            if (!NavMesh.Raycast(startHit.position, endHit.position,
+                    out NavMeshHit obstruction, NavMesh.AllAreas))
+                return NetcodeConversions.ToDomain(endHit.position);
+
+            Vector3 step = endHit.position - startHit.position;
+            Vector3 slide = Vector3.ProjectOnPlane(step, obstruction.normal);
+            Vector3 candidate = startHit.position + slide;
+            return NavMesh.SamplePosition(candidate, out NavMeshHit slideHit,
+                    0.75f, NavMesh.AllAreas)
+                ? NetcodeConversions.ToDomain(slideHit.position)
+                : current;
+        }
+
         private AuthoritativeShotObstruction ResolveShotObstruction(
             int shooterPlayerId,
             NetVector3 origin,
@@ -652,11 +680,22 @@ namespace FPS.Networking.Netcode
                 if (!found) playerStates.RemoveAt(index);
             }
 
-            targetStates.Clear();
             for (int index = 0; index < snapshot.Targets.Count; index++)
             {
-                targetStates.Add(NetcodeTargetState.FromDomain(
-                    snapshot.Targets[index]));
+                NetcodeTargetState replicated =
+                    NetcodeTargetState.FromDomain(snapshot.Targets[index]);
+                if (index >= targetStates.Count)
+                {
+                    targetStates.Add(replicated);
+                }
+                else if (!targetStates[index].Equals(replicated))
+                {
+                    targetStates[index] = replicated;
+                }
+            }
+            while (targetStates.Count > snapshot.Targets.Count)
+            {
+                targetStates.RemoveAt(targetStates.Count - 1);
             }
 
             for (int index = 0; index < events.Count; index++)
@@ -677,6 +716,11 @@ namespace FPS.Networking.Netcode
                 ServerTick = snapshot.Tick,
                 WaveStatus = snapshot.WaveStatus,
                 KilledTargets = snapshot.KilledTargets,
+                RequiredKills = snapshot.RequiredKills,
+                EnemyPoolCapacity = snapshot.EnemyPoolCapacity,
+                ActiveEnemyCount = snapshot.ActiveTargets,
+                PendingEnemyCount = snapshot.PendingTargets,
+                RemainingEnemyCount = snapshot.RemainingTargets,
                 LastEventSequence = lastEventSequence
             };
         }

@@ -257,7 +257,13 @@ namespace FPS.Networking.Domain
             double health,
             string dropDefinitionId = "",
             NetVector3 headOffset = default,
-            double headRadius = 0d)
+            double headRadius = 0d,
+            AuthoritativeEnemyRole role = AuthoritativeEnemyRole.Assault,
+            long spawnTick = 0,
+            double moveSpeed = 0d,
+            double attackRange = 1.8d,
+            double attackDamage = 0d,
+            int attackIntervalTicks = 60)
         {
             if (targetId <= 0) throw new ArgumentOutOfRangeException(nameof(targetId));
             if (!position.IsFinite) throw new ArgumentOutOfRangeException(nameof(position));
@@ -270,6 +276,17 @@ namespace FPS.Networking.Domain
             if (headRadius < 0d || double.IsNaN(headRadius) ||
                 double.IsInfinity(headRadius))
                 throw new ArgumentOutOfRangeException(nameof(headRadius));
+            if (spawnTick < 0)
+                throw new ArgumentOutOfRangeException(nameof(spawnTick));
+            if (!NonNegativeFinite(moveSpeed))
+                throw new ArgumentOutOfRangeException(nameof(moveSpeed));
+            if (!PositiveFinite(attackRange))
+                throw new ArgumentOutOfRangeException(nameof(attackRange));
+            if (!NonNegativeFinite(attackDamage))
+                throw new ArgumentOutOfRangeException(nameof(attackDamage));
+            if (attackIntervalTicks < 1)
+                throw new ArgumentOutOfRangeException(
+                    nameof(attackIntervalTicks));
             TargetId = targetId;
             Position = position;
             Radius = radius;
@@ -277,6 +294,12 @@ namespace FPS.Networking.Domain
             DropDefinitionId = dropDefinitionId ?? string.Empty;
             HeadOffset = headOffset;
             HeadRadius = headRadius;
+            Role = role;
+            SpawnTick = spawnTick;
+            MoveSpeed = moveSpeed;
+            AttackRange = attackRange;
+            AttackDamage = attackDamage;
+            AttackIntervalTicks = attackIntervalTicks;
         }
 
         public int TargetId { get; }
@@ -286,6 +309,17 @@ namespace FPS.Networking.Domain
         public string DropDefinitionId { get; }
         public NetVector3 HeadOffset { get; }
         public double HeadRadius { get; }
+        public AuthoritativeEnemyRole Role { get; }
+        public long SpawnTick { get; }
+        public double MoveSpeed { get; }
+        public double AttackRange { get; }
+        public double AttackDamage { get; }
+        public int AttackIntervalTicks { get; }
+
+        private static bool PositiveFinite(double value) =>
+            value > 0d && !double.IsNaN(value) && !double.IsInfinity(value);
+        private static bool NonNegativeFinite(double value) =>
+            value >= 0d && !double.IsNaN(value) && !double.IsInfinity(value);
     }
 
     public readonly struct PlayerInputCommand
@@ -506,7 +540,10 @@ namespace FPS.Networking.Domain
         ReloadCompleted,
         WeaponSwitchStarted,
         WeaponSwitchCompleted,
-        CommandRejected
+        CommandRejected,
+        TargetSpawned,
+        TargetBehaviorChanged,
+        TargetAttacked
     }
 
     public readonly struct AuthoritativeEvent
@@ -666,7 +703,14 @@ namespace FPS.Networking.Domain
             double health,
             string dropDefinitionId,
             NetVector3 headOffset = default,
-            double headRadius = 0d)
+            double headRadius = 0d,
+            bool active = true,
+            double yawDegrees = 0d,
+            AuthoritativeEnemyRole role = AuthoritativeEnemyRole.Assault,
+            AuthoritativeEnemyBehavior behavior =
+                AuthoritativeEnemyBehavior.Patrol,
+            int targetPlayerId = 0,
+            int spawnGeneration = 1)
         {
             TargetId = targetId;
             Position = position;
@@ -675,6 +719,12 @@ namespace FPS.Networking.Domain
             DropDefinitionId = dropDefinitionId ?? string.Empty;
             HeadOffset = headOffset;
             HeadRadius = headRadius;
+            Active = active;
+            YawDegrees = yawDegrees;
+            Role = role;
+            Behavior = behavior;
+            TargetPlayerId = targetPlayerId;
+            SpawnGeneration = Math.Max(0, spawnGeneration);
         }
 
         public int TargetId { get; }
@@ -684,14 +734,21 @@ namespace FPS.Networking.Domain
         public string DropDefinitionId { get; }
         public NetVector3 HeadOffset { get; }
         public double HeadRadius { get; }
-        public bool IsAlive => Health > 0d;
+        public bool Active { get; }
+        public double YawDegrees { get; }
+        public AuthoritativeEnemyRole Role { get; }
+        public AuthoritativeEnemyBehavior Behavior { get; }
+        public int TargetPlayerId { get; }
+        public int SpawnGeneration { get; }
+        public bool IsAlive => Active && Health > 0d;
     }
 
     public enum AuthoritativeWaveStatus
     {
-        Fighting,
-        Completed,
-        Failed
+        Fighting = 0,
+        Completed = 1,
+        Failed = 2,
+        Spawning = 3
     }
 
     public sealed class AuthoritativeWorldSnapshot
@@ -704,7 +761,8 @@ namespace FPS.Networking.Domain
             IEnumerable<AuthoritativePlayerState> players,
             IEnumerable<AuthoritativeTargetState> targets,
             AuthoritativeWaveStatus waveStatus,
-            int killedTargets)
+            int killedTargets,
+            int requiredKills = 0)
         {
             Tick = tick;
             this.players = (players ?? throw new ArgumentNullException(nameof(players)))
@@ -713,6 +771,9 @@ namespace FPS.Networking.Domain
                 .OrderBy(value => value.TargetId).ToArray();
             WaveStatus = waveStatus;
             KilledTargets = Math.Max(0, killedTargets);
+            RequiredKills = requiredKills <= 0
+                ? this.targets.Length
+                : Math.Min(requiredKills, this.targets.Length);
         }
 
         public long Tick { get; }
@@ -720,6 +781,15 @@ namespace FPS.Networking.Domain
         public IReadOnlyList<AuthoritativeTargetState> Targets => targets;
         public AuthoritativeWaveStatus WaveStatus { get; }
         public int KilledTargets { get; }
+        public int RequiredKills { get; }
+        public int EnemyPoolCapacity => targets.Length;
+        public int SpawnedTargets => targets.Count(value =>
+            value.SpawnGeneration > 0);
+        public int ActiveTargets => targets.Count(value => value.IsAlive);
+        public int PendingTargets => targets.Count(value =>
+            value.SpawnGeneration == 0);
+        public int RemainingTargets => Math.Max(0,
+            RequiredKills - KilledTargets);
         public AuthoritativePlayerState Player(int playerId) =>
             players.Single(value => value.PlayerId == playerId);
         public AuthoritativeTargetState Target(int targetId) =>
