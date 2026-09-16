@@ -62,6 +62,7 @@ run_compile() {
   FPS_QUALITY_GATE_MARKER="$marker_path" "$unity" \
     -batchmode \
     -nographics \
+    -disable-audio \
     -quit \
     -projectPath "$project_root" \
     -executeMethod FPS.Editor.CI.UnityQualityGate.CompileCheck \
@@ -80,6 +81,7 @@ run_tests() {
   local command=(
     "$unity"
     -batchmode
+    -disable-audio
     -projectPath "$project_root"
     -runTests
     -testPlatform "$platform"

@@ -280,7 +280,7 @@ public sealed class TutorialTopHud : MonoBehaviour
             : value.ToString("0.0");
     }
 
-    private void Unbind()
+    public void Unbind()
     {
         if (progression == null)
         {
@@ -291,6 +291,11 @@ public sealed class TutorialTopHud : MonoBehaviour
         progression.StepCompleted -= HandleStepCompleted;
         progression.SequenceCompleted -= HandleSequenceCompleted;
         progression = null;
+    }
+
+    private void OnDisable()
+    {
+        Unbind();
     }
 
     private void OnDestroy()

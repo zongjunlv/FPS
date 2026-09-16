@@ -12,7 +12,9 @@ public sealed class TutorialFlowController : MonoBehaviour
     public TutorialTrainingEnvironment Environment => environment;
     public TutorialProgressionStateMachine Progression { get; private set; }
     public TutorialTopHud Hud { get; private set; }
+    public TutorialCompletionView CompletionView { get; private set; }
     public bool IsInitialized { get; private set; }
+    public bool IsLeavingTutorial { get; private set; }
     public string InitializationError { get; private set; } = string.Empty;
 
     public void Configure(
@@ -34,10 +36,29 @@ public sealed class TutorialFlowController : MonoBehaviour
 
     public void ResetProgress()
     {
-        if (IsInitialized)
+        if (IsInitialized && !IsLeavingTutorial)
         {
+            SetPlayerInputEnabled(true);
+            CompletionView?.SetVisible(false);
             Progression.Reset();
         }
+    }
+
+    public bool TryEnterBattleMode()
+    {
+        return TryLeaveTutorial(
+            flow => flow.TryEnterMode(GameModeId.SoloBattle));
+    }
+
+    public bool TryRestartTutorial()
+    {
+        return TryLeaveTutorial(
+            flow => flow.TryEnterMode(GameModeId.Tutorial));
+    }
+
+    public bool TryReturnToModeEntry()
+    {
+        return TryLeaveTutorial(flow => flow.TryReturnToEntry());
     }
 
     private void Start()
@@ -77,15 +98,77 @@ public sealed class TutorialFlowController : MonoBehaviour
         Progression = new TutorialProgressionStateMachine(definition);
         Hud = TutorialTopHud.Create(transform);
         Hud.Bind(Progression);
+        Progression.SequenceCompleted += HandleSequenceCompleted;
+        CompletionView = TutorialCompletionView.Create(transform, this);
         IsInitialized = true;
     }
 
     private void OnDestroy()
     {
+        ReleaseRuntimeBindings();
+
         if (Hud != null)
         {
             Destroy(Hud.gameObject);
         }
+
+        if (CompletionView != null)
+        {
+            Destroy(CompletionView.gameObject);
+        }
+    }
+
+    private void HandleSequenceCompleted(TutorialProgressSnapshot snapshot)
+    {
+        SetPlayerInputEnabled(false);
+        CompletionView?.SetVisible(true);
+    }
+
+    private bool TryLeaveTutorial(
+        System.Func<GameModeFlowController, bool> request)
+    {
+        if (!IsInitialized || IsLeavingTutorial || request == null)
+        {
+            return false;
+        }
+
+        GameModeFlowController modeFlow =
+            GameModeFlowController.Instance ??
+            GameModeFlowController.Ensure(GameModeCatalog.LoadDefault());
+        if (modeFlow == null || modeFlow.IsLoading || !request(modeFlow))
+        {
+            return false;
+        }
+
+        IsLeavingTutorial = true;
+        SetPlayerInputEnabled(false);
+        ReleaseRuntimeBindings();
+        if (Hud != null)
+        {
+            Hud.gameObject.SetActive(false);
+        }
+        CompletionView?.SetInteractionEnabled(false);
+        return true;
+    }
+
+    private void SetPlayerInputEnabled(bool enabled)
+    {
+        PlayerGameplayRig rig = environment != null
+            ? environment.PlayerRig
+            : null;
+        rig?.Player?.SetGameplayInputEnabled(enabled);
+        rig?.Combat?.SetGameplayInputEnabled(enabled);
+    }
+
+    private void ReleaseRuntimeBindings()
+    {
+        if (Progression != null)
+        {
+            Progression.SequenceCompleted -= HandleSequenceCompleted;
+        }
+
+        Hud?.Unbind();
+        CompletionView?.Unbind();
     }
 
     private void Fail(string error)
