@@ -1,0 +1,102 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 8692d19298dfe4d9891ae83e6b078e82, type: 3}
+  m_Name: DefaultTutorialSequence
+  m_EditorClassIdentifier: FPS.Composition::TutorialSequenceDefinition
+  stableId: tutorial.main
+  displayName: "\u65B0\u624B\u8BAD\u7EC3"
+  version: 1
+  steps:
+  - stableId: tutorial.move.directions
+    chapter: "\u7B2C\u4E00\u7AE0 \xB7 \u57FA\u7840\u79FB\u52A8"
+    title: "\u65B9\u5411\u79FB\u52A8"
+    instruction: "\u4F7F\u7528 W\u3001A\u3001S\u3001D \u5B8C\u6210\u56DB\u4E2A\u65B9\u5411\u7684\u79FB\u52A8"
+    evidenceType: 1
+    targetValue: 4
+    completionFeedback: "\u5DF2\u5B8C\u6210\uFF1A\u65B9\u5411\u79FB\u52A8"
+  - stableId: tutorial.move.jump
+    chapter: "\u7B2C\u4E00\u7AE0 \xB7 \u57FA\u7840\u79FB\u52A8"
+    title: "\u8DF3\u8DC3"
+    instruction: "\u6309\u7A7A\u683C\u952E\u5B8C\u6210\u4E00\u6B21\u8DF3\u8DC3"
+    evidenceType: 2
+    targetValue: 1
+    completionFeedback: "\u5DF2\u5B8C\u6210\uFF1A\u8DF3\u8DC3"
+  - stableId: tutorial.move.sprint
+    chapter: "\u7B2C\u4E00\u7AE0 \xB7 \u57FA\u7840\u79FB\u52A8"
+    title: "\u51B2\u523A"
+    instruction: "\u6309\u4F4F Shift \u5411\u524D\u51B2\u523A"
+    evidenceType: 3
+    targetValue: 1
+    completionFeedback: "\u5DF2\u5B8C\u6210\uFF1A\u51B2\u523A"
+  - stableId: tutorial.move.crouch
+    chapter: "\u7B2C\u4E00\u7AE0 \xB7 \u57FA\u7840\u79FB\u52A8"
+    title: "\u4E0B\u8E72"
+    instruction: "\u6309 C \u5B8C\u6210\u4E00\u6B21\u4E0B\u8E72"
+    evidenceType: 4
+    targetValue: 1
+    completionFeedback: "\u5DF2\u5B8C\u6210\uFF1A\u4E0B\u8E72"
+  - stableId: tutorial.shoot.hip
+    chapter: "\u7B2C\u4E8C\u7AE0 \xB7 \u5C04\u51FB\u8BAD\u7EC3"
+    title: "\u8170\u5C04\u547D\u4E2D"
+    instruction: "\u4F7F\u7528\u9F20\u6807\u5DE6\u952E\u547D\u4E2D\u5C04\u51FB\u5899"
+    evidenceType: 5
+    targetValue: 3
+    completionFeedback: "\u5DF2\u5B8C\u6210\uFF1A\u8170\u5C04\u547D\u4E2D"
+  - stableId: tutorial.shoot.aim
+    chapter: "\u7B2C\u4E8C\u7AE0 \xB7 \u5C04\u51FB\u8BAD\u7EC3"
+    title: "\u7784\u51C6\u5C04\u51FB"
+    instruction: "\u6309\u4F4F\u9F20\u6807\u53F3\u952E\u7784\u51C6\u5E76\u5B8C\u6210\u547D\u4E2D"
+    evidenceType: 6
+    targetValue: 3
+    completionFeedback: "\u5DF2\u5B8C\u6210\uFF1A\u7784\u51C6\u5C04\u51FB"
+  - stableId: tutorial.shoot.tap
+    chapter: "\u7B2C\u4E8C\u7AE0 \xB7 \u5C04\u51FB\u8BAD\u7EC3"
+    title: "\u70B9\u5C04\u63A7\u5236"
+    instruction: "\u4F7F\u7528\u77ED\u70B9\u5C04\u63A7\u5236\u540E\u5750\u529B"
+    evidenceType: 7
+    targetValue: 3
+    completionFeedback: "\u5DF2\u5B8C\u6210\uFF1A\u70B9\u5C04\u63A7\u5236"
+  - stableId: tutorial.shoot.burst
+    chapter: "\u7B2C\u4E8C\u7AE0 \xB7 \u5C04\u51FB\u8BAD\u7EC3"
+    title: "\u8FDE\u7EED\u5C04\u51FB"
+    instruction: "\u6309\u4F4F\u9F20\u6807\u5DE6\u952E\u5B8C\u6210\u4E00\u6B21\u8FDE\u7EED\u5C04\u51FB"
+    evidenceType: 8
+    targetValue: 1
+    completionFeedback: "\u5DF2\u5B8C\u6210\uFF1A\u8FDE\u7EED\u5C04\u51FB"
+  - stableId: tutorial.weapon.switch
+    chapter: "\u7B2C\u4E09\u7AE0 \xB7 \u6B66\u5668\u64CD\u4F5C"
+    title: "\u5207\u6362\u6B66\u5668"
+    instruction: "\u4F7F\u7528\u6570\u5B57\u952E\u6216\u9F20\u6807\u6EDA\u8F6E\u5207\u6362\u6B66\u5668"
+    evidenceType: 9
+    targetValue: 2
+    completionFeedback: "\u5DF2\u5B8C\u6210\uFF1A\u5207\u6362\u6B66\u5668"
+  - stableId: tutorial.weapon.reload
+    chapter: "\u7B2C\u4E09\u7AE0 \xB7 \u6B66\u5668\u64CD\u4F5C"
+    title: "\u66F4\u6362\u5F39\u5323"
+    instruction: "\u6309 R \u5B8C\u6210\u4E00\u6B21\u6362\u5F39"
+    evidenceType: 10
+    targetValue: 1
+    completionFeedback: "\u5DF2\u5B8C\u6210\uFF1A\u66F4\u6362\u5F39\u5323"
+  - stableId: tutorial.damage.body
+    chapter: "\u7B2C\u56DB\u7AE0 \xB7 \u4F24\u5BB3\u8BA4\u77E5"
+    title: "\u547D\u4E2D\u8EAF\u5E72"
+    instruction: "\u5C04\u51FB\u56FA\u5B9A\u9776\u7684\u8EAF\u5E72\u90E8\u4F4D"
+    evidenceType: 11
+    targetValue: 1
+    completionFeedback: "\u5DF2\u5B8C\u6210\uFF1A\u547D\u4E2D\u8EAF\u5E72"
+  - stableId: tutorial.damage.head
+    chapter: "\u7B2C\u56DB\u7AE0 \xB7 \u4F24\u5BB3\u8BA4\u77E5"
+    title: "\u547D\u4E2D\u5F31\u70B9"
+    instruction: "\u5C04\u51FB\u56FA\u5B9A\u9776\u7684\u5934\u90E8\u5E76\u89C2\u5BDF\u4F24\u5BB3\u5DEE\u5F02"
+    evidenceType: 12
+    targetValue: 1
+    completionFeedback: "\u5DF2\u5B8C\u6210\uFF1A\u547D\u4E2D\u5F31\u70B9"
