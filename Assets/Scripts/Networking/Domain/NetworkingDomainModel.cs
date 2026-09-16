@@ -80,7 +80,14 @@ namespace FPS.Networking.Domain
             double shotDamage = 34d,
             double predictionCorrectionThreshold = 0.15d,
             double predictionSnapThreshold = 2d,
-            int nonceHistoryCapacity = 256)
+            int nonceHistoryCapacity = 256,
+            double? walkSpeed = null,
+            double? sprintSpeed = null,
+            double? crouchSpeed = null,
+            double maximumAcceleration = 360d,
+            double gravity = 20d,
+            double jumpSpeed = 7.75d,
+            int minimumJumpIntervalTicks = 12)
         {
             if (tickRate < 1 || tickRate > 1000)
                 throw new ArgumentOutOfRangeException(nameof(tickRate));
@@ -116,6 +123,22 @@ namespace FPS.Networking.Domain
             if (nonceHistoryCapacity < 8)
                 throw new ArgumentOutOfRangeException(
                     nameof(nonceHistoryCapacity));
+            if (!PositiveFinite(walkSpeed ?? maximumMoveSpeed))
+                throw new ArgumentOutOfRangeException(nameof(walkSpeed));
+            if (!PositiveFinite(sprintSpeed ?? maximumMoveSpeed))
+                throw new ArgumentOutOfRangeException(nameof(sprintSpeed));
+            if (!PositiveFinite(crouchSpeed ?? maximumMoveSpeed))
+                throw new ArgumentOutOfRangeException(nameof(crouchSpeed));
+            if (!PositiveFinite(maximumAcceleration))
+                throw new ArgumentOutOfRangeException(
+                    nameof(maximumAcceleration));
+            if (!PositiveFinite(gravity))
+                throw new ArgumentOutOfRangeException(nameof(gravity));
+            if (!PositiveFinite(jumpSpeed))
+                throw new ArgumentOutOfRangeException(nameof(jumpSpeed));
+            if (minimumJumpIntervalTicks < 1)
+                throw new ArgumentOutOfRangeException(
+                    nameof(minimumJumpIntervalTicks));
 
             TickRate = tickRate;
             MaximumPastCommandTicks = maximumPastCommandTicks;
@@ -130,6 +153,13 @@ namespace FPS.Networking.Domain
             PredictionCorrectionThreshold = predictionCorrectionThreshold;
             PredictionSnapThreshold = predictionSnapThreshold;
             NonceHistoryCapacity = nonceHistoryCapacity;
+            WalkSpeed = walkSpeed ?? maximumMoveSpeed;
+            SprintSpeed = sprintSpeed ?? maximumMoveSpeed;
+            CrouchSpeed = crouchSpeed ?? maximumMoveSpeed;
+            MaximumAcceleration = maximumAcceleration;
+            Gravity = gravity;
+            JumpSpeed = jumpSpeed;
+            MinimumJumpIntervalTicks = minimumJumpIntervalTicks;
         }
 
         public int TickRate { get; }
@@ -146,11 +176,57 @@ namespace FPS.Networking.Domain
         public double PredictionCorrectionThreshold { get; }
         public double PredictionSnapThreshold { get; }
         public int NonceHistoryCapacity { get; }
+        public double WalkSpeed { get; }
+        public double SprintSpeed { get; }
+        public double CrouchSpeed { get; }
+        public double MaximumAcceleration { get; }
+        public double Gravity { get; }
+        public double JumpSpeed { get; }
+        public int MinimumJumpIntervalTicks { get; }
 
         private static bool PositiveFinite(double value) =>
             value > 0d && !double.IsNaN(value) && !double.IsInfinity(value);
         private static bool NonNegativeFinite(double value) =>
             value >= 0d && !double.IsNaN(value) && !double.IsInfinity(value);
+    }
+
+    public enum PlayerStance : byte
+    {
+        Standing = 0,
+        Crouching = 1
+    }
+
+    public readonly struct PlayerMovementState
+    {
+        public PlayerMovementState(
+            NetVector3 position,
+            NetVector3 velocity,
+            double aimYawDegrees,
+            double aimPitchDegrees,
+            PlayerStance stance,
+            bool grounded,
+            long lastJumpTick,
+            double groundHeight)
+        {
+            Position = position;
+            Velocity = velocity;
+            AimYawDegrees = aimYawDegrees;
+            AimPitchDegrees = aimPitchDegrees;
+            Stance = stance;
+            Grounded = grounded;
+            LastJumpTick = lastJumpTick;
+            GroundHeight = groundHeight;
+        }
+
+        public NetVector3 Position { get; }
+        public NetVector3 Velocity { get; }
+        public double AimYawDegrees { get; }
+        public double AimPitchDegrees { get; }
+        public PlayerStance Stance { get; }
+        public bool Grounded { get; }
+        public long LastJumpTick { get; }
+        public double GroundHeight { get; }
+        public bool IsCrouching => Stance == PlayerStance.Crouching;
     }
 
     public readonly struct CoopPlayerSpawn
@@ -214,6 +290,27 @@ namespace FPS.Networking.Domain
             double aimPitchDegrees,
             bool fire,
             NetVector3 claimedPosition)
+            : this(playerId, sequence, nonce, clientTick, moveX, moveZ,
+                aimYawDegrees, aimPitchDegrees, fire, claimedPosition,
+                jumpPressed: false, sprintHeld: false,
+                crouchRequested: false)
+        {
+        }
+
+        public PlayerInputCommand(
+            int playerId,
+            uint sequence,
+            ulong nonce,
+            long clientTick,
+            double moveX,
+            double moveZ,
+            double aimYawDegrees,
+            double aimPitchDegrees,
+            bool fire,
+            NetVector3 claimedPosition,
+            bool jumpPressed,
+            bool sprintHeld,
+            bool crouchRequested)
         {
             PlayerId = playerId;
             Sequence = sequence;
@@ -225,6 +322,9 @@ namespace FPS.Networking.Domain
             AimPitchDegrees = aimPitchDegrees;
             Fire = fire;
             ClaimedPosition = claimedPosition;
+            JumpPressed = jumpPressed;
+            SprintHeld = sprintHeld;
+            CrouchRequested = crouchRequested;
         }
 
         public int PlayerId { get; }
@@ -237,6 +337,9 @@ namespace FPS.Networking.Domain
         public double AimPitchDegrees { get; }
         public bool Fire { get; }
         public NetVector3 ClaimedPosition { get; }
+        public bool JumpPressed { get; }
+        public bool SprintHeld { get; }
+        public bool CrouchRequested { get; }
     }
 
     public enum CommandRejectionReason
@@ -252,7 +355,9 @@ namespace FPS.Networking.Domain
         ImpossibleDisplacement,
         InvalidAim,
         AimRateExceeded,
-        FireRateExceeded
+        FireRateExceeded,
+        JumpRateExceeded,
+        StanceBlocked
     }
 
     public enum ShotResolutionKind
@@ -360,6 +465,27 @@ namespace FPS.Networking.Domain
             uint acknowledgedSequence,
             double aimYawDegrees,
             double aimPitchDegrees)
+            : this(playerId, position, health, acknowledgedSequence,
+                aimYawDegrees, aimPitchDegrees,
+                new NetVector3(0d, 0d, 0d),
+                PlayerStance.Standing, grounded: true,
+                lastJumpTick: long.MinValue,
+                groundHeight: position.Y)
+        {
+        }
+
+        public AuthoritativePlayerState(
+            int playerId,
+            NetVector3 position,
+            double health,
+            uint acknowledgedSequence,
+            double aimYawDegrees,
+            double aimPitchDegrees,
+            NetVector3 velocity,
+            PlayerStance stance,
+            bool grounded,
+            long lastJumpTick,
+            double groundHeight)
         {
             PlayerId = playerId;
             Position = position;
@@ -367,6 +493,11 @@ namespace FPS.Networking.Domain
             AcknowledgedSequence = acknowledgedSequence;
             AimYawDegrees = aimYawDegrees;
             AimPitchDegrees = aimPitchDegrees;
+            Velocity = velocity;
+            Stance = stance;
+            Grounded = grounded;
+            LastJumpTick = lastJumpTick;
+            GroundHeight = groundHeight;
         }
 
         public int PlayerId { get; }
@@ -375,7 +506,23 @@ namespace FPS.Networking.Domain
         public uint AcknowledgedSequence { get; }
         public double AimYawDegrees { get; }
         public double AimPitchDegrees { get; }
+        public NetVector3 Velocity { get; }
+        public PlayerStance Stance { get; }
+        public bool Grounded { get; }
+        public long LastJumpTick { get; }
+        public double GroundHeight { get; }
+        public bool IsCrouching => Stance == PlayerStance.Crouching;
         public bool IsAlive => Health > 0d;
+
+        public PlayerMovementState Movement => new(
+            Position,
+            Velocity,
+            AimYawDegrees,
+            AimPitchDegrees,
+            Stance,
+            Grounded,
+            LastJumpTick,
+            GroundHeight);
     }
 
     public readonly struct AuthoritativeTargetState

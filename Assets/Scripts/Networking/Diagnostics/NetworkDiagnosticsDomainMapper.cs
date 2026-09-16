@@ -24,11 +24,15 @@ namespace FPS.Networking.Diagnostics
                     NetworkCommandRejectionReason.RateLimited,
                 DomainRejectionReason.FireRateExceeded =>
                     NetworkCommandRejectionReason.RateLimited,
+                DomainRejectionReason.JumpRateExceeded =>
+                    NetworkCommandRejectionReason.RateLimited,
                 DomainRejectionReason.InvalidMovement =>
                     NetworkCommandRejectionReason.IllegalState,
                 DomainRejectionReason.ImpossibleDisplacement =>
                     NetworkCommandRejectionReason.IllegalState,
                 DomainRejectionReason.InvalidAim =>
+                    NetworkCommandRejectionReason.IllegalState,
+                DomainRejectionReason.StanceBlocked =>
                     NetworkCommandRejectionReason.IllegalState,
                 DomainRejectionReason.InvalidSequence =>
                     NetworkCommandRejectionReason.InvalidPayload,

@@ -47,7 +47,7 @@ namespace FPS.Networking.Domain
         private readonly CoopServerRules rules;
         private readonly int playerId;
         private readonly List<PlayerInputCommand> pending = new();
-        private NetVector3 predictedPosition;
+        private PlayerMovementState predictedMovement;
         private long lastPredictedTick = long.MinValue;
 
         public LocalPredictionBuffer(
@@ -61,10 +61,19 @@ namespace FPS.Networking.Domain
             if (!initialPosition.IsFinite)
                 throw new ArgumentOutOfRangeException(nameof(initialPosition));
             this.playerId = playerId;
-            predictedPosition = initialPosition;
+            predictedMovement = new PlayerMovementState(
+                initialPosition,
+                new NetVector3(0d, 0d, 0d),
+                0d,
+                0d,
+                PlayerStance.Standing,
+                grounded: true,
+                lastJumpTick: long.MinValue,
+                groundHeight: initialPosition.Y);
         }
 
-        public NetVector3 PredictedPosition => predictedPosition;
+        public NetVector3 PredictedPosition => predictedMovement.Position;
+        public PlayerMovementState PredictedMovement => predictedMovement;
         public IReadOnlyList<PlayerInputCommand> PendingCommands => pending;
 
         public NetVector3 Predict(PlayerInputCommand command)
@@ -85,15 +94,14 @@ namespace FPS.Networking.Domain
             int elapsedTicks = lastPredictedTick == long.MinValue
                 ? 1
                 : (int)Math.Max(1L, command.ClientTick - lastPredictedTick);
-            predictedPosition = CoopGameplayRules.IntegrateMovement(
-                predictedPosition,
-                command.MoveX,
-                command.MoveZ,
+            predictedMovement = CoopGameplayRules.IntegrateMovement(
+                predictedMovement,
+                command,
                 elapsedTicks,
                 rules);
             lastPredictedTick = command.ClientTick;
             pending.Add(command);
-            return predictedPosition;
+            return predictedMovement.Position;
         }
 
         public PredictionCorrection Reconcile(
@@ -104,10 +112,10 @@ namespace FPS.Networking.Domain
                     "Snapshot belongs to a different player.",
                     nameof(authoritative));
 
-            NetVector3 before = predictedPosition;
+            NetVector3 before = predictedMovement.Position;
             pending.RemoveAll(command =>
                 command.Sequence <= authoritative.AcknowledgedSequence);
-            NetVector3 replay = authoritative.Position;
+            PlayerMovementState replayMovement = authoritative.Movement;
             long replayTick = long.MinValue;
             foreach (PlayerInputCommand command in pending.OrderBy(
                          value => value.Sequence))
@@ -115,15 +123,15 @@ namespace FPS.Networking.Domain
                 int elapsedTicks = replayTick == long.MinValue
                     ? 1
                     : (int)Math.Max(1L, command.ClientTick - replayTick);
-                replay = CoopGameplayRules.IntegrateMovement(
-                    replay,
-                    command.MoveX,
-                    command.MoveZ,
+                replayMovement = CoopGameplayRules.IntegrateMovement(
+                    replayMovement,
+                    command,
                     elapsedTicks,
                     rules);
                 replayTick = command.ClientTick;
             }
 
+            NetVector3 replay = replayMovement.Position;
             double error = NetVector3.Distance(before, replay);
             PredictionCorrectionKind kind;
             NetVector3 applied;
@@ -143,7 +151,15 @@ namespace FPS.Networking.Domain
                 applied = replay;
             }
 
-            predictedPosition = applied;
+            predictedMovement = new PlayerMovementState(
+                applied,
+                replayMovement.Velocity,
+                replayMovement.AimYawDegrees,
+                replayMovement.AimPitchDegrees,
+                replayMovement.Stance,
+                replayMovement.Grounded,
+                replayMovement.LastJumpTick,
+                replayMovement.GroundHeight);
             if (pending.Count == 0)
                 lastPredictedTick = long.MinValue;
             return new PredictionCorrection(
@@ -164,6 +180,21 @@ namespace FPS.Networking.Domain
             NetVector3 position,
             double aimYawDegrees,
             double aimPitchDegrees)
+            : this(serverTick, playerId, position, aimYawDegrees,
+                aimPitchDegrees, new NetVector3(0d, 0d, 0d),
+                PlayerStance.Standing, grounded: true)
+        {
+        }
+
+        public RemotePlayerSnapshot(
+            long serverTick,
+            int playerId,
+            NetVector3 position,
+            double aimYawDegrees,
+            double aimPitchDegrees,
+            NetVector3 velocity,
+            PlayerStance stance,
+            bool grounded)
         {
             if (serverTick < 0)
                 throw new ArgumentOutOfRangeException(nameof(serverTick));
@@ -176,6 +207,9 @@ namespace FPS.Networking.Domain
             Position = position;
             AimYawDegrees = aimYawDegrees;
             AimPitchDegrees = aimPitchDegrees;
+            Velocity = velocity;
+            Stance = stance;
+            Grounded = grounded;
         }
 
         public long ServerTick { get; }
@@ -183,6 +217,9 @@ namespace FPS.Networking.Domain
         public NetVector3 Position { get; }
         public double AimYawDegrees { get; }
         public double AimPitchDegrees { get; }
+        public NetVector3 Velocity { get; }
+        public PlayerStance Stance { get; }
+        public bool Grounded { get; }
     }
 
     public readonly struct RemoteInterpolationSample
@@ -195,6 +232,24 @@ namespace FPS.Networking.Domain
             NetVector3 position,
             double aimYawDegrees,
             double aimPitchDegrees)
+            : this(available, fromTick, toTick, ratio, position,
+                aimYawDegrees, aimPitchDegrees,
+                new NetVector3(0d, 0d, 0d), PlayerStance.Standing,
+                grounded: true)
+        {
+        }
+
+        public RemoteInterpolationSample(
+            bool available,
+            long fromTick,
+            long toTick,
+            double ratio,
+            NetVector3 position,
+            double aimYawDegrees,
+            double aimPitchDegrees,
+            NetVector3 velocity,
+            PlayerStance stance,
+            bool grounded)
         {
             Available = available;
             FromTick = fromTick;
@@ -203,6 +258,9 @@ namespace FPS.Networking.Domain
             Position = position;
             AimYawDegrees = aimYawDegrees;
             AimPitchDegrees = aimPitchDegrees;
+            Velocity = velocity;
+            Stance = stance;
+            Grounded = grounded;
         }
 
         public bool Available { get; }
@@ -212,6 +270,9 @@ namespace FPS.Networking.Domain
         public NetVector3 Position { get; }
         public double AimYawDegrees { get; }
         public double AimPitchDegrees { get; }
+        public NetVector3 Velocity { get; }
+        public PlayerStance Stance { get; }
+        public bool Grounded { get; }
     }
 
     public sealed class RemoteSnapshotInterpolator
@@ -283,7 +344,10 @@ namespace FPS.Networking.Domain
                     NetVector3.Lerp(from.Position, to.Position, ratio),
                     yaw,
                     from.AimPitchDegrees +
-                        (to.AimPitchDegrees - from.AimPitchDegrees) * ratio);
+                        (to.AimPitchDegrees - from.AimPitchDegrees) * ratio,
+                    NetVector3.Lerp(from.Velocity, to.Velocity, ratio),
+                    ratio < 0.5d ? from.Stance : to.Stance,
+                    ratio < 0.5d ? from.Grounded : to.Grounded);
             }
 
             return FromSingle(last);
@@ -299,7 +363,10 @@ namespace FPS.Networking.Domain
                 0d,
                 snapshot.Position,
                 snapshot.AimYawDegrees,
-                snapshot.AimPitchDegrees);
+                snapshot.AimPitchDegrees,
+                snapshot.Velocity,
+                snapshot.Stance,
+                snapshot.Grounded);
         }
     }
 }

@@ -35,6 +35,15 @@ namespace FPS.Networking.Netcode
         public Vector3 PresentedPosition { get; private set; }
         public float PresentedAimYaw { get; private set; }
         public float PresentedAimPitch { get; private set; }
+        public Vector3 PresentedVelocity { get; private set; }
+        public bool PresentedCrouching { get; private set; }
+        public bool PresentedGrounded { get; private set; } = true;
+        public int PredictionSampleCount { get; private set; }
+        public int PredictionCorrectionCount { get; private set; }
+        public double MaximumPredictionError { get; private set; }
+        public double MeanPredictionError => PredictionSampleCount == 0
+            ? 0d
+            : predictionErrorSum / PredictionSampleCount;
         public PredictionCorrection LastPredictionCorrection { get; private set; }
         public RemoteInterpolationSample LastRemoteSample { get; private set; }
         public int PendingPredictionCount => prediction?.PendingCommands.Count ?? 0;
@@ -42,6 +51,8 @@ namespace FPS.Networking.Netcode
         public bool IsLocallyControlled => IsOwner || ownerTestHook;
         public bool IsPresentationReady => session != null &&
             session.Rules != null;
+        public event Action<Vector3, float, float, bool, bool> PosePresented;
+        private double predictionErrorSum;
 
         public override void OnNetworkSpawn()
         {
@@ -124,6 +135,22 @@ namespace FPS.Networking.Netcode
             bool fire,
             long clientTick)
         {
+            return BuildPredictedCommand(moveX, moveZ, aimYawDegrees,
+                aimPitchDegrees, fire, clientTick, jumpPressed: false,
+                sprintHeld: false, crouchRequested: false);
+        }
+
+        public NetcodePlayerCommand BuildPredictedCommand(
+            float moveX,
+            float moveZ,
+            float aimYawDegrees,
+            float aimPitchDegrees,
+            bool fire,
+            long clientTick,
+            bool jumpPressed,
+            bool sprintHeld,
+            bool crouchRequested)
+        {
             RequireLocalOwner();
             if (!EnsurePresentationBuffers())
             {
@@ -143,11 +170,18 @@ namespace FPS.Networking.Netcode
                 aimYawDegrees,
                 aimPitchDegrees,
                 fire,
-                current);
+                current,
+                jumpPressed,
+                sprintHeld,
+                crouchRequested);
             NetVector3 predicted = prediction.Predict(provisional);
+            PlayerMovementState movement = prediction.PredictedMovement;
             PresentedPosition = NetcodeConversions.ToUnity(predicted);
             PresentedAimYaw = aimYawDegrees;
             PresentedAimPitch = aimPitchDegrees;
+            PresentedVelocity = NetcodeConversions.ToUnity(movement.Velocity);
+            PresentedCrouching = movement.IsCrouching;
+            PresentedGrounded = movement.Grounded;
             ApplyPresentedPose();
             return NetcodePlayerCommand.FromDomain(new PlayerInputCommand(
                 playerId,
@@ -159,7 +193,10 @@ namespace FPS.Networking.Netcode
                 aimYawDegrees,
                 aimPitchDegrees,
                 fire,
-                predicted));
+                predicted,
+                jumpPressed,
+                sprintHeld,
+                crouchRequested));
         }
 
         public NetcodePlayerCommand SubmitLocalCommand(
@@ -170,13 +207,32 @@ namespace FPS.Networking.Netcode
             bool fire,
             long clientTick)
         {
+            return SubmitLocalCommand(moveX, moveZ, aimYawDegrees,
+                aimPitchDegrees, fire, clientTick, jumpPressed: false,
+                sprintHeld: false, crouchRequested: false);
+        }
+
+        public NetcodePlayerCommand SubmitLocalCommand(
+            float moveX,
+            float moveZ,
+            float aimYawDegrees,
+            float aimPitchDegrees,
+            bool fire,
+            long clientTick,
+            bool jumpPressed,
+            bool sprintHeld,
+            bool crouchRequested)
+        {
             NetcodePlayerCommand payload = BuildPredictedCommand(
                 moveX,
                 moveZ,
                 aimYawDegrees,
                 aimPitchDegrees,
                 fire,
-                clientTick);
+                clientTick,
+                jumpPressed,
+                sprintHeld,
+                crouchRequested);
             if (session == null || !session.IsSpawned)
             {
                 throw new InvalidOperationException(
@@ -218,10 +274,22 @@ namespace FPS.Networking.Netcode
                 {
                     LastPredictionCorrection = prediction.Reconcile(
                         state.ToDomain());
+                    PredictionSampleCount++;
+                    predictionErrorSum += LastPredictionCorrection.ErrorDistance;
+                    MaximumPredictionError = Math.Max(
+                        MaximumPredictionError,
+                        LastPredictionCorrection.ErrorDistance);
+                    if (LastPredictionCorrection.WasCorrected)
+                        PredictionCorrectionCount++;
                     PresentedPosition = NetcodeConversions.ToUnity(
                         LastPredictionCorrection.AppliedPosition);
-                    PresentedAimYaw = state.AimYawDegrees;
-                    PresentedAimPitch = state.AimPitchDegrees;
+                    PlayerMovementState movement = prediction.PredictedMovement;
+                    PresentedAimYaw = (float)movement.AimYawDegrees;
+                    PresentedAimPitch = (float)movement.AimPitchDegrees;
+                    PresentedVelocity = NetcodeConversions.ToUnity(
+                        movement.Velocity);
+                    PresentedCrouching = movement.IsCrouching;
+                    PresentedGrounded = movement.Grounded;
                     nextSequence = Math.Max(
                         nextSequence,
                         state.AcknowledgedSequence + 1);
@@ -242,6 +310,11 @@ namespace FPS.Networking.Netcode
                         LastRemoteSample.Position);
                     PresentedAimYaw = (float)LastRemoteSample.AimYawDegrees;
                     PresentedAimPitch = (float)LastRemoteSample.AimPitchDegrees;
+                    PresentedVelocity = NetcodeConversions.ToUnity(
+                        LastRemoteSample.Velocity);
+                    PresentedCrouching =
+                        LastRemoteSample.Stance == PlayerStance.Crouching;
+                    PresentedGrounded = LastRemoteSample.Grounded;
                 }
             }
 
@@ -268,6 +341,13 @@ namespace FPS.Networking.Netcode
             PresentedPosition = transform.position;
             PresentedAimYaw = transform.eulerAngles.y;
             PresentedAimPitch = 0f;
+            PresentedVelocity = Vector3.zero;
+            PresentedCrouching = false;
+            PresentedGrounded = true;
+            PredictionSampleCount = 0;
+            PredictionCorrectionCount = 0;
+            MaximumPredictionError = 0d;
+            predictionErrorSum = 0d;
         }
 
         public void ResetTestHook()
@@ -297,9 +377,12 @@ namespace FPS.Networking.Netcode
             {
                 NetVector3 initial = NetcodeConversions.ToDomain(
                     transform.position);
+                NetcodePlayerState state = default;
+                bool hasState = false;
                 if (session.TryGetPlayerState(playerId,
-                        out NetcodePlayerState state))
+                        out state))
                 {
+                    hasState = true;
                     initial = NetcodeConversions.ToDomain(state.Position);
                     PresentedAimYaw = state.AimYawDegrees;
                     PresentedAimPitch = state.AimPitchDegrees;
@@ -312,7 +395,14 @@ namespace FPS.Networking.Netcode
                     rules,
                     playerId,
                     initial);
+                if (hasState)
+                    prediction.Reconcile(state.ToDomain());
+                PlayerMovementState movement = prediction.PredictedMovement;
                 PresentedPosition = NetcodeConversions.ToUnity(initial);
+                PresentedVelocity = NetcodeConversions.ToUnity(
+                    movement.Velocity);
+                PresentedCrouching = movement.IsCrouching;
+                PresentedGrounded = movement.Grounded;
             }
 
             interpolation ??= new RemoteSnapshotInterpolator();
@@ -358,6 +448,12 @@ namespace FPS.Networking.Netcode
                     PresentedAimYaw,
                     0f);
             }
+            PosePresented?.Invoke(
+                PresentedPosition,
+                PresentedAimYaw,
+                PresentedAimPitch,
+                PresentedCrouching,
+                PresentedGrounded);
         }
     }
 }

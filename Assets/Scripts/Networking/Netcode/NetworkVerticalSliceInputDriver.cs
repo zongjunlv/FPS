@@ -17,6 +17,9 @@ namespace FPS.Networking.Netcode
         private float aimYaw;
         private float aimPitch;
         private bool fireQueued;
+        private bool jumpQueued;
+        private bool sprintHeld;
+        private bool crouchRequested;
         private double accumulatedSeconds;
         private long clientTick;
 
@@ -54,10 +57,27 @@ namespace FPS.Networking.Netcode
             float absoluteAimPitchDegrees,
             bool firePressed)
         {
+            SetInputFrame(move, absoluteAimYawDegrees,
+                absoluteAimPitchDegrees, firePressed, jumpPressed: false,
+                sprintRequested: false, crouching: false);
+        }
+
+        public void SetInputFrame(
+            Vector2 move,
+            float absoluteAimYawDegrees,
+            float absoluteAimPitchDegrees,
+            bool firePressed,
+            bool jumpPressed,
+            bool sprintRequested,
+            bool crouching)
+        {
             movement = Vector2.ClampMagnitude(move, 1f);
             aimYaw = absoluteAimYawDegrees;
             aimPitch = Mathf.Clamp(absoluteAimPitchDegrees, -89f, 89f);
             fireQueued |= firePressed;
+            jumpQueued |= jumpPressed;
+            sprintHeld = sprintRequested;
+            crouchRequested = crouching;
         }
 
         public NetcodePlayerCommand SubmitCurrentFrame()
@@ -78,13 +98,18 @@ namespace FPS.Networking.Netcode
             clientTick++;
             bool fire = fireQueued;
             fireQueued = false;
+            bool jump = jumpQueued;
+            jumpQueued = false;
             LastSubmittedCommand = replica.SubmitLocalCommand(
                 movement.x,
                 movement.y,
                 aimYaw,
                 aimPitch,
                 fire,
-                clientTick);
+                clientTick,
+                jump,
+                sprintHeld,
+                crouchRequested);
             HasSubmittedCommand = true;
             return LastSubmittedCommand;
         }
@@ -95,6 +120,9 @@ namespace FPS.Networking.Netcode
             aimYaw = 0f;
             aimPitch = 0f;
             fireQueued = false;
+            jumpQueued = false;
+            sprintHeld = false;
+            crouchRequested = false;
             accumulatedSeconds = 0d;
             clientTick = 0;
             LastSubmittedCommand = default;

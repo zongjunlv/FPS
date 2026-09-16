@@ -14,9 +14,12 @@ public sealed class CoopNetworkInputBridge : MonoBehaviour
     private CoopSessionController session;
     private CoopSessionOverlay overlay;
     private NetworkVerticalSliceInputDriver networkDriver;
+    private NetworkPlayerReplica subscribedReplica;
     private float nextDriverSearchTime;
     private bool combatSuppressed;
     private bool overlaySuppressed;
+    private bool networkCrouching;
+    private bool networkControlApplied;
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
     private static void Install()
@@ -49,25 +52,40 @@ public sealed class CoopNetworkInputBridge : MonoBehaviour
         SetOverlaySuppressed(overlay != null && overlay.IsVisible);
         bool connected = session != null && session.IsConnected;
         SetCombatSuppressed(connected);
+        SetNetworkMovementControlled(connected);
         if (!connected || input == null || player == null)
         {
+            SubscribeReplica(null);
             networkDriver = null;
             return;
         }
 
         ResolveLocalDriver();
         if (networkDriver == null) return;
+        bool jumpRequested = input.JumpPressed;
+        if (input.CrouchPressed)
+            networkCrouching = !networkCrouching;
+        if (jumpRequested && networkCrouching)
+        {
+            networkCrouching = false;
+            jumpRequested = false;
+        }
         networkDriver.SetInputFrame(
             input.Move,
             transform.eulerAngles.y,
             player.CameraPitch,
-            input.AttackPressed);
+            input.AttackPressed,
+            jumpRequested,
+            input.SprintHeld,
+            networkCrouching);
     }
 
     private void OnDisable()
     {
         SetCombatSuppressed(false);
         SetOverlaySuppressed(false);
+        SetNetworkMovementControlled(false);
+        SubscribeReplica(null);
     }
 
     private void ResolveOverlay()
@@ -109,6 +127,7 @@ public sealed class CoopNetworkInputBridge : MonoBehaviour
             if (replica != null && replica.IsLocallyControlled)
             {
                 networkDriver = drivers[index];
+                SubscribeReplica(replica);
                 break;
             }
         }
@@ -126,5 +145,35 @@ public sealed class CoopNetworkInputBridge : MonoBehaviour
         if (overlaySuppressed == suppressed) return;
         overlaySuppressed = suppressed;
         player?.SetGameplayInputEnabled(!suppressed);
+    }
+
+    private void SetNetworkMovementControlled(bool controlled)
+    {
+        if (networkControlApplied == controlled) return;
+        networkControlApplied = controlled;
+        networkCrouching = player != null && player.IsCrouching;
+        player?.SetNetworkMovementControlled(controlled);
+    }
+
+    private void SubscribeReplica(NetworkPlayerReplica replica)
+    {
+        if (subscribedReplica == replica) return;
+        if (subscribedReplica != null)
+            subscribedReplica.PosePresented -= HandleNetworkPose;
+        subscribedReplica = replica;
+        if (subscribedReplica != null)
+            subscribedReplica.PosePresented += HandleNetworkPose;
+    }
+
+    private void HandleNetworkPose(
+        Vector3 position,
+        float yaw,
+        float pitch,
+        bool crouching,
+        bool grounded)
+    {
+        networkCrouching = crouching;
+        player?.ApplyNetworkMovementPose(
+            position, yaw, pitch, crouching, grounded);
     }
 }

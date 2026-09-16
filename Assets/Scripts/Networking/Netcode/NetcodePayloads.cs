@@ -22,6 +22,13 @@ namespace FPS.Networking.Netcode
         public float PredictionCorrectionThreshold;
         public float PredictionSnapThreshold;
         public int NonceHistoryCapacity;
+        public float WalkSpeed;
+        public float SprintSpeed;
+        public float CrouchSpeed;
+        public float MaximumAcceleration;
+        public float Gravity;
+        public float JumpSpeed;
+        public int MinimumJumpIntervalTicks;
 
         public bool IsValid => TickRate > 0;
 
@@ -43,7 +50,14 @@ namespace FPS.Networking.Netcode
                 PredictionCorrectionThreshold =
                     (float)value.PredictionCorrectionThreshold,
                 PredictionSnapThreshold = (float)value.PredictionSnapThreshold,
-                NonceHistoryCapacity = value.NonceHistoryCapacity
+                NonceHistoryCapacity = value.NonceHistoryCapacity,
+                WalkSpeed = (float)value.WalkSpeed,
+                SprintSpeed = (float)value.SprintSpeed,
+                CrouchSpeed = (float)value.CrouchSpeed,
+                MaximumAcceleration = (float)value.MaximumAcceleration,
+                Gravity = (float)value.Gravity,
+                JumpSpeed = (float)value.JumpSpeed,
+                MinimumJumpIntervalTicks = value.MinimumJumpIntervalTicks
             };
         }
 
@@ -67,7 +81,14 @@ namespace FPS.Networking.Netcode
                 ShotDamage,
                 PredictionCorrectionThreshold,
                 PredictionSnapThreshold,
-                NonceHistoryCapacity);
+                NonceHistoryCapacity,
+                WalkSpeed,
+                SprintSpeed,
+                CrouchSpeed,
+                MaximumAcceleration,
+                Gravity,
+                JumpSpeed,
+                MinimumJumpIntervalTicks);
         }
 
         public void NetworkSerialize<T>(BufferSerializer<T> serializer)
@@ -86,6 +107,13 @@ namespace FPS.Networking.Netcode
             serializer.SerializeValue(ref PredictionCorrectionThreshold);
             serializer.SerializeValue(ref PredictionSnapThreshold);
             serializer.SerializeValue(ref NonceHistoryCapacity);
+            serializer.SerializeValue(ref WalkSpeed);
+            serializer.SerializeValue(ref SprintSpeed);
+            serializer.SerializeValue(ref CrouchSpeed);
+            serializer.SerializeValue(ref MaximumAcceleration);
+            serializer.SerializeValue(ref Gravity);
+            serializer.SerializeValue(ref JumpSpeed);
+            serializer.SerializeValue(ref MinimumJumpIntervalTicks);
         }
 
         public bool Equals(NetcodeRulesState other)
@@ -104,7 +132,14 @@ namespace FPS.Networking.Netcode
                 PredictionCorrectionThreshold.Equals(
                     other.PredictionCorrectionThreshold) &&
                 PredictionSnapThreshold.Equals(other.PredictionSnapThreshold) &&
-                NonceHistoryCapacity == other.NonceHistoryCapacity;
+                NonceHistoryCapacity == other.NonceHistoryCapacity &&
+                WalkSpeed.Equals(other.WalkSpeed) &&
+                SprintSpeed.Equals(other.SprintSpeed) &&
+                CrouchSpeed.Equals(other.CrouchSpeed) &&
+                MaximumAcceleration.Equals(other.MaximumAcceleration) &&
+                Gravity.Equals(other.Gravity) &&
+                JumpSpeed.Equals(other.JumpSpeed) &&
+                MinimumJumpIntervalTicks == other.MinimumJumpIntervalTicks;
         }
     }
 
@@ -121,6 +156,9 @@ namespace FPS.Networking.Netcode
         public float AimPitchDegrees;
         public bool Fire;
         public Vector3 ClaimedPosition;
+        public bool JumpPressed;
+        public bool SprintHeld;
+        public bool CrouchRequested;
 
         public static NetcodePlayerCommand FromDomain(PlayerInputCommand value)
         {
@@ -135,7 +173,10 @@ namespace FPS.Networking.Netcode
                 AimYawDegrees = (float)value.AimYawDegrees,
                 AimPitchDegrees = (float)value.AimPitchDegrees,
                 Fire = value.Fire,
-                ClaimedPosition = NetcodeConversions.ToUnity(value.ClaimedPosition)
+                ClaimedPosition = NetcodeConversions.ToUnity(value.ClaimedPosition),
+                JumpPressed = value.JumpPressed,
+                SprintHeld = value.SprintHeld,
+                CrouchRequested = value.CrouchRequested
             };
         }
 
@@ -151,7 +192,10 @@ namespace FPS.Networking.Netcode
                 AimYawDegrees,
                 AimPitchDegrees,
                 forceFire ?? Fire,
-                NetcodeConversions.ToDomain(ClaimedPosition));
+                NetcodeConversions.ToDomain(ClaimedPosition),
+                JumpPressed,
+                SprintHeld,
+                CrouchRequested);
         }
 
         public void NetworkSerialize<T>(BufferSerializer<T> serializer)
@@ -167,6 +211,9 @@ namespace FPS.Networking.Netcode
             serializer.SerializeValue(ref AimPitchDegrees);
             serializer.SerializeValue(ref Fire);
             serializer.SerializeValue(ref ClaimedPosition);
+            serializer.SerializeValue(ref JumpPressed);
+            serializer.SerializeValue(ref SprintHeld);
+            serializer.SerializeValue(ref CrouchRequested);
         }
 
         public bool Equals(NetcodePlayerCommand other)
@@ -177,7 +224,10 @@ namespace FPS.Networking.Netcode
                 AimYawDegrees.Equals(other.AimYawDegrees) &&
                 AimPitchDegrees.Equals(other.AimPitchDegrees) &&
                 Fire == other.Fire &&
-                ClaimedPosition.Equals(other.ClaimedPosition);
+                ClaimedPosition.Equals(other.ClaimedPosition) &&
+                JumpPressed == other.JumpPressed &&
+                SprintHeld == other.SprintHeld &&
+                CrouchRequested == other.CrouchRequested;
         }
     }
 
@@ -191,6 +241,11 @@ namespace FPS.Networking.Netcode
         public uint AcknowledgedSequence;
         public float AimYawDegrees;
         public float AimPitchDegrees;
+        public Vector3 Velocity;
+        public byte Stance;
+        public bool Grounded;
+        public long LastJumpTick;
+        public float GroundHeight;
 
         public bool IsAlive => Health > 0f;
 
@@ -206,7 +261,12 @@ namespace FPS.Networking.Netcode
                 Health = (float)value.Health,
                 AcknowledgedSequence = value.AcknowledgedSequence,
                 AimYawDegrees = (float)value.AimYawDegrees,
-                AimPitchDegrees = (float)value.AimPitchDegrees
+                AimPitchDegrees = (float)value.AimPitchDegrees,
+                Velocity = NetcodeConversions.ToUnity(value.Velocity),
+                Stance = (byte)value.Stance,
+                Grounded = value.Grounded,
+                LastJumpTick = value.LastJumpTick,
+                GroundHeight = (float)value.GroundHeight
             };
         }
 
@@ -218,7 +278,12 @@ namespace FPS.Networking.Netcode
                 Health,
                 AcknowledgedSequence,
                 AimYawDegrees,
-                AimPitchDegrees);
+                AimPitchDegrees,
+                NetcodeConversions.ToDomain(Velocity),
+                (PlayerStance)Stance,
+                Grounded,
+                LastJumpTick,
+                GroundHeight);
         }
 
         public RemotePlayerSnapshot ToRemoteSnapshot()
@@ -228,7 +293,10 @@ namespace FPS.Networking.Netcode
                 PlayerId,
                 NetcodeConversions.ToDomain(Position),
                 AimYawDegrees,
-                AimPitchDegrees);
+                AimPitchDegrees,
+                NetcodeConversions.ToDomain(Velocity),
+                (PlayerStance)Stance,
+                Grounded);
         }
 
         public void NetworkSerialize<T>(BufferSerializer<T> serializer)
@@ -241,6 +309,11 @@ namespace FPS.Networking.Netcode
             serializer.SerializeValue(ref AcknowledgedSequence);
             serializer.SerializeValue(ref AimYawDegrees);
             serializer.SerializeValue(ref AimPitchDegrees);
+            serializer.SerializeValue(ref Velocity);
+            serializer.SerializeValue(ref Stance);
+            serializer.SerializeValue(ref Grounded);
+            serializer.SerializeValue(ref LastJumpTick);
+            serializer.SerializeValue(ref GroundHeight);
         }
 
         public bool Equals(NetcodePlayerState other)
@@ -250,7 +323,12 @@ namespace FPS.Networking.Netcode
                 Health.Equals(other.Health) &&
                 AcknowledgedSequence == other.AcknowledgedSequence &&
                 AimYawDegrees.Equals(other.AimYawDegrees) &&
-                AimPitchDegrees.Equals(other.AimPitchDegrees);
+                AimPitchDegrees.Equals(other.AimPitchDegrees) &&
+                Velocity.Equals(other.Velocity) &&
+                Stance == other.Stance &&
+                Grounded == other.Grounded &&
+                LastJumpTick == other.LastJumpTick &&
+                GroundHeight.Equals(other.GroundHeight);
         }
     }
 

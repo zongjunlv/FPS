@@ -242,7 +242,18 @@ namespace FPS.Networking.Netcode
             {
                 sessionAuthority.ConfigureServer(
                     new CoopServerRules(
-                        tickRate: (int)bootstrap.NetworkManager.NetworkConfig.TickRate),
+                        tickRate: (int)bootstrap.NetworkManager.NetworkConfig.TickRate,
+                        maximumMoveSpeed: 5d,
+                        claimedPositionTolerance: 0.45d,
+                        predictionCorrectionThreshold: 0.08d,
+                        predictionSnapThreshold: 1.5d,
+                        walkSpeed: 2d,
+                        sprintSpeed: 5d,
+                        crouchSpeed: 1.5d,
+                        maximumAcceleration: 30d,
+                        gravity: 20d,
+                        jumpSpeed: 7.75d,
+                        minimumJumpIntervalTicks: 12),
                     ConvertPlayers(players),
                     ConvertTargets(targets),
                     requiredKills);

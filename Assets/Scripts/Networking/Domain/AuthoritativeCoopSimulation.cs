@@ -27,6 +27,87 @@ namespace FPS.Networking.Domain
                     rules.FixedDeltaSeconds * Math.Max(1, elapsedTicks));
         }
 
+        public static PlayerMovementState IntegrateMovement(
+            PlayerMovementState state,
+            PlayerInputCommand command,
+            int elapsedTicks,
+            CoopServerRules rules,
+            bool standingClearance = true)
+        {
+            if (rules == null) throw new ArgumentNullException(nameof(rules));
+            int ticks = Math.Max(1, elapsedTicks);
+            PlayerStance stance = command.CrouchRequested ||
+                                   state.IsCrouching && !standingClearance
+                ? PlayerStance.Crouching
+                : PlayerStance.Standing;
+            NetVector3 position = state.Position;
+            NetVector3 velocity = state.Velocity;
+            bool grounded = state.Grounded;
+            long lastJumpTick = state.LastJumpTick;
+            double inputMagnitude = Math.Sqrt(
+                command.MoveX * command.MoveX +
+                command.MoveZ * command.MoveZ);
+            double inputScale = inputMagnitude > 1d
+                ? 1d / inputMagnitude
+                : 1d;
+            double yaw = command.AimYawDegrees * Math.PI / 180d;
+            double localX = command.MoveX * inputScale;
+            double localZ = command.MoveZ * inputScale;
+            double worldX = Math.Cos(yaw) * localX + Math.Sin(yaw) * localZ;
+            double worldZ = -Math.Sin(yaw) * localX + Math.Cos(yaw) * localZ;
+            bool sprinting = command.SprintHeld &&
+                             stance == PlayerStance.Standing &&
+                             command.MoveZ > 0.1d;
+            double targetSpeed = stance == PlayerStance.Crouching
+                ? rules.CrouchSpeed
+                : sprinting
+                    ? rules.SprintSpeed
+                    : rules.WalkSpeed;
+            NetVector3 targetHorizontal = new(
+                worldX * targetSpeed,
+                0d,
+                worldZ * targetSpeed);
+
+            for (int index = 0; index < ticks; index++)
+            {
+                double maxVelocityChange = rules.MaximumAcceleration *
+                                           rules.FixedDeltaSeconds;
+                double horizontalX = MoveTowards(
+                    velocity.X, targetHorizontal.X, maxVelocityChange);
+                double horizontalZ = MoveTowards(
+                    velocity.Z, targetHorizontal.Z, maxVelocityChange);
+                double vertical = velocity.Y;
+                if (index == 0 && command.JumpPressed && grounded)
+                {
+                    vertical = rules.JumpSpeed;
+                    grounded = false;
+                    lastJumpTick = command.ClientTick;
+                }
+                if (!grounded)
+                    vertical -= rules.Gravity * rules.FixedDeltaSeconds;
+
+                velocity = new NetVector3(horizontalX, vertical, horizontalZ);
+                position += velocity * rules.FixedDeltaSeconds;
+                if (position.Y <= state.GroundHeight)
+                {
+                    position = new NetVector3(
+                        position.X, state.GroundHeight, position.Z);
+                    velocity = new NetVector3(velocity.X, 0d, velocity.Z);
+                    grounded = true;
+                }
+            }
+
+            return new PlayerMovementState(
+                position,
+                velocity,
+                command.AimYawDegrees,
+                command.AimPitchDegrees,
+                stance,
+                grounded,
+                lastJumpTick,
+                state.GroundHeight);
+        }
+
         public static NetVector3 AimDirection(
             double yawDegrees,
             double pitchDegrees)
@@ -61,6 +142,16 @@ namespace FPS.Networking.Domain
 
         internal static bool Finite(double value) =>
             !double.IsNaN(value) && !double.IsInfinity(value);
+
+        private static double MoveTowards(
+            double current,
+            double target,
+            double maximumDelta)
+        {
+            double delta = target - current;
+            if (Math.Abs(delta) <= maximumDelta) return target;
+            return current + Math.Sign(delta) * maximumDelta;
+        }
     }
 
     /// <summary>
@@ -78,6 +169,8 @@ namespace FPS.Networking.Domain
         private long currentTick;
         private long nextEventSequence;
         private int killedTargets;
+        private Func<int, NetVector3, bool> standingClearanceValidator =
+            (_, _) => true;
         private AuthoritativeWaveStatus waveStatus =
             AuthoritativeWaveStatus.Fighting;
 
@@ -116,6 +209,12 @@ namespace FPS.Networking.Domain
         public long CurrentTick => currentTick;
         public int HistoryCount => history.Count;
         public AuthoritativeWaveStatus WaveStatus => waveStatus;
+
+        public void SetStandingClearanceValidator(
+            Func<int, NetVector3, bool> validator)
+        {
+            standingClearanceValidator = validator ?? ((_, _) => true);
+        }
 
         public AuthoritativeTickResult Step(
             IReadOnlyList<PlayerInputCommand> receivedCommands)
@@ -235,11 +334,14 @@ namespace FPS.Networking.Domain
                 player,
                 command,
                 out int elapsedTicks,
-                out NetVector3 nextPosition);
+                out PlayerMovementState nextMovement);
             if (error != CommandRejectionReason.None)
+            {
+                player.AcknowledgedSequence = command.Sequence;
                 return Rejected(command, error);
+            }
 
-            player.Position = nextPosition;
+            player.ApplyMovement(nextMovement);
             player.LastClaimedPosition = command.ClaimedPosition;
             player.LastClientTick = command.ClientTick;
             player.AimYaw = command.AimYawDegrees;
@@ -296,12 +398,12 @@ namespace FPS.Networking.Domain
             MutablePlayer player,
             PlayerInputCommand command,
             out int elapsedTicks,
-            out NetVector3 nextPosition)
+            out PlayerMovementState nextMovement)
         {
             elapsedTicks = player.LastClientTick == long.MinValue
                 ? 1
                 : (int)Math.Max(1L, command.ClientTick - player.LastClientTick);
-            nextPosition = player.Position;
+            nextMovement = player.Movement;
             if (!player.IsAlive)
                 return CommandRejectionReason.InvalidMovement;
             if (player.LastClientTick != long.MinValue &&
@@ -320,14 +422,27 @@ namespace FPS.Networking.Domain
                 command.AimPitchDegrees > 89d)
                 return CommandRejectionReason.InvalidAim;
 
-            nextPosition = CoopGameplayRules.IntegrateMovement(
-                player.Position,
-                command.MoveX,
-                command.MoveZ,
+            if (command.JumpPressed &&
+                (!player.Grounded || player.LastJumpTick != long.MinValue &&
+                    command.ClientTick - player.LastJumpTick <
+                    rules.MinimumJumpIntervalTicks))
+                return CommandRejectionReason.JumpRateExceeded;
+
+            bool requestsStanding = player.Stance == PlayerStance.Crouching &&
+                                    !command.CrouchRequested;
+            bool standingClearance = !requestsStanding ||
+                standingClearanceValidator(player.Id, player.Position);
+            if (requestsStanding && !standingClearance)
+                return CommandRejectionReason.StanceBlocked;
+
+            nextMovement = CoopGameplayRules.IntegrateMovement(
+                player.Movement,
+                command,
                 elapsedTicks,
-                rules);
+                rules,
+                standingClearance);
             if (NetVector3.Distance(
-                    nextPosition,
+                    nextMovement.Position,
                     command.ClaimedPosition) >
                 rules.ClaimedPositionTolerance)
                 return CommandRejectionReason.ImpossibleDisplacement;
@@ -552,12 +667,22 @@ namespace FPS.Networking.Domain
             {
                 Id = spawn.PlayerId;
                 Position = spawn.Position;
+                Velocity = new NetVector3(0d, 0d, 0d);
+                GroundHeight = spawn.Position.Y;
+                Grounded = true;
+                Stance = PlayerStance.Standing;
+                LastJumpTick = long.MinValue;
                 LastClaimedPosition = spawn.Position;
                 Health = spawn.Health;
             }
 
             public int Id;
             public NetVector3 Position;
+            public NetVector3 Velocity;
+            public double GroundHeight;
+            public bool Grounded;
+            public PlayerStance Stance;
+            public long LastJumpTick;
             public NetVector3 LastClaimedPosition;
             public double Health;
             public bool HasSequence;
@@ -571,13 +696,39 @@ namespace FPS.Networking.Domain
             public readonly Queue<ulong> NonceOrder = new();
             public bool IsAlive => Health > 0d;
 
+            public PlayerMovementState Movement => new(
+                Position,
+                Velocity,
+                AimYaw,
+                AimPitch,
+                Stance,
+                Grounded,
+                LastJumpTick,
+                GroundHeight);
+
+            public void ApplyMovement(PlayerMovementState movement)
+            {
+                Position = movement.Position;
+                Velocity = movement.Velocity;
+                AimYaw = movement.AimYawDegrees;
+                AimPitch = movement.AimPitchDegrees;
+                Stance = movement.Stance;
+                Grounded = movement.Grounded;
+                LastJumpTick = movement.LastJumpTick;
+            }
+
             public AuthoritativePlayerState Snapshot() => new(
                 Id,
                 Position,
                 Health,
                 AcknowledgedSequence,
                 AimYaw,
-                AimPitch);
+                AimPitch,
+                Velocity,
+                Stance,
+                Grounded,
+                LastJumpTick,
+                GroundHeight);
         }
 
         private sealed class MutableTarget

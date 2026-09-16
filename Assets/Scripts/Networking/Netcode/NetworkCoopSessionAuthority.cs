@@ -46,6 +46,7 @@ namespace FPS.Networking.Netcode
         private AuthoritativeWorldSnapshot lastSnapshot;
         private double accumulatedSeconds;
         private bool testServerAuthority;
+        private readonly Collider[] standingOverlaps = new Collider[16];
 
         public event Action<AuthoritativeTickResult> ServerTickCompleted;
         public event Action<ulong, int> UnauthorizedCommandRejected;
@@ -106,6 +107,7 @@ namespace FPS.Networking.Netcode
                 players,
                 targets,
                 requiredKills);
+            simulation.SetStandingClearanceValidator(HasStandingClearance);
             NetcodeRulesState replicatedRules =
                 NetcodeRulesState.FromDomain(rules);
             if (IsSpawned)
@@ -238,6 +240,36 @@ namespace FPS.Networking.Netcode
             lastSnapshot = simulation.CaptureSnapshot();
             PublishSnapshot(lastSnapshot,
                 Array.Empty<AuthoritativeEvent>());
+        }
+
+        private bool HasStandingClearance(int _, NetVector3 position)
+        {
+            Vector3 feet = NetcodeConversions.ToUnity(position);
+            const float radius = 0.28f;
+            const float standingHeight = 1.8f;
+            Vector3 bottom = feet + Vector3.up * (radius + 0.05f);
+            Vector3 top = feet + Vector3.up *
+                (standingHeight - radius - 0.05f);
+            int count = Physics.OverlapCapsuleNonAlloc(
+                bottom,
+                top,
+                radius,
+                standingOverlaps,
+                ~0,
+                QueryTriggerInteraction.Ignore);
+            for (int index = 0; index < count; index++)
+            {
+                Collider candidate = standingOverlaps[index];
+                if (candidate == null ||
+                    candidate.transform.IsChildOf(transform)) continue;
+                if (candidate.GetComponentInParent<CharacterController>() !=
+                    null) continue;
+                NetworkPlayerReplica replica =
+                    candidate.GetComponentInParent<NetworkPlayerReplica>();
+                if (replica != null && replica.Session == this) continue;
+                return false;
+            }
+            return true;
         }
 
         public bool TryGetPlayerState(int playerId, out NetcodePlayerState state)

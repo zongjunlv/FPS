@@ -55,6 +55,7 @@ public class PlayerController : MonoBehaviour
     public bool IsCrouching { get; private set; }
     public bool IsPaused { get; private set; }
     public bool GameplayInputEnabled { get; private set; } = true;
+    public bool NetworkMovementControlled { get; private set; }
     public bool IsSprinting =>
         CanSprint(input.Move, input.SprintHeld);
     public bool InvertY
@@ -145,6 +146,12 @@ public class PlayerController : MonoBehaviour
 
         HandleAimInput();
         Rotate();
+        if (NetworkMovementControlled)
+        {
+            MoveDirection = Mathf.Clamp01(input.Move.magnitude);
+            UpdateAimPresentation();
+            return;
+        }
         HandleCrouchInput();
         UpdateStance();
         Jump();
@@ -222,6 +229,51 @@ public class PlayerController : MonoBehaviour
         }
 
         ApplyCursorState();
+    }
+
+    public void SetNetworkMovementControlled(bool controlled)
+    {
+        NetworkMovementControlled = controlled;
+        if (controlled)
+        {
+            VerticalVelocity = 0f;
+            MoveDirection = Mathf.Clamp01(input != null
+                ? input.Move.magnitude
+                : 0f);
+        }
+    }
+
+    public void ApplyNetworkMovementPose(
+        Vector3 position,
+        float yawDegrees,
+        float pitchDegrees,
+        bool crouching,
+        bool grounded)
+    {
+        if (!NetworkMovementControlled || !Finite(position) ||
+            float.IsNaN(yawDegrees) || float.IsInfinity(yawDegrees) ||
+            float.IsNaN(pitchDegrees) || float.IsInfinity(pitchDegrees))
+            return;
+
+        bool wasEnabled = characterController.enabled;
+        if (wasEnabled) characterController.enabled = false;
+        transform.position = position;
+
+        // Owner look remains frame-immediate. Authoritative yaw/pitch is used
+        // for validation and remote peers, but never rewinds the local camera.
+        IsCrouching = crouching;
+        float height = crouching ? crouchingHeight : standingHeight;
+        characterController.height = height;
+        Vector3 center = characterController.center;
+        center.y = capsuleBottom + height * 0.5f;
+        characterController.center = center;
+        Vector3 cameraPosition = CameraPivot.localPosition;
+        cameraPosition.y = crouching
+            ? crouchingCameraHeight
+            : standingCameraHeight;
+        CameraPivot.localPosition = cameraPosition;
+        if (wasEnabled) characterController.enabled = true;
+        if (grounded && VerticalVelocity < 0f) VerticalVelocity = -2f;
     }
 
     public bool TryRestoreSnapshotPose(
