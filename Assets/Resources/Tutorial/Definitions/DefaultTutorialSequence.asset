@@ -14,7 +14,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: FPS.Composition::TutorialSequenceDefinition
   stableId: tutorial.main
   displayName: "\u65B0\u624B\u8BAD\u7EC3"
-  version: 3
+  version: 4
   steps:
   - stableId: tutorial.move.forward
     chapter: "\u7B2C\u4E00\u7AE0 \xB7 \u57FA\u7840\u79FB\u52A8"
@@ -69,30 +69,34 @@ MonoBehaviour:
   - stableId: tutorial.shoot.hip
     chapter: "\u7B2C\u4E8C\u7AE0 \xB7 \u5C04\u51FB\u8BAD\u7EC3"
     title: "\u8170\u5C04\u547D\u4E2D"
-    instruction: "\u4F7F\u7528\u9F20\u6807\u5DE6\u952E\u547D\u4E2D\u5C04\u51FB\u5899"
+    instruction: "\u677E\u5F00\u53F3\u952E\uFF0C\u4EE5\u8170\u5C04\u65B9\u5F0F\u7528\u9F20\u6807\u5DE6\u952E\u547D\u4E2D\u6559\u5B66\u533A\u57DF
+      3 \u6B21"
     evidenceType: 5
     targetValue: 3
     completionFeedback: "\u5DF2\u5B8C\u6210\uFF1A\u8170\u5C04\u547D\u4E2D"
   - stableId: tutorial.shoot.aim
     chapter: "\u7B2C\u4E8C\u7AE0 \xB7 \u5C04\u51FB\u8BAD\u7EC3"
     title: "\u7784\u51C6\u5C04\u51FB"
-    instruction: "\u6309\u4F4F\u9F20\u6807\u53F3\u952E\u7784\u51C6\u5E76\u5B8C\u6210\u547D\u4E2D"
+    instruction: "\u6309\u4F4F\u9F20\u6807\u53F3\u952E\uFF0C\u7B49\u5F85 ADS \u751F\u6548\u540E\u547D\u4E2D\u6559\u5B66\u533A\u57DF
+      3 \u6B21"
     evidenceType: 6
     targetValue: 3
     completionFeedback: "\u5DF2\u5B8C\u6210\uFF1A\u7784\u51C6\u5C04\u51FB"
   - stableId: tutorial.shoot.tap
     chapter: "\u7B2C\u4E8C\u7AE0 \xB7 \u5C04\u51FB\u8BAD\u7EC3"
     title: "\u70B9\u5C04\u63A7\u5236"
-    instruction: "\u4F7F\u7528\u77ED\u70B9\u5C04\u63A7\u5236\u540E\u5750\u529B"
+    instruction: "\u5207\u6362\u81F3 2 \u53F7\u4F4D\u534A\u81EA\u52A8\u624B\u67AA\uFF0C\u72EC\u7ACB\u70B9\u51FB\u5DE6\u952E\u547D\u4E2D
+      3 \u6B21"
     evidenceType: 7
     targetValue: 3
     completionFeedback: "\u5DF2\u5B8C\u6210\uFF1A\u70B9\u5C04\u63A7\u5236"
   - stableId: tutorial.shoot.burst
     chapter: "\u7B2C\u4E8C\u7AE0 \xB7 \u5C04\u51FB\u8BAD\u7EC3"
     title: "\u8FDE\u7EED\u5C04\u51FB"
-    instruction: "\u6309\u4F4F\u9F20\u6807\u5DE6\u952E\u5B8C\u6210\u4E00\u6B21\u8FDE\u7EED\u5C04\u51FB"
+    instruction: "\u5207\u6362\u81F3 1 \u53F7\u4F4D\u81EA\u52A8\u6B65\u67AA\uFF0C\u6301\u7EED\u6309\u4F4F\u5DE6\u952E\u547D\u4E2D
+      4 \u6B21\u5E76\u611F\u53D7\u540E\u5750\u529B"
     evidenceType: 8
-    targetValue: 1
+    targetValue: 4
     completionFeedback: "\u5DF2\u5B8C\u6210\uFF1A\u8FDE\u7EED\u5C04\u51FB"
   - stableId: tutorial.weapon.switch
     chapter: "\u7B2C\u4E09\u7AE0 \xB7 \u6B66\u5668\u64CD\u4F5C"

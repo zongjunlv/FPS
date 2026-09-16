@@ -86,7 +86,7 @@ public static class Issue72TutorialContentBuilder
         definition.Configure(
             "tutorial.main",
             "新手训练",
-            3,
+            4,
             CreateDefaultSteps());
         if (!definition.TryValidate(out string error))
         {
@@ -116,13 +116,13 @@ public static class Issue72TutorialContentBuilder
             Step("tutorial.move.crouch", "第一章 · 基础移动", "下蹲",
                 "按 C 下蹲，再按一次 C 恢复站立", TutorialEvidenceType.Crouch, 2),
             Step("tutorial.shoot.hip", "第二章 · 射击训练", "腰射命中",
-                "使用鼠标左键命中射击墙", TutorialEvidenceType.HipFireHit, 3),
+                "松开右键，以腰射方式用鼠标左键命中教学区域 3 次", TutorialEvidenceType.HipFireHit, 3),
             Step("tutorial.shoot.aim", "第二章 · 射击训练", "瞄准射击",
-                "按住鼠标右键瞄准并完成命中", TutorialEvidenceType.AimFireHit, 3),
+                "按住鼠标右键，等待 ADS 生效后命中教学区域 3 次", TutorialEvidenceType.AimFireHit, 3),
             Step("tutorial.shoot.tap", "第二章 · 射击训练", "点射控制",
-                "使用短点射控制后坐力", TutorialEvidenceType.SemiAutomaticShot, 3),
+                "切换至 2 号位半自动手枪，独立点击左键命中 3 次", TutorialEvidenceType.SemiAutomaticShot, 3),
             Step("tutorial.shoot.burst", "第二章 · 射击训练", "连续射击",
-                "按住鼠标左键完成一次连续射击", TutorialEvidenceType.AutomaticBurst, 1),
+                "切换至 1 号位自动步枪，持续按住左键命中 4 次并感受后坐力", TutorialEvidenceType.AutomaticBurst, 4),
             Step("tutorial.weapon.switch", "第三章 · 武器操作", "切换武器",
                 "使用数字键或鼠标滚轮切换武器", TutorialEvidenceType.WeaponSwitch, 2),
             Step("tutorial.weapon.reload", "第三章 · 武器操作", "更换弹匣",
