@@ -573,7 +573,18 @@ namespace FPS.Networking.Domain
         PlayerLevelGained,
         UpgradeChoicesOffered,
         UpgradeApplied,
-        EconomyCommandRejected
+        EconomyCommandRejected,
+        MissionPhaseChanged,
+        MissionCommandRejected,
+        TerminalInteractionStarted,
+        TerminalInteractionCompleted,
+        PlayerDowned,
+        ReviveStarted,
+        PlayerRevived,
+        ExtractionStarted,
+        MissionSucceeded,
+        MissionFailed,
+        PlayerDisconnected
     }
 
     public readonly struct AuthoritativeEvent
@@ -669,7 +680,9 @@ namespace FPS.Networking.Domain
             IReadOnlyList<AuthoritativeWeaponState> weapons,
             double maximumHealth = 0d,
             double armor = 0d,
-            double maximumArmor = 100d)
+            double maximumArmor = 100d,
+            AuthoritativePlayerLifeState lifeState =
+                AuthoritativePlayerLifeState.Alive)
         {
             PlayerId = playerId;
             Position = position;
@@ -694,6 +707,7 @@ namespace FPS.Networking.Domain
             MaximumHealth = maximumHealth > 0d ? maximumHealth : health;
             Armor = Math.Max(0d, Math.Min(armor, maximumArmor));
             MaximumArmor = Math.Max(0d, maximumArmor);
+            LifeState = lifeState;
         }
 
         public int PlayerId { get; }
@@ -719,8 +733,14 @@ namespace FPS.Networking.Domain
         public double MaximumHealth { get; }
         public double Armor { get; }
         public double MaximumArmor { get; }
+        public AuthoritativePlayerLifeState LifeState { get; }
         public bool IsCrouching => Stance == PlayerStance.Crouching;
-        public bool IsAlive => Health > 0d;
+        public bool IsAlive => LifeState == AuthoritativePlayerLifeState.Alive &&
+            Health > 0d;
+        public bool IsConnected =>
+            LifeState != AuthoritativePlayerLifeState.Disconnected;
+        public bool IsDowned =>
+            LifeState == AuthoritativePlayerLifeState.Downed;
 
         public PlayerMovementState Movement => new(
             Position,
@@ -802,7 +822,8 @@ namespace FPS.Networking.Domain
             AuthoritativeWaveStatus waveStatus,
             int killedTargets,
             int requiredKills = 0,
-            AuthoritativeEconomySnapshot economy = null)
+            AuthoritativeEconomySnapshot economy = null,
+            AuthoritativeMissionState mission = null)
         {
             Tick = tick;
             this.players = (players ?? throw new ArgumentNullException(nameof(players)))
@@ -819,6 +840,18 @@ namespace FPS.Networking.Domain
                 Array.Empty<AuthoritativeWorldDropState>(),
                 Array.Empty<AuthoritativeProgressionState>(),
                 Array.Empty<AuthoritativeUpgradeStackState>());
+            Mission = mission ?? new AuthoritativeMissionState(
+                waveStatus == AuthoritativeWaveStatus.Failed
+                    ? AuthoritativeMissionPhase.Defeat
+                    : AuthoritativeMissionPhase.ClearEnemies,
+                waveStatus == AuthoritativeWaveStatus.Failed
+                    ? AuthoritativeMissionOutcomeReason.SquadWiped
+                    : AuthoritativeMissionOutcomeReason.None,
+                1, 0, 0, 0, 0, 0, 0,
+                AuthoritativeMissionDefinition.Default,
+                this.players.Select(value =>
+                    new AuthoritativePlayerMissionStats(
+                        value.PlayerId, 0, 0d, 0d, 0)));
         }
 
         public long Tick { get; }
@@ -828,6 +861,7 @@ namespace FPS.Networking.Domain
         public int KilledTargets { get; }
         public int RequiredKills { get; }
         public AuthoritativeEconomySnapshot Economy { get; }
+        public AuthoritativeMissionState Mission { get; }
         public int EnemyPoolCapacity => targets.Length;
         public int SpawnedTargets => targets.Count(value =>
             value.SpawnGeneration > 0);
@@ -847,19 +881,23 @@ namespace FPS.Networking.Domain
         private readonly CommandResolution[] commands;
         private readonly AuthoritativeEvent[] events;
         private readonly AuthoritativeEconomyResolution[] economyCommands;
+        private readonly AuthoritativeMissionResolution[] missionCommands;
 
         public AuthoritativeTickResult(
             long tick,
             IEnumerable<CommandResolution> commands,
             IEnumerable<AuthoritativeEvent> events,
             AuthoritativeWorldSnapshot snapshot,
-            IEnumerable<AuthoritativeEconomyResolution> economyCommands = null)
+            IEnumerable<AuthoritativeEconomyResolution> economyCommands = null,
+            IEnumerable<AuthoritativeMissionResolution> missionCommands = null)
         {
             Tick = tick;
             this.commands = (commands ?? Array.Empty<CommandResolution>()).ToArray();
             this.events = (events ?? Array.Empty<AuthoritativeEvent>()).ToArray();
             this.economyCommands = (economyCommands ??
                 Array.Empty<AuthoritativeEconomyResolution>()).ToArray();
+            this.missionCommands = (missionCommands ??
+                Array.Empty<AuthoritativeMissionResolution>()).ToArray();
             Snapshot = snapshot ?? throw new ArgumentNullException(nameof(snapshot));
         }
 
@@ -868,6 +906,8 @@ namespace FPS.Networking.Domain
         public IReadOnlyList<AuthoritativeEvent> Events => events;
         public IReadOnlyList<AuthoritativeEconomyResolution> EconomyCommands =>
             economyCommands;
+        public IReadOnlyList<AuthoritativeMissionResolution> MissionCommands =>
+            missionCommands;
         public AuthoritativeWorldSnapshot Snapshot { get; }
     }
 }

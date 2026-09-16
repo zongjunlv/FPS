@@ -68,12 +68,15 @@ namespace FPS.Networking.Session
         private bool sceneCancellationInProgress;
         private bool battleReadyEventRaised;
         private bool sceneCancellationEventRaised;
+        private bool returnToLobbyInProgress;
+        private string lastObservedPhase = PhaseLobby;
 
         public event Action<CoopSessionState> StateChanged;
         public event Action LobbyChanged;
         public event Action LobbyStartRequested;
         public event Action BattleSceneReady;
         public event Action<string> SceneLoadCancelled;
+        public event Action ReturnedToLobby;
 
         public CoopSessionState State { get; private set; } =
             CoopSessionState.Offline;
@@ -373,6 +376,53 @@ namespace FPS.Networking.Session
             finally
             {
                 operationInProgress = false;
+            }
+        }
+
+        public async Task<bool> ReturnToLobbyAfterMatchAsync()
+        {
+            if (returnToLobbyInProgress) return false;
+            if (directSession)
+            {
+                await LeaveAsync();
+                ReturnedToLobby?.Invoke();
+                return true;
+            }
+            if (activeSession == null || !IsConnected || !IsHost)
+                return false;
+            returnToLobbyInProgress = true;
+            try
+            {
+                IHostSession host = activeSession.AsHost();
+                host.IsLocked = false;
+                host.SetProperty(PhaseProperty,
+                    new SessionProperty(PhaseLobby));
+                host.SetProperty(LoadEpochProperty,
+                    new SessionProperty(string.Empty));
+                host.SetProperty(LoadFailureProperty,
+                    new SessionProperty(string.Empty));
+                activeSession.CurrentPlayer.SetProperty(ReadyProperty,
+                    new PlayerProperty("0"));
+                activeSession.CurrentPlayer.SetProperty(ReadyEpochProperty,
+                    new PlayerProperty(string.Empty));
+                await activeSession.SaveCurrentPlayerDataAsync();
+                await host.SavePropertiesAsync();
+                lastObservedPhase = PhaseLobby;
+                lobbyStartEventRaised = false;
+                battleReadyEventRaised = false;
+                sceneCancellationEventRaised = false;
+                observedLoadEpoch = string.Empty;
+                RefreshLobbyFromSession();
+                ReturnedToLobby?.Invoke();
+                return true;
+            }
+            catch (Exception exception)
+            {
+                return FailLobby(exception);
+            }
+            finally
+            {
+                returnToLobbyInProgress = false;
             }
         }
 
@@ -683,7 +733,19 @@ namespace FPS.Networking.Session
                     ? BuildCityNewPlayerSpawns()
                     : BuildPlayerSpawns(),
                 targetDefinitions,
-                deferPlayerSpawn ? targetDefinitions.Length : 1);
+                deferPlayerSpawn ? targetDefinitions.Length : 1,
+                deferPlayerSpawn
+                    ? new AuthoritativeMissionDefinition(
+                        new NetVector3(51.059917d, 0.766349d, 72.16028d),
+                        new NetVector3(48.414d, 0.05d, 41.41d),
+                        terminalRadius: 3d,
+                        extractionRadius: 5d,
+                        reviveRadius: 2.5d,
+                        terminalHoldTicks: 150,
+                        extractionHoldTicks: 120,
+                        reviveHoldTicks: 180,
+                        revivedHealth: 40d)
+                    : AuthoritativeMissionDefinition.Default);
             installer.ConfigurePlayerSpawnBarrier(deferPlayerSpawn);
             networkBootstrap.gameObject.AddComponent<
                 CoopNetworkWorldPresenter>();
@@ -938,7 +1000,10 @@ namespace FPS.Networking.Session
 
         private void HandleSessionChanged()
         {
+            string previousPhase = lastObservedPhase;
             RefreshLobbyFromSession();
+            string currentPhase = LobbyPhase;
+            lastObservedPhase = currentPhase;
             _ = EnforceHostLobbyRulesAsync();
             if (HasLoadingPhase()) RaiseLobbyStartOnce();
             _ = EvaluateHostSceneLoadBarrierAsync();
@@ -948,7 +1013,35 @@ namespace FPS.Networking.Session
             if (string.Equals(LobbyPhase, PhaseCancelled,
                     StringComparison.Ordinal))
                 RaiseSceneLoadCancelledOnce();
+            if (string.Equals(currentPhase, PhaseLobby,
+                    StringComparison.Ordinal) &&
+                !string.Equals(previousPhase, PhaseLobby,
+                    StringComparison.Ordinal))
+            {
+                _ = ClearLocalReadyAfterMatchAsync();
+                ReturnedToLobby?.Invoke();
+            }
             StateChanged?.Invoke(State);
+        }
+
+        private async Task ClearLocalReadyAfterMatchAsync()
+        {
+            if (activeSession == null) return;
+            try
+            {
+                activeSession.CurrentPlayer.SetProperty(ReadyProperty,
+                    new PlayerProperty("0"));
+                activeSession.CurrentPlayer.SetProperty(ReadyEpochProperty,
+                    new PlayerProperty(string.Empty));
+                await activeSession.SaveCurrentPlayerDataAsync();
+                RefreshLobbyFromSession();
+            }
+            catch (Exception exception)
+            {
+                Debug.LogWarning(
+                    $"返回合作房间时清理准备状态失败：{exception.Message}",
+                    this);
+            }
         }
 
         private void HandlePlayerMembershipChanged(string _)

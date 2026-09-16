@@ -112,6 +112,8 @@ namespace FPS.Networking.Netcode
         };
         [SerializeField] private int requiredKills = 1;
         [SerializeField] private int maximumPlayers = 2;
+        private AuthoritativeMissionDefinition missionDefinition =
+            AuthoritativeMissionDefinition.Default;
 
         private readonly Dictionary<ulong, NetworkObject> playerObjects = new();
         private readonly Dictionary<ulong, int> playerIds = new();
@@ -172,7 +174,8 @@ namespace FPS.Networking.Netcode
         public void ConfigureScenario(
             CoopPlayerSpawnDefinition[] playerDefinitions,
             CoopTargetSpawnDefinition[] targetDefinitions,
-            int killsRequired)
+            int killsRequired,
+            AuthoritativeMissionDefinition configuredMission = null)
         {
             if (bootstrap != null && bootstrap.IsListening)
             {
@@ -185,6 +188,8 @@ namespace FPS.Networking.Netcode
             targets = targetDefinitions ?? throw new ArgumentNullException(
                 nameof(targetDefinitions));
             requiredKills = killsRequired;
+            missionDefinition = configuredMission ??
+                AuthoritativeMissionDefinition.Default;
             maximumPlayers = Mathf.Clamp(players.Length, 1, 16);
         }
 
@@ -245,6 +250,16 @@ namespace FPS.Networking.Netcode
             waitingClients.Clear();
             for (int index = 0; index < clients.Length; index++)
                 SpawnApprovedClient(clients[index]);
+        }
+
+        public void PrepareForLobbyReturn()
+        {
+            if (bootstrap?.NetworkManager == null ||
+                !bootstrap.NetworkManager.IsServer)
+                return;
+            deferPlayerSpawns = true;
+            playerSpawnBarrierReleased = false;
+            DespawnAll();
         }
 
         public bool RegisterConfiguredPrefabs()
@@ -322,7 +337,8 @@ namespace FPS.Networking.Netcode
                         shotDamage: 10d),
                     ConvertPlayers(players),
                     ConvertTargets(targets),
-                    requiredKills);
+                    requiredKills,
+                    missionDefinition);
             }
             catch
             {
@@ -331,17 +347,15 @@ namespace FPS.Networking.Netcode
                 sessionAuthority = null;
                 throw;
             }
-            if (bootstrap.NetworkManager.IsHost)
+            IReadOnlyList<ulong> connectedClients =
+                bootstrap.NetworkManager.ConnectedClientsIds;
+            for (int index = 0; index < connectedClients.Count; index++)
             {
+                ulong clientId = connectedClients[index];
                 if (IsPlayerSpawnDeferred)
-                    waitingClients.Add(NetworkManager.ServerClientId);
+                    waitingClients.Add(clientId);
                 else
-                {
-                    sessionAuthority.RegisterPlayerClient(
-                        NetworkManager.ServerClientId,
-                        1);
-                    SpawnPlayer(NetworkManager.ServerClientId, 1);
-                }
+                    SpawnApprovedClient(clientId);
             }
             LastFailure = string.Empty;
             return true;

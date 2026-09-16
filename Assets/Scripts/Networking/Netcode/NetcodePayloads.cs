@@ -457,6 +457,44 @@ namespace FPS.Networking.Netcode
             ExpectedItemId.Equals(other.ExpectedItemId);
     }
 
+    public struct NetcodeMissionCommand : INetworkSerializable,
+        IEquatable<NetcodeMissionCommand>
+    {
+        public int PlayerId;
+        public uint Sequence;
+        public ulong Nonce;
+        public AuthoritativeMissionCommandKind Kind;
+        public int TargetPlayerId;
+
+        public static NetcodeMissionCommand FromDomain(
+            AuthoritativeMissionCommand value) => new()
+        {
+            PlayerId = value.PlayerId,
+            Sequence = value.Sequence,
+            Nonce = value.Nonce,
+            Kind = value.Kind,
+            TargetPlayerId = value.TargetPlayerId
+        };
+
+        public AuthoritativeMissionCommand ToDomain() => new(
+            PlayerId, Sequence, Nonce, Kind, TargetPlayerId);
+
+        public void NetworkSerialize<T>(BufferSerializer<T> serializer)
+            where T : IReaderWriter
+        {
+            serializer.SerializeValue(ref PlayerId);
+            serializer.SerializeValue(ref Sequence);
+            serializer.SerializeValue(ref Nonce);
+            serializer.SerializeValue(ref Kind);
+            serializer.SerializeValue(ref TargetPlayerId);
+        }
+
+        public bool Equals(NetcodeMissionCommand other) =>
+            PlayerId == other.PlayerId && Sequence == other.Sequence &&
+            Nonce == other.Nonce && Kind == other.Kind &&
+            TargetPlayerId == other.TargetPlayerId;
+    }
+
     public struct NetcodeInventorySlotState : INetworkSerializable,
         IEquatable<NetcodeInventorySlotState>
     {
@@ -678,13 +716,23 @@ namespace FPS.Networking.Netcode
         public float MaximumHealth;
         public float Armor;
         public float MaximumArmor;
+        public AuthoritativePlayerLifeState LifeState;
+        public int Kills;
+        public float DamageDealt;
+        public float DamageTaken;
+        public int UpgradesSelected;
 
-        public bool IsAlive => Health > 0f;
+        public bool IsAlive =>
+            LifeState == AuthoritativePlayerLifeState.Alive && Health > 0f;
 
         public static NetcodePlayerState FromDomain(
             long serverTick,
-            AuthoritativePlayerState value)
+            AuthoritativePlayerState value,
+            AuthoritativePlayerMissionStats? missionStats = null)
         {
+            AuthoritativePlayerMissionStats stats = missionStats ??
+                new AuthoritativePlayerMissionStats(
+                    value.PlayerId, 0, 0d, 0d, 0);
             return new NetcodePlayerState
             {
                 ServerTick = serverTick,
@@ -711,7 +759,12 @@ namespace FPS.Networking.Netcode
                 SwitchEndTick = value.SwitchEndTick,
                 MaximumHealth = (float)value.MaximumHealth,
                 Armor = (float)value.Armor,
-                MaximumArmor = (float)value.MaximumArmor
+                MaximumArmor = (float)value.MaximumArmor,
+                LifeState = value.LifeState,
+                Kills = stats.Kills,
+                DamageDealt = (float)stats.DamageDealt,
+                DamageTaken = (float)stats.DamageTaken,
+                UpgradesSelected = stats.UpgradesSelected
             };
         }
 
@@ -742,7 +795,8 @@ namespace FPS.Networking.Netcode
                 Array.Empty<AuthoritativeWeaponState>(),
                 MaximumHealth,
                 Armor,
-                MaximumArmor);
+                MaximumArmor,
+                LifeState);
         }
 
         public RemotePlayerSnapshot ToRemoteSnapshot()
@@ -783,6 +837,11 @@ namespace FPS.Networking.Netcode
             serializer.SerializeValue(ref MaximumHealth);
             serializer.SerializeValue(ref Armor);
             serializer.SerializeValue(ref MaximumArmor);
+            serializer.SerializeValue(ref LifeState);
+            serializer.SerializeValue(ref Kills);
+            serializer.SerializeValue(ref DamageDealt);
+            serializer.SerializeValue(ref DamageTaken);
+            serializer.SerializeValue(ref UpgradesSelected);
 
             int positionX = 0;
             int positionY = 0;
@@ -876,7 +935,12 @@ namespace FPS.Networking.Netcode
                 LastShotEventSequence == other.LastShotEventSequence &&
                 MaximumHealth.Equals(other.MaximumHealth) &&
                 Armor.Equals(other.Armor) &&
-                MaximumArmor.Equals(other.MaximumArmor);
+                MaximumArmor.Equals(other.MaximumArmor) &&
+                LifeState == other.LifeState &&
+                Kills == other.Kills &&
+                DamageDealt.Equals(other.DamageDealt) &&
+                DamageTaken.Equals(other.DamageTaken) &&
+                UpgradesSelected == other.UpgradesSelected;
         }
 
         private static int QuantizeInt(float value, float scale)
@@ -981,6 +1045,24 @@ namespace FPS.Networking.Netcode
         public int RemainingEnemyCount;
         public long LastEventSequence;
         public int EconomyRevision;
+        public int RunGeneration;
+        public AuthoritativeMissionPhase MissionPhase;
+        public AuthoritativeMissionOutcomeReason MissionOutcomeReason;
+        public int MissionRevision;
+        public int TerminalProgressTicks;
+        public int TerminalRequiredTicks;
+        public int ExtractionProgressTicks;
+        public int ExtractionRequiredTicks;
+        public int ReviveProgressTicks;
+        public int ReviveRequiredTicks;
+        public int TerminalPlayerId;
+        public int RevivePlayerId;
+        public int DownedPlayerId;
+        public Vector3 TerminalPosition;
+        public Vector3 ExtractionPosition;
+        public float TerminalRadius;
+        public float ExtractionRadius;
+        public float ReviveRadius;
 
         public void NetworkSerialize<T>(BufferSerializer<T> serializer)
             where T : IReaderWriter
@@ -995,6 +1077,24 @@ namespace FPS.Networking.Netcode
             serializer.SerializeValue(ref RemainingEnemyCount);
             serializer.SerializeValue(ref LastEventSequence);
             serializer.SerializeValue(ref EconomyRevision);
+            serializer.SerializeValue(ref RunGeneration);
+            serializer.SerializeValue(ref MissionPhase);
+            serializer.SerializeValue(ref MissionOutcomeReason);
+            serializer.SerializeValue(ref MissionRevision);
+            serializer.SerializeValue(ref TerminalProgressTicks);
+            serializer.SerializeValue(ref TerminalRequiredTicks);
+            serializer.SerializeValue(ref ExtractionProgressTicks);
+            serializer.SerializeValue(ref ExtractionRequiredTicks);
+            serializer.SerializeValue(ref ReviveProgressTicks);
+            serializer.SerializeValue(ref ReviveRequiredTicks);
+            serializer.SerializeValue(ref TerminalPlayerId);
+            serializer.SerializeValue(ref RevivePlayerId);
+            serializer.SerializeValue(ref DownedPlayerId);
+            serializer.SerializeValue(ref TerminalPosition);
+            serializer.SerializeValue(ref ExtractionPosition);
+            serializer.SerializeValue(ref TerminalRadius);
+            serializer.SerializeValue(ref ExtractionRadius);
+            serializer.SerializeValue(ref ReviveRadius);
         }
 
         public bool Equals(NetcodeWorldState other)
@@ -1008,7 +1108,25 @@ namespace FPS.Networking.Netcode
                 PendingEnemyCount == other.PendingEnemyCount &&
                 RemainingEnemyCount == other.RemainingEnemyCount &&
                 LastEventSequence == other.LastEventSequence &&
-                EconomyRevision == other.EconomyRevision;
+                EconomyRevision == other.EconomyRevision &&
+                RunGeneration == other.RunGeneration &&
+                MissionPhase == other.MissionPhase &&
+                MissionOutcomeReason == other.MissionOutcomeReason &&
+                MissionRevision == other.MissionRevision &&
+                TerminalProgressTicks == other.TerminalProgressTicks &&
+                TerminalRequiredTicks == other.TerminalRequiredTicks &&
+                ExtractionProgressTicks == other.ExtractionProgressTicks &&
+                ExtractionRequiredTicks == other.ExtractionRequiredTicks &&
+                ReviveProgressTicks == other.ReviveProgressTicks &&
+                ReviveRequiredTicks == other.ReviveRequiredTicks &&
+                TerminalPlayerId == other.TerminalPlayerId &&
+                RevivePlayerId == other.RevivePlayerId &&
+                DownedPlayerId == other.DownedPlayerId &&
+                TerminalPosition.Equals(other.TerminalPosition) &&
+                ExtractionPosition.Equals(other.ExtractionPosition) &&
+                TerminalRadius.Equals(other.TerminalRadius) &&
+                ExtractionRadius.Equals(other.ExtractionRadius) &&
+                ReviveRadius.Equals(other.ReviveRadius);
         }
     }
 

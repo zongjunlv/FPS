@@ -178,7 +178,8 @@ namespace FPS.Networking.Domain
         InvalidCandidate = 16,
         StaleInventory = 17,
         StaleDrop = 18,
-        StaleUpgradeChoice = 19
+        StaleUpgradeChoice = 19,
+        MatchEnded = 20
     }
 
     public readonly struct AuthoritativeEconomyCommand

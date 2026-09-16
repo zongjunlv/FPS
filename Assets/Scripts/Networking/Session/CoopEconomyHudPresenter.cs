@@ -22,6 +22,11 @@ namespace FPS.Networking.Session
         private void Update()
         {
             ResolveBindings();
+            if (authority != null && IsOutcome(authority.WorldState))
+            {
+                inventoryVisible = false;
+                return;
+            }
             if (Keyboard.current == null || localPlayer == null) return;
             if (Keyboard.current.iKey.wasPressedThisFrame)
                 inventoryVisible = !inventoryVisible;
@@ -39,6 +44,7 @@ namespace FPS.Networking.Session
         private void OnGUI()
         {
             if (authority == null || localPlayer == null ||
+                IsOutcome(authority.WorldState) ||
                 !authority.TryGetProgression(localPlayer.PlayerId,
                     out NetcodeProgressionState progression))
                 return;
@@ -214,5 +220,9 @@ namespace FPS.Networking.Session
         private static string BuildTags(string tags) =>
             string.IsNullOrWhiteSpace(tags) ? "尚未形成" :
             tags.Replace("build.", string.Empty).Replace("|", " / ");
+
+        private static bool IsOutcome(NetcodeWorldState world) =>
+            world.MissionPhase == AuthoritativeMissionPhase.Victory ||
+            world.MissionPhase == AuthoritativeMissionPhase.Defeat;
     }
 }

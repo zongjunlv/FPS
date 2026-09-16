@@ -34,6 +34,7 @@ public sealed class CoopSceneLoadCoordinator : MonoBehaviour
         session.LobbyStartRequested += HandleLoadRequested;
         session.BattleSceneReady += HandleBattleReady;
         session.SceneLoadCancelled += HandleLoadCancelled;
+        session.ReturnedToLobby += HandleReturnedToLobby;
     }
 
     private void OnDisable()
@@ -42,6 +43,7 @@ public sealed class CoopSceneLoadCoordinator : MonoBehaviour
         session.LobbyStartRequested -= HandleLoadRequested;
         session.BattleSceneReady -= HandleBattleReady;
         session.SceneLoadCancelled -= HandleLoadCancelled;
+        session.ReturnedToLobby -= HandleReturnedToLobby;
     }
 
     private void Update()
@@ -110,6 +112,11 @@ public sealed class CoopSceneLoadCoordinator : MonoBehaviour
         CoopNetworkRuntimeInstaller installer =
             FindFirstObjectByType<CoopNetworkRuntimeInstaller>();
         if (installer == null) return;
+        if (!installer.SpawnAuthoritativeSlice())
+        {
+            LastFailure = installer.LastFailure;
+            return;
+        }
         ConfigurePlayerAppearances(installer);
         if (installer.IsPlayerSpawnDeferred)
             installer.ReleasePlayerSpawnBarrier();
@@ -147,6 +154,19 @@ public sealed class CoopSceneLoadCoordinator : MonoBehaviour
         {
             StopCoroutine(loadRoutine);
             loadRoutine = null;
+        }
+        if (returnRoutine == null)
+            returnRoutine = StartCoroutine(ReturnToLobby());
+    }
+
+    private void HandleReturnedToLobby()
+    {
+        NetworkManager manager = NetworkManager.Singleton;
+        if (manager != null && manager.IsServer)
+        {
+            CoopNetworkRuntimeInstaller installer =
+                FindFirstObjectByType<CoopNetworkRuntimeInstaller>();
+            installer?.PrepareForLobbyReturn();
         }
         if (returnRoutine == null)
             returnRoutine = StartCoroutine(ReturnToLobby());

@@ -36,6 +36,7 @@ namespace FPS.Networking.Netcode
         private ulong nonceSalt = 0x65C00FUL;
         private uint nextPresentationSequence = 1;
         private uint nextEconomySequence = 1;
+        private uint nextMissionSequence = 1;
         private long lastConsumedServerTick = -1;
         private long lastPresentationEventSequence;
         private long lastShotEventSequence;
@@ -65,6 +66,10 @@ namespace FPS.Networking.Netcode
         public bool PresentedSprinting { get; private set; }
         public bool PresentedAiming { get; private set; }
         public bool PresentedAlive { get; private set; } = true;
+        public AuthoritativePlayerLifeState PresentedLifeState {
+            get;
+            private set;
+        } = AuthoritativePlayerLifeState.Alive;
         public int PredictionSampleCount { get; private set; }
         public int PredictionCorrectionCount { get; private set; }
         public double MaximumPredictionError { get; private set; }
@@ -502,6 +507,35 @@ namespace FPS.Networking.Netcode
             return payload;
         }
 
+        public NetcodeMissionCommand BuildMissionCommand(
+            AuthoritativeMissionCommandKind kind,
+            int targetPlayerId = 0)
+        {
+            RequireLocalOwner();
+            uint sequence = nextMissionSequence++;
+            return NetcodeMissionCommand.FromDomain(
+                new AuthoritativeMissionCommand(
+                    playerId,
+                    sequence,
+                    NextNonce(sequence,
+                        (session?.WorldState.ServerTick ?? 0) + 0x9800),
+                    kind,
+                    targetPlayerId));
+        }
+
+        public NetcodeMissionCommand SubmitMissionAction(
+            AuthoritativeMissionCommandKind kind,
+            int targetPlayerId = 0)
+        {
+            NetcodeMissionCommand payload = BuildMissionCommand(
+                kind, targetPlayerId);
+            if (session == null || !session.IsSpawned)
+                throw new InvalidOperationException(
+                    "A spawned session authority is required to submit RPCs.");
+            session.SubmitMissionRpc(payload);
+            return payload;
+        }
+
         public void ConsumeServerState(
             NetcodePlayerState state,
             bool treatAsLocalOwner,
@@ -600,6 +634,7 @@ namespace FPS.Networking.Netcode
             nextSequence = 1;
             nextPresentationSequence = 1;
             nextEconomySequence = 1;
+            nextMissionSequence = 1;
             lastPresentationEventSequence = 0;
             lastShotEventSequence = 0;
             presentationBaselineInitialized = false;
@@ -615,6 +650,7 @@ namespace FPS.Networking.Netcode
             PresentedSprinting = false;
             PresentedAiming = false;
             PresentedAlive = true;
+            PresentedLifeState = AuthoritativePlayerLifeState.Alive;
             PresentedMagazineAmmo = 0;
             PresentedReserveAmmo = 0;
             PresentedAcknowledgedSequence = 0;
@@ -776,6 +812,7 @@ namespace FPS.Networking.Netcode
             PresentedAcknowledgedSequence = state.AcknowledgedSequence;
             PresentedReloading = state.Reloading;
             PresentedSwitching = state.Switching;
+            PresentedLifeState = state.LifeState;
             CombatWeaponId = state.CombatWeaponId.IsEmpty
                 ? NetworkPresentationIds.ToGameplayWeaponId(
                     state.WeaponId.ToString())

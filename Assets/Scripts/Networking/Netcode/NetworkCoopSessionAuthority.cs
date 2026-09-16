@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using FPS.Networking.Domain;
 using Unity.Netcode;
 using UnityEngine;
@@ -68,6 +69,8 @@ namespace FPS.Networking.Netcode
         private readonly List<PlayerInputCommand> pendingCommands = new();
         private readonly List<AuthoritativeEconomyCommand>
             pendingEconomyCommands = new();
+        private readonly List<AuthoritativeMissionCommand>
+            pendingMissionCommands = new();
         private readonly Dictionary<(int playerId, uint sequence),
             NetcodePlayerCommand> pendingPresentationInputs = new();
         private readonly Dictionary<int, ServerPresentationState>
@@ -83,6 +86,12 @@ namespace FPS.Networking.Netcode
         private bool testServerAuthority;
         private long nextPresentationEventSequence;
         private long nextShotEventSequence;
+        private CoopServerRules configuredRules;
+        private CoopPlayerSpawn[] configuredPlayers = Array.Empty<CoopPlayerSpawn>();
+        private CoopTargetSpawn[] configuredTargets = Array.Empty<CoopTargetSpawn>();
+        private AuthoritativeMissionDefinition configuredMission;
+        private int configuredRequiredKills;
+        private int runGeneration = 1;
         private readonly Collider[] standingOverlaps = new Collider[16];
         private readonly RaycastHit[] shotObstructionHits = new RaycastHit[32];
 
@@ -154,14 +163,24 @@ namespace FPS.Networking.Netcode
             CoopServerRules rules,
             IEnumerable<CoopPlayerSpawn> players,
             IEnumerable<CoopTargetSpawn> targets,
-            int requiredKills = 0)
+            int requiredKills = 0,
+            AuthoritativeMissionDefinition mission = null)
         {
             RequireServerWrite();
+            configuredRules = rules ?? throw new ArgumentNullException(
+                nameof(rules));
+            configuredPlayers = (players ?? throw new ArgumentNullException(
+                nameof(players))).ToArray();
+            configuredTargets = (targets ?? throw new ArgumentNullException(
+                nameof(targets))).ToArray();
+            configuredRequiredKills = requiredKills;
+            configuredMission = mission ?? AuthoritativeMissionDefinition.Default;
             simulation = new AuthoritativeCoopSimulation(
-                rules,
-                players,
-                targets,
-                requiredKills);
+                configuredRules,
+                configuredPlayers,
+                configuredTargets,
+                configuredRequiredKills,
+                configuredMission: configuredMission);
             simulation.SetStandingClearanceValidator(HasStandingClearance);
             simulation.SetShotObstructionResolver(ResolveShotObstruction);
             simulation.SetEnemyMovementResolver(ResolveEnemyMovement);
@@ -177,6 +196,7 @@ namespace FPS.Networking.Netcode
             }
             pendingCommands.Clear();
             pendingEconomyCommands.Clear();
+            pendingMissionCommands.Clear();
             pendingPresentationInputs.Clear();
             playerPresentation.Clear();
             offlinePresentationEvents.Clear();
@@ -207,11 +227,36 @@ namespace FPS.Networking.Netcode
             }
 
             playerByClient[clientId] = playerId;
+            if (simulation != null)
+            {
+                IReadOnlyList<AuthoritativeEvent> events =
+                    simulation.SetPlayerConnected(playerId, true);
+                lastSnapshot = simulation.CaptureSnapshot();
+                PublishSnapshot(lastSnapshot, events);
+            }
         }
 
         public void UnregisterPlayerClient(ulong clientId)
         {
             RequireServerWrite();
+            if (playerByClient.TryGetValue(clientId, out int playerId) &&
+                simulation != null)
+            {
+                pendingCommands.RemoveAll(value =>
+                    value.PlayerId == playerId);
+                pendingEconomyCommands.RemoveAll(value =>
+                    value.PlayerId == playerId);
+                pendingMissionCommands.RemoveAll(value =>
+                    value.PlayerId == playerId);
+                foreach (var key in new List<(int playerId, uint sequence)>(
+                             pendingPresentationInputs.Keys))
+                    if (key.playerId == playerId)
+                        pendingPresentationInputs.Remove(key);
+                IReadOnlyList<AuthoritativeEvent> events =
+                    simulation.SetPlayerConnected(playerId, false);
+                lastSnapshot = simulation.CaptureSnapshot();
+                PublishSnapshot(lastSnapshot, events);
+            }
             playerByClient.Remove(clientId);
         }
 
@@ -257,6 +302,17 @@ namespace FPS.Networking.Netcode
                 payload);
         }
 
+        [Rpc(SendTo.Server, InvokePermission = RpcInvokePermission.Everyone,
+            Delivery = RpcDelivery.Unreliable)]
+        public void SubmitMissionRpc(
+            NetcodeMissionCommand payload,
+            RpcParams rpcParams = default)
+        {
+            TryQueueMissionCommand(
+                rpcParams.Receive.SenderClientId,
+                payload);
+        }
+
         /// <summary>
         /// Server-side transport/authentication seam. This is public so a
         /// multi-process PlayMode fixture can inject the actual sender id.
@@ -296,6 +352,22 @@ namespace FPS.Networking.Netcode
                 return false;
             }
             pendingEconomyCommands.Add(payload.ToDomain());
+            return true;
+        }
+
+        public bool TryQueueMissionCommand(
+            ulong senderClientId,
+            NetcodeMissionCommand payload)
+        {
+            if (!CanServerWrite || simulation == null ||
+                !playerByClient.TryGetValue(senderClientId, out int playerId) ||
+                payload.PlayerId != playerId)
+            {
+                UnauthorizedCommandRejected?.Invoke(
+                    senderClientId, payload.PlayerId);
+                return false;
+            }
+            pendingMissionCommands.Add(payload.ToDomain());
             return true;
         }
 
@@ -401,7 +473,11 @@ namespace FPS.Networking.Netcode
             AuthoritativeEconomyCommand[] economyCommands =
                 pendingEconomyCommands.ToArray();
             pendingEconomyCommands.Clear();
-            lastResult = simulation.Step(commands, economyCommands);
+            AuthoritativeMissionCommand[] missionCommands =
+                pendingMissionCommands.ToArray();
+            pendingMissionCommands.Clear();
+            lastResult = simulation.Step(
+                commands, economyCommands, missionCommands);
             ApplyAcceptedPresentationInputs(lastResult.Commands);
             PublishShotEvents(lastResult);
             pendingPresentationInputs.Clear();
@@ -409,6 +485,37 @@ namespace FPS.Networking.Netcode
             PublishSnapshot(lastResult.Snapshot, lastResult.Events);
             ServerTickCompleted?.Invoke(lastResult);
             return lastResult;
+        }
+
+        public bool TryRestartMission(ulong senderClientId)
+        {
+            RequireServerWrite();
+            if (!playerByClient.TryGetValue(senderClientId, out int playerId) ||
+                playerId != 1 || configuredRules == null ||
+                configuredPlayers.Length == 0 ||
+                configuredTargets.Length == 0)
+                return false;
+            runGeneration++;
+            simulation = new AuthoritativeCoopSimulation(
+                configuredRules,
+                configuredPlayers,
+                configuredTargets,
+                configuredRequiredKills,
+                configuredMission: configuredMission);
+            simulation.InitializePlayerConnections(
+                playerByClient.Values.Distinct());
+            simulation.SetStandingClearanceValidator(HasStandingClearance);
+            simulation.SetShotObstructionResolver(ResolveShotObstruction);
+            simulation.SetEnemyMovementResolver(ResolveEnemyMovement);
+            pendingCommands.Clear();
+            pendingEconomyCommands.Clear();
+            pendingMissionCommands.Clear();
+            pendingPresentationInputs.Clear();
+            if (IsSpawned && IsServer) authorityEvents.Clear();
+            lastResult = null;
+            lastSnapshot = simulation.CaptureSnapshot();
+            PublishSnapshot(lastSnapshot, Array.Empty<AuthoritativeEvent>());
+            return true;
         }
 
         public int SpawnServerWorldDrop(
@@ -609,7 +716,8 @@ namespace FPS.Networking.Netcode
                     {
                         state = NetcodePlayerState.FromDomain(
                             snapshot.Tick,
-                            snapshot.Players[index]);
+                            snapshot.Players[index],
+                            snapshot.Mission.Player(playerId));
                         ApplyPresentationState(ref state);
                         return true;
                     }
@@ -755,6 +863,7 @@ namespace FPS.Networking.Netcode
         {
             pendingCommands.Clear();
             pendingEconomyCommands.Clear();
+            pendingMissionCommands.Clear();
             pendingPresentationInputs.Clear();
             playerByClient.Clear();
             playerPresentation.Clear();
@@ -767,6 +876,12 @@ namespace FPS.Networking.Netcode
             accumulatedSeconds = 0d;
             nextPresentationEventSequence = 0;
             nextShotEventSequence = 0;
+            configuredRules = null;
+            configuredPlayers = Array.Empty<CoopPlayerSpawn>();
+            configuredTargets = Array.Empty<CoopTargetSpawn>();
+            configuredMission = null;
+            configuredRequiredKills = 0;
+            runGeneration = 1;
         }
 
         private bool CanServerWrite => IsServer || testServerAuthority ||
@@ -788,6 +903,9 @@ namespace FPS.Networking.Netcode
         {
             if (!IsSpawned || !IsServer)
             {
+                worldState.Reset(BuildWorldState(snapshot,
+                    worldState.Value.LastEventSequence,
+                    worldState.Value.EconomyRevision + 1));
                 return;
             }
 
@@ -796,7 +914,9 @@ namespace FPS.Networking.Netcode
             {
                 NetcodePlayerState player = NetcodePlayerState.FromDomain(
                     snapshot.Tick,
-                    snapshot.Players[index]);
+                    snapshot.Players[index],
+                    snapshot.Mission.Player(
+                        snapshot.Players[index].PlayerId));
                 ApplyPresentationState(ref player);
                 int existingIndex = FindReplicatedPlayerIndex(player.PlayerId);
                 if (existingIndex >= 0) playerStates[existingIndex] = player;
@@ -821,6 +941,9 @@ namespace FPS.Networking.Netcode
             {
                 NetcodeTargetState replicated =
                     NetcodeTargetState.FromDomain(snapshot.Targets[index]);
+                if (runGeneration > 1)
+                    replicated.SpawnGeneration +=
+                        (runGeneration - 1) * 1000;
                 if (index >= targetStates.Count)
                 {
                     targetStates.Add(replicated);
@@ -899,7 +1022,18 @@ namespace FPS.Networking.Netcode
                 authorityEvents.RemoveAt(0);
             }
 
-            worldState.Value = new NetcodeWorldState
+            worldState.Value = BuildWorldState(snapshot, lastEventSequence,
+                worldState.Value.EconomyRevision + 1);
+        }
+
+        private NetcodeWorldState BuildWorldState(
+            AuthoritativeWorldSnapshot snapshot,
+            long lastEventSequence,
+            int economyRevision)
+        {
+            AuthoritativeMissionState mission = snapshot.Mission;
+            AuthoritativeMissionDefinition definition = mission.Definition;
+            return new NetcodeWorldState
             {
                 ServerTick = snapshot.Tick,
                 WaveStatus = snapshot.WaveStatus,
@@ -910,7 +1044,27 @@ namespace FPS.Networking.Netcode
                 PendingEnemyCount = snapshot.PendingTargets,
                 RemainingEnemyCount = snapshot.RemainingTargets,
                 LastEventSequence = lastEventSequence,
-                EconomyRevision = worldState.Value.EconomyRevision + 1
+                EconomyRevision = economyRevision,
+                RunGeneration = runGeneration,
+                MissionPhase = mission.Phase,
+                MissionOutcomeReason = mission.OutcomeReason,
+                MissionRevision = mission.Revision,
+                TerminalProgressTicks = mission.TerminalProgressTicks,
+                TerminalRequiredTicks = definition.TerminalHoldTicks,
+                ExtractionProgressTicks = mission.ExtractionProgressTicks,
+                ExtractionRequiredTicks = definition.ExtractionHoldTicks,
+                ReviveProgressTicks = mission.ReviveProgressTicks,
+                ReviveRequiredTicks = definition.ReviveHoldTicks,
+                TerminalPlayerId = mission.TerminalPlayerId,
+                RevivePlayerId = mission.RevivePlayerId,
+                DownedPlayerId = mission.DownedPlayerId,
+                TerminalPosition = NetcodeConversions.ToUnity(
+                    definition.TerminalPosition),
+                ExtractionPosition = NetcodeConversions.ToUnity(
+                    definition.ExtractionPosition),
+                TerminalRadius = (float)definition.TerminalRadius,
+                ExtractionRadius = (float)definition.ExtractionRadius,
+                ReviveRadius = (float)definition.ReviveRadius
             };
         }
 

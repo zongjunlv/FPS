@@ -1,4 +1,5 @@
 using System;
+using FPS.Networking.Domain;
 using UnityEngine;
 
 namespace FPS.Networking.Netcode
@@ -39,6 +40,20 @@ namespace FPS.Networking.Netcode
             if (replica == null || !replica.IsLocallyControlled ||
                 !replica.IsPresentationReady)
             {
+                return;
+            }
+            if (replica.PresentedLifeState !=
+                    AuthoritativePlayerLifeState.Alive ||
+                replica.Session.WorldState.MissionPhase ==
+                    AuthoritativeMissionPhase.Victory ||
+                replica.Session.WorldState.MissionPhase ==
+                    AuthoritativeMissionPhase.Defeat)
+            {
+                movement = Vector2.zero;
+                fireQueued = false;
+                jumpQueued = false;
+                sprintHeld = false;
+                aimingHeld = false;
                 return;
             }
 

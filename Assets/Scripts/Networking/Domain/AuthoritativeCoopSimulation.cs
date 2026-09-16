@@ -162,12 +162,15 @@ namespace FPS.Networking.Domain
     public sealed class AuthoritativeCoopSimulation
     {
         private const int EnemyRecycleDelayTicks = 15;
+        private const int InteractionHeartbeatGraceTicks = 6;
         private readonly CoopServerRules rules;
         private readonly Dictionary<int, MutablePlayer> players;
         private readonly Dictionary<int, MutableTarget> targets;
         private readonly Dictionary<string, AuthoritativeWeaponDefinition>
             weaponDefinitions;
         private readonly AuthoritativeCoopEconomy economy;
+        private readonly AuthoritativeMissionDefinition missionDefinition;
+        private readonly Dictionary<int, MutableMissionStats> missionStats;
         private readonly LinkedList<HistoryFrame> history = new();
         private readonly int requiredKills;
         private long currentTick;
@@ -182,6 +185,19 @@ namespace FPS.Networking.Domain
             enemyMovementResolver = (_, _, desired) => desired;
         private AuthoritativeWaveStatus waveStatus =
             AuthoritativeWaveStatus.Fighting;
+        private AuthoritativeMissionPhase missionPhase =
+            AuthoritativeMissionPhase.ClearEnemies;
+        private AuthoritativeMissionOutcomeReason missionOutcomeReason;
+        private int missionRevision = 1;
+        private int terminalProgressTicks;
+        private int extractionProgressTicks;
+        private int reviveProgressTicks;
+        private int terminalPlayerId;
+        private int revivePlayerId;
+        private int downedPlayerId;
+        private long terminalHeartbeatTick = long.MinValue;
+        private long reviveHeartbeatTick = long.MinValue;
+        private bool extractionStarted;
 
         public AuthoritativeCoopSimulation(
             CoopServerRules rules,
@@ -192,7 +208,8 @@ namespace FPS.Networking.Domain
             IEnumerable<AuthoritativeItemDefinition> configuredItems = null,
             IEnumerable<AuthoritativeUpgradeDefinition> configuredUpgrades = null,
             int runSeed = 18018,
-            int inventoryCapacity = 12)
+            int inventoryCapacity = 12,
+            AuthoritativeMissionDefinition configuredMission = null)
         {
             this.rules = rules ?? throw new ArgumentNullException(nameof(rules));
             weaponDefinitions = (configuredWeapons ??
@@ -226,6 +243,11 @@ namespace FPS.Networking.Domain
                 configuredUpgrades,
                 runSeed,
                 inventoryCapacity);
+            missionDefinition = configuredMission ??
+                AuthoritativeMissionDefinition.Default;
+            missionStats = players.Keys.ToDictionary(
+                value => value,
+                value => new MutableMissionStats(value));
             if (requiredKills < 0 || requiredKills > targets.Count)
                 throw new ArgumentOutOfRangeException(nameof(requiredKills));
             this.requiredKills = requiredKills == 0
@@ -248,6 +270,9 @@ namespace FPS.Networking.Domain
             targets.Values.Count(value => value.IsPending);
         public int AvailableEnemySlots =>
             targets.Count - ActiveEnemyCount;
+        private bool IsMissionOutcome =>
+            missionPhase == AuthoritativeMissionPhase.Victory ||
+            missionPhase == AuthoritativeMissionPhase.Defeat;
 
         public void SetStandingClearanceValidator(
             Func<int, NetVector3, bool> validator)
@@ -294,7 +319,11 @@ namespace FPS.Networking.Domain
                 return new WeaponActionResolution(false,
                     CommandRejectionReason.UnknownPlayer, action,
                     requestedWeaponId);
-            if (!player.IsAlive)
+            if (IsMissionOutcome)
+                return new WeaponActionResolution(false,
+                    CommandRejectionReason.InvalidMovement, action,
+                    requestedWeaponId);
+            if (!player.IsCombatActive)
                 return new WeaponActionResolution(false,
                     CommandRejectionReason.InvalidMovement, action,
                     requestedWeaponId);
@@ -363,6 +392,15 @@ namespace FPS.Networking.Domain
             IReadOnlyList<PlayerInputCommand> receivedCommands,
             IReadOnlyList<AuthoritativeEconomyCommand> economyCommands)
         {
+            return Step(receivedCommands, economyCommands,
+                Array.Empty<AuthoritativeMissionCommand>());
+        }
+
+        public AuthoritativeTickResult Step(
+            IReadOnlyList<PlayerInputCommand> receivedCommands,
+            IReadOnlyList<AuthoritativeEconomyCommand> economyCommands,
+            IReadOnlyList<AuthoritativeMissionCommand> missionCommands)
+        {
             currentTick++;
             var events = new List<AuthoritativeEvent>();
             AdvanceCombatState(events);
@@ -405,15 +443,44 @@ namespace FPS.Networking.Domain
                 .ToArray();
             foreach (AuthoritativeEconomyCommand command in orderedEconomy)
             {
-                AuthoritativeEconomyResolution resolution = economy.Apply(
-                    command,
-                    currentTick,
-                    PlayerPosition,
-                    ApplyAuthoritativeItem,
-                    ApplyAuthoritativeUpgrade);
+                AuthoritativeEconomyResolution resolution = IsMissionOutcome
+                    ? new AuthoritativeEconomyResolution(
+                        command, false,
+                        AuthoritativeEconomyRejection.MatchEnded)
+                    : economy.Apply(
+                        command,
+                        currentTick,
+                        PlayerPosition,
+                        ApplyAuthoritativeItem,
+                        ApplyAuthoritativeUpgrade);
                 economyResolutions.Add(resolution);
                 EmitEconomyResult(resolution, events);
+                if (resolution.Accepted && command.Kind ==
+                    AuthoritativeEconomyCommandKind.SelectUpgrade &&
+                    missionStats.TryGetValue(command.PlayerId,
+                        out MutableMissionStats stats))
+                    stats.UpgradesSelected++;
             }
+
+            var missionResolutions = new List<AuthoritativeMissionResolution>();
+            AuthoritativeMissionCommand[] orderedMission =
+                (missionCommands ?? Array.Empty<AuthoritativeMissionCommand>())
+                .OrderBy(value => value.PlayerId)
+                .ThenBy(value => value.Sequence)
+                .ToArray();
+            foreach (AuthoritativeMissionCommand command in orderedMission)
+            {
+                AuthoritativeMissionResolution resolution =
+                    ResolveMissionCommand(command, events);
+                missionResolutions.Add(resolution);
+                if (!resolution.Accepted)
+                    events.Add(Emit(
+                        AuthoritativeEventKind.MissionCommandRejected,
+                        command.PlayerId,
+                        command.TargetPlayerId,
+                        (double)resolution.Rejection));
+            }
+            AdvanceMission(events);
 
             CaptureHistory(currentTick);
             return new AuthoritativeTickResult(
@@ -421,7 +488,8 @@ namespace FPS.Networking.Domain
                 resolutions,
                 events,
                 CaptureSnapshot(),
-                economyResolutions);
+                economyResolutions,
+                missionResolutions);
         }
 
         public int SpawnServerWorldDrop(
@@ -475,8 +543,309 @@ namespace FPS.Networking.Domain
                 waveStatus,
                 killedTargets,
                 requiredKills,
-                economy.Snapshot());
+                economy.Snapshot(),
+                CaptureMissionState());
         }
+
+        public IReadOnlyList<AuthoritativeEvent> SetPlayerConnected(
+            int playerId,
+            bool connected)
+        {
+            if (!players.TryGetValue(playerId, out MutablePlayer player))
+                throw new ArgumentOutOfRangeException(nameof(playerId));
+            if (player.Connected == connected)
+                return Array.Empty<AuthoritativeEvent>();
+            var events = new List<AuthoritativeEvent>();
+            player.Connected = connected;
+            if (!connected)
+            {
+                events.Add(Emit(AuthoritativeEventKind.PlayerDisconnected,
+                    playerId, 0, 0d));
+                if (terminalPlayerId == playerId)
+                    ResetTerminalProgress();
+                if (revivePlayerId == playerId || downedPlayerId == playerId)
+                    ResetReviveProgress();
+                if (players.Values.All(value => !value.Connected))
+                    FailMission(AuthoritativeMissionOutcomeReason.AllPlayersLeft,
+                        playerId, events);
+            }
+            ReplaceCurrentHistory();
+            return events;
+        }
+
+        public void InitializePlayerConnections(
+            IEnumerable<int> connectedPlayerIds)
+        {
+            var connected = new HashSet<int>(connectedPlayerIds ??
+                Array.Empty<int>());
+            foreach (MutablePlayer player in players.Values)
+                player.Connected = connected.Contains(player.Id);
+            ResetTerminalProgress();
+            ResetReviveProgress();
+            ReplaceCurrentHistory();
+        }
+
+        private AuthoritativeMissionState CaptureMissionState() => new(
+            missionPhase,
+            missionOutcomeReason,
+            missionRevision,
+            terminalProgressTicks,
+            extractionProgressTicks,
+            reviveProgressTicks,
+            terminalPlayerId,
+            revivePlayerId,
+            downedPlayerId,
+            missionDefinition,
+            missionStats.Values.Select(value => value.Snapshot()));
+
+        private AuthoritativeMissionResolution ResolveMissionCommand(
+            AuthoritativeMissionCommand command,
+            ICollection<AuthoritativeEvent> events)
+        {
+            if (!players.TryGetValue(command.PlayerId, out MutablePlayer player))
+                return RejectMission(command,
+                    AuthoritativeMissionRejection.UnknownPlayer);
+            if (command.Sequence == 0 || player.HasMissionSequence &&
+                command.Sequence <= player.LastMissionSequence)
+                return RejectMission(command,
+                    AuthoritativeMissionRejection.InvalidSequence);
+            if (command.Nonce == 0 || player.MissionNonces.Contains(command.Nonce))
+                return RejectMission(command,
+                    AuthoritativeMissionRejection.DuplicateNonce);
+
+            player.HasMissionSequence = true;
+            player.LastMissionSequence = command.Sequence;
+            player.MissionNonces.Add(command.Nonce);
+            player.MissionNonceOrder.Enqueue(command.Nonce);
+            while (player.MissionNonceOrder.Count > rules.NonceHistoryCapacity)
+                player.MissionNonces.Remove(
+                    player.MissionNonceOrder.Dequeue());
+
+            if (missionPhase == AuthoritativeMissionPhase.Victory ||
+                missionPhase == AuthoritativeMissionPhase.Defeat)
+                return RejectMission(command,
+                    AuthoritativeMissionRejection.MatchEnded);
+            if (!player.IsCombatActive)
+                return RejectMission(command,
+                    AuthoritativeMissionRejection.PlayerUnavailable);
+
+            switch (command.Kind)
+            {
+                case AuthoritativeMissionCommandKind.HoldTerminal:
+                    if (missionPhase !=
+                        AuthoritativeMissionPhase.ActivateTerminal)
+                        return RejectMission(command,
+                            AuthoritativeMissionRejection.WrongPhase);
+                    if (!Within(player.Position,
+                            missionDefinition.TerminalPosition,
+                            missionDefinition.TerminalRadius))
+                        return RejectMission(command,
+                            AuthoritativeMissionRejection.OutOfRange);
+                    if (terminalPlayerId != command.PlayerId)
+                    {
+                        terminalPlayerId = command.PlayerId;
+                        terminalProgressTicks = 0;
+                        events.Add(Emit(
+                            AuthoritativeEventKind.TerminalInteractionStarted,
+                            command.PlayerId, 0, 0d));
+                    }
+                    terminalHeartbeatTick = currentTick;
+                    break;
+                case AuthoritativeMissionCommandKind.HoldRevive:
+                    if (!players.TryGetValue(command.TargetPlayerId,
+                            out MutablePlayer downed) ||
+                        command.TargetPlayerId == command.PlayerId ||
+                        !downed.Connected || downed.Health > 0d)
+                        return RejectMission(command,
+                            AuthoritativeMissionRejection.InvalidTarget);
+                    if (!Within(player.Position, downed.Position,
+                            missionDefinition.ReviveRadius))
+                        return RejectMission(command,
+                            AuthoritativeMissionRejection.OutOfRange);
+                    if (revivePlayerId != command.PlayerId ||
+                        downedPlayerId != command.TargetPlayerId)
+                    {
+                        revivePlayerId = command.PlayerId;
+                        downedPlayerId = command.TargetPlayerId;
+                        reviveProgressTicks = 0;
+                        events.Add(Emit(AuthoritativeEventKind.ReviveStarted,
+                            command.PlayerId, command.TargetPlayerId, 0d));
+                    }
+                    reviveHeartbeatTick = currentTick;
+                    break;
+                case AuthoritativeMissionCommandKind.StartExtraction:
+                    if (missionPhase != AuthoritativeMissionPhase.Extraction)
+                        return RejectMission(command,
+                            AuthoritativeMissionRejection.WrongPhase);
+                    if (!Within(player.Position,
+                            missionDefinition.ExtractionPosition,
+                            missionDefinition.ExtractionRadius))
+                        return RejectMission(command,
+                            AuthoritativeMissionRejection.OutOfRange);
+                    if (!extractionStarted)
+                    {
+                        extractionStarted = true;
+                        events.Add(Emit(
+                            AuthoritativeEventKind.ExtractionStarted,
+                            command.PlayerId, 0, 0d));
+                    }
+                    break;
+                default:
+                    return RejectMission(command,
+                        AuthoritativeMissionRejection.WrongPhase);
+            }
+
+            return new AuthoritativeMissionResolution(
+                command, true, AuthoritativeMissionRejection.None);
+        }
+
+        private void AdvanceMission(ICollection<AuthoritativeEvent> events)
+        {
+            if (missionPhase == AuthoritativeMissionPhase.Victory ||
+                missionPhase == AuthoritativeMissionPhase.Defeat)
+                return;
+
+            AdvanceRevive(events);
+            if (missionPhase == AuthoritativeMissionPhase.ClearEnemies &&
+                waveStatus == AuthoritativeWaveStatus.Completed)
+            {
+                SetMissionPhase(AuthoritativeMissionPhase.ActivateTerminal,
+                    events);
+            }
+
+            if (missionPhase == AuthoritativeMissionPhase.ActivateTerminal)
+            {
+                if (currentTick - terminalHeartbeatTick <=
+                        InteractionHeartbeatGraceTicks &&
+                    players.TryGetValue(terminalPlayerId,
+                        out MutablePlayer operatorPlayer) &&
+                    operatorPlayer.IsCombatActive &&
+                    Within(operatorPlayer.Position,
+                        missionDefinition.TerminalPosition,
+                        missionDefinition.TerminalRadius))
+                {
+                    terminalProgressTicks++;
+                    if (terminalProgressTicks >=
+                        missionDefinition.TerminalHoldTicks)
+                    {
+                        events.Add(Emit(
+                            AuthoritativeEventKind.TerminalInteractionCompleted,
+                            terminalPlayerId, 0, terminalProgressTicks));
+                        SetMissionPhase(AuthoritativeMissionPhase.Extraction,
+                            events);
+                    }
+                }
+                else if (terminalProgressTicks > 0 || terminalPlayerId > 0)
+                {
+                    ResetTerminalProgress();
+                }
+            }
+
+            if (missionPhase != AuthoritativeMissionPhase.Extraction ||
+                !extractionStarted) return;
+            MutablePlayer[] connected = players.Values
+                .Where(value => value.Connected).ToArray();
+            bool squadReady = connected.Length > 0 && connected.All(value =>
+                value.IsCombatActive && Within(value.Position,
+                    missionDefinition.ExtractionPosition,
+                    missionDefinition.ExtractionRadius));
+            if (!squadReady)
+            {
+                extractionProgressTicks = 0;
+                return;
+            }
+            extractionProgressTicks++;
+            if (extractionProgressTicks <
+                missionDefinition.ExtractionHoldTicks) return;
+            missionOutcomeReason =
+                AuthoritativeMissionOutcomeReason.Extracted;
+            SetMissionPhase(AuthoritativeMissionPhase.Victory, events);
+            events.Add(Emit(AuthoritativeEventKind.MissionSucceeded,
+                0, 0, currentTick));
+        }
+
+        private void AdvanceRevive(ICollection<AuthoritativeEvent> events)
+        {
+            if (revivePlayerId <= 0 || downedPlayerId <= 0) return;
+            if (currentTick - reviveHeartbeatTick >
+                    InteractionHeartbeatGraceTicks ||
+                !players.TryGetValue(revivePlayerId, out MutablePlayer helper) ||
+                !players.TryGetValue(downedPlayerId, out MutablePlayer downed) ||
+                !helper.IsCombatActive || !downed.Connected ||
+                downed.Health > 0d ||
+                !Within(helper.Position, downed.Position,
+                    missionDefinition.ReviveRadius))
+            {
+                ResetReviveProgress();
+                return;
+            }
+            reviveProgressTicks++;
+            if (reviveProgressTicks < missionDefinition.ReviveHoldTicks) return;
+            int revived = downedPlayerId;
+            int helperId = revivePlayerId;
+            downed.Health = Math.Min(downed.MaximumHealth,
+                missionDefinition.RevivedHealth);
+            ResetReviveProgress();
+            events.Add(Emit(AuthoritativeEventKind.PlayerRevived,
+                helperId, revived, downed.Health));
+        }
+
+        private void FailMission(
+            AuthoritativeMissionOutcomeReason reason,
+            int sourceId,
+            ICollection<AuthoritativeEvent> events)
+        {
+            if (missionPhase == AuthoritativeMissionPhase.Victory ||
+                missionPhase == AuthoritativeMissionPhase.Defeat)
+                return;
+            missionOutcomeReason = reason;
+            SetMissionPhase(AuthoritativeMissionPhase.Defeat, events);
+            events.Add(Emit(AuthoritativeEventKind.MissionFailed,
+                sourceId, 0, (double)reason));
+        }
+
+        private void SetMissionPhase(
+            AuthoritativeMissionPhase phase,
+            ICollection<AuthoritativeEvent> events)
+        {
+            if (missionPhase == phase) return;
+            missionPhase = phase;
+            missionRevision++;
+            if (phase != AuthoritativeMissionPhase.ActivateTerminal)
+                ResetTerminalProgress();
+            if (phase != AuthoritativeMissionPhase.Extraction)
+            {
+                extractionProgressTicks = 0;
+                extractionStarted = false;
+            }
+            events.Add(Emit(AuthoritativeEventKind.MissionPhaseChanged,
+                0, 0, (double)phase));
+        }
+
+        private void ResetTerminalProgress()
+        {
+            terminalProgressTicks = 0;
+            terminalPlayerId = 0;
+            terminalHeartbeatTick = long.MinValue;
+        }
+
+        private void ResetReviveProgress()
+        {
+            reviveProgressTicks = 0;
+            revivePlayerId = 0;
+            downedPlayerId = 0;
+            reviveHeartbeatTick = long.MinValue;
+        }
+
+        private static AuthoritativeMissionResolution RejectMission(
+            AuthoritativeMissionCommand command,
+            AuthoritativeMissionRejection rejection) => new(
+                command, false, rejection);
+
+        private static bool Within(
+            NetVector3 left,
+            NetVector3 right,
+            double radius) => PlanarDistance(left, right) <= radius;
 
         private NetVector3 PlayerPosition(int playerId) =>
             players.TryGetValue(playerId, out MutablePlayer player)
@@ -488,7 +857,7 @@ namespace FPS.Networking.Domain
             AuthoritativeItemDefinition item)
         {
             if (!players.TryGetValue(playerId, out MutablePlayer player) ||
-                !player.IsAlive)
+                !player.IsCombatActive)
                 return false;
             switch (item.Effect)
             {
@@ -518,7 +887,7 @@ namespace FPS.Networking.Domain
             AuthoritativeUpgradeDefinition upgrade)
         {
             if (!players.TryGetValue(playerId, out MutablePlayer player) ||
-                !player.IsAlive)
+                !player.IsCombatActive)
                 return false;
             switch (upgrade.Effect)
             {
@@ -650,7 +1019,7 @@ namespace FPS.Networking.Domain
                 waveStatus == AuthoritativeWaveStatus.Failed)
                 return;
             MutablePlayer[] livingPlayers = players.Values
-                .Where(value => value.IsAlive)
+                .Where(value => value.IsCombatActive)
                 .OrderBy(value => value.Id)
                 .ToArray();
             if (livingPlayers.Length == 0) return;
@@ -747,13 +1116,15 @@ namespace FPS.Networking.Domain
             int sourceTargetId,
             ICollection<AuthoritativeEvent> events)
         {
-            if (!target.IsAlive || damage <= 0d) return;
+            if (IsMissionOutcome || !target.IsCombatActive || damage <= 0d)
+                return;
             double armorDamage = Math.Min(target.Armor, damage);
             target.Armor -= armorDamage;
             damage -= armorDamage;
             double before = target.Health;
             target.Health = CoopGameplayRules.ApplyDamage(before, damage);
             double applied = armorDamage + before - target.Health;
+            missionStats[target.Id].DamageTaken += applied;
             events.Add(Emit(
                 AuthoritativeEventKind.PlayerDamaged,
                 sourceTargetId,
@@ -761,20 +1132,27 @@ namespace FPS.Networking.Domain
                 applied));
             if (target.IsAlive) return;
             events.Add(Emit(
+                AuthoritativeEventKind.PlayerDowned,
+                sourceTargetId,
+                target.Id,
+                0d));
+            events.Add(Emit(
                 AuthoritativeEventKind.PlayerKilled,
                 sourceTargetId,
                 target.Id,
                 0d));
-            if (players.Values.Any(value => value.IsAlive)) return;
-            if (waveStatus == AuthoritativeWaveStatus.Completed ||
-                waveStatus == AuthoritativeWaveStatus.Failed)
-                return;
-            waveStatus = AuthoritativeWaveStatus.Failed;
-            events.Add(Emit(
-                AuthoritativeEventKind.WaveFailed,
-                sourceTargetId,
-                0,
-                0d));
+            if (players.Values.Any(value => value.IsCombatActive)) return;
+            if (waveStatus != AuthoritativeWaveStatus.Failed)
+            {
+                waveStatus = AuthoritativeWaveStatus.Failed;
+                events.Add(Emit(
+                    AuthoritativeEventKind.WaveFailed,
+                    sourceTargetId,
+                    0,
+                    0d));
+            }
+            FailMission(AuthoritativeMissionOutcomeReason.SquadWiped,
+                sourceTargetId, events);
         }
 
         private static double PlanarDistance(
@@ -791,6 +1169,8 @@ namespace FPS.Networking.Domain
             ICollection<AuthoritativeEvent> events)
         {
             if (!players.TryGetValue(command.PlayerId, out MutablePlayer player))
+                return Rejected(command, CommandRejectionReason.UnknownPlayer);
+            if (!player.Connected)
                 return Rejected(command, CommandRejectionReason.UnknownPlayer);
             CommandRejectionReason identityError = ValidateAndReserveIdentity(
                 player,
@@ -874,7 +1254,9 @@ namespace FPS.Networking.Domain
                 ? 1
                 : (int)Math.Max(1L, command.ClientTick - player.LastClientTick);
             nextMovement = player.Movement;
-            if (!player.IsAlive)
+            if (IsMissionOutcome)
+                return CommandRejectionReason.InvalidMovement;
+            if (!player.IsCombatActive)
                 return CommandRejectionReason.InvalidMovement;
             if (player.LastClientTick != long.MinValue &&
                 command.ClientTick <= player.LastClientTick)
@@ -1075,6 +1457,7 @@ namespace FPS.Networking.Domain
                 selected.Health,
                 damage);
             double applied = before - selected.Health;
+            missionStats[shooter.Id].DamageDealt += applied;
             events.Add(Emit(
                 AuthoritativeEventKind.TargetDamaged,
                 shooter.Id,
@@ -1101,6 +1484,7 @@ namespace FPS.Networking.Domain
             selected.TargetPlayerId = 0;
             selected.RecycleTick = currentTick + EnemyRecycleDelayTicks;
             killedTargets++;
+            missionStats[shooter.Id].Kills++;
             events.Add(Emit(
                 AuthoritativeEventKind.TargetKilled,
                 shooter.Id,
@@ -1359,7 +1743,13 @@ namespace FPS.Networking.Domain
                 new(StringComparer.Ordinal);
             public readonly HashSet<ulong> Nonces = new();
             public readonly Queue<ulong> NonceOrder = new();
+            public bool Connected = true;
+            public bool HasMissionSequence;
+            public uint LastMissionSequence;
+            public readonly HashSet<ulong> MissionNonces = new();
+            public readonly Queue<ulong> MissionNonceOrder = new();
             public bool IsAlive => Health > 0d;
+            public bool IsCombatActive => Connected && IsAlive;
             public bool IsSwitching => SwitchEndTick > 0;
             public MutableWeapon EquippedWeapon =>
                 Weapons[EquippedWeaponId];
@@ -1414,8 +1804,31 @@ namespace FPS.Networking.Domain
                         .ToArray(),
                     MaximumHealth,
                     Armor,
-                    MaximumArmor);
+                    MaximumArmor,
+                    !Connected
+                        ? AuthoritativePlayerLifeState.Disconnected
+                        : IsAlive
+                            ? AuthoritativePlayerLifeState.Alive
+                            : AuthoritativePlayerLifeState.Downed);
             }
+        }
+
+        private sealed class MutableMissionStats
+        {
+            public MutableMissionStats(int playerId)
+            {
+                PlayerId = playerId;
+            }
+
+            public readonly int PlayerId;
+            public int Kills;
+            public double DamageDealt;
+            public double DamageTaken;
+            public int UpgradesSelected;
+
+            public AuthoritativePlayerMissionStats Snapshot() => new(
+                PlayerId, Kills, DamageDealt, DamageTaken,
+                UpgradesSelected);
         }
 
         private sealed class MutableWeapon

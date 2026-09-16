@@ -27,6 +27,8 @@ namespace FPS.Networking.Session
             {
                 if (existing.GetComponent<CoopEconomyHudPresenter>() == null)
                     existing.gameObject.AddComponent<CoopEconomyHudPresenter>();
+                if (existing.GetComponent<CoopMissionHudPresenter>() == null)
+                    existing.gameObject.AddComponent<CoopMissionHudPresenter>();
                 return existing;
             }
 
@@ -34,6 +36,7 @@ namespace FPS.Networking.Session
             runtime.AddComponent<CoopSessionController>();
             runtime.AddComponent<CoopSessionOverlay>();
             runtime.AddComponent<CoopEconomyHudPresenter>();
+            runtime.AddComponent<CoopMissionHudPresenter>();
             UnityEngine.Object.DontDestroyOnLoad(runtime);
             CoopSessionController controller =
                 runtime.GetComponent<CoopSessionController>();
