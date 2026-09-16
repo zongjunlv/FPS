@@ -746,7 +746,9 @@ namespace FPS.Networking.Session
                     Position = origin + forward * 15f,
                     Radius = 1.25f,
                     Health = 68f,
-                    DropDefinitionId = "medkit"
+                    DropDefinitionId = "medkit",
+                    HeadOffset = new Vector3(0f, 0.85f, 0f),
+                    HeadRadius = 0.32f
                 }
             };
         }
@@ -761,7 +763,9 @@ namespace FPS.Networking.Session
                     Position = new Vector3(49.761f, 0.16f, 74.719f),
                     Radius = 1.25f,
                     Health = 68f,
-                    DropDefinitionId = "medkit"
+                    DropDefinitionId = "medkit",
+                    HeadOffset = new Vector3(0f, 0.85f, 0f),
+                    HeadRadius = 0.32f
                 }
             };
         }

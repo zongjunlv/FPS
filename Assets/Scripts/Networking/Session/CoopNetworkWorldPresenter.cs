@@ -10,6 +10,12 @@ namespace FPS.Networking.Session
         private readonly Dictionary<int, GameObject> targetViews = new();
         private NetworkCoopSessionAuthority authority;
 
+        public bool TryGetTargetView(int targetId, out GameObject view)
+        {
+            return targetViews.TryGetValue(targetId, out view) &&
+                view != null;
+        }
+
         private void Update()
         {
             if (authority == null)

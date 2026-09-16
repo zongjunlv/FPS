@@ -13,6 +13,7 @@
     "FPS.AI.HybridEcs",
     "FPS.Performance.HybridAi",
     "FPS.Networking.Netcode",
+    "FPS.Networking.Domain",
     "FPS.Networking.Session",
     "FPS.Inventory",
     "FPS.UI",

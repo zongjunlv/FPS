@@ -255,7 +255,9 @@ namespace FPS.Networking.Domain
             NetVector3 position,
             double radius,
             double health,
-            string dropDefinitionId = "")
+            string dropDefinitionId = "",
+            NetVector3 headOffset = default,
+            double headRadius = 0d)
         {
             if (targetId <= 0) throw new ArgumentOutOfRangeException(nameof(targetId));
             if (!position.IsFinite) throw new ArgumentOutOfRangeException(nameof(position));
@@ -263,11 +265,18 @@ namespace FPS.Networking.Domain
                 throw new ArgumentOutOfRangeException(nameof(radius));
             if (health <= 0d || double.IsNaN(health) || double.IsInfinity(health))
                 throw new ArgumentOutOfRangeException(nameof(health));
+            if (!headOffset.IsFinite)
+                throw new ArgumentOutOfRangeException(nameof(headOffset));
+            if (headRadius < 0d || double.IsNaN(headRadius) ||
+                double.IsInfinity(headRadius))
+                throw new ArgumentOutOfRangeException(nameof(headRadius));
             TargetId = targetId;
             Position = position;
             Radius = radius;
             Health = health;
             DropDefinitionId = dropDefinitionId ?? string.Empty;
+            HeadOffset = headOffset;
+            HeadRadius = headRadius;
         }
 
         public int TargetId { get; }
@@ -275,6 +284,8 @@ namespace FPS.Networking.Domain
         public double Radius { get; }
         public double Health { get; }
         public string DropDefinitionId { get; }
+        public NetVector3 HeadOffset { get; }
+        public double HeadRadius { get; }
     }
 
     public readonly struct PlayerInputCommand
@@ -311,6 +322,29 @@ namespace FPS.Networking.Domain
             bool jumpPressed,
             bool sprintHeld,
             bool crouchRequested)
+            : this(playerId, sequence, nonce, clientTick, moveX, moveZ,
+                aimYawDegrees, aimPitchDegrees, fire, claimedPosition,
+                jumpPressed, sprintHeld, crouchRequested,
+                "weapon.rifle", claimedPosition)
+        {
+        }
+
+        public PlayerInputCommand(
+            int playerId,
+            uint sequence,
+            ulong nonce,
+            long clientTick,
+            double moveX,
+            double moveZ,
+            double aimYawDegrees,
+            double aimPitchDegrees,
+            bool fire,
+            NetVector3 claimedPosition,
+            bool jumpPressed,
+            bool sprintHeld,
+            bool crouchRequested,
+            string weaponId,
+            NetVector3 shotOrigin)
         {
             PlayerId = playerId;
             Sequence = sequence;
@@ -325,6 +359,10 @@ namespace FPS.Networking.Domain
             JumpPressed = jumpPressed;
             SprintHeld = sprintHeld;
             CrouchRequested = crouchRequested;
+            WeaponId = string.IsNullOrWhiteSpace(weaponId)
+                ? "weapon.rifle"
+                : weaponId.Trim();
+            ShotOrigin = shotOrigin;
         }
 
         public int PlayerId { get; }
@@ -340,6 +378,8 @@ namespace FPS.Networking.Domain
         public bool JumpPressed { get; }
         public bool SprintHeld { get; }
         public bool CrouchRequested { get; }
+        public string WeaponId { get; }
+        public NetVector3 ShotOrigin { get; }
     }
 
     public enum CommandRejectionReason
@@ -356,6 +396,14 @@ namespace FPS.Networking.Domain
         InvalidAim,
         AimRateExceeded,
         FireRateExceeded,
+        UnknownWeapon,
+        WeaponMismatch,
+        OutOfAmmo,
+        Reloading,
+        Switching,
+        CannotReload,
+        InvalidShotOrigin,
+        LineOfSightBlocked,
         JumpRateExceeded,
         StanceBlocked
     }
@@ -365,7 +413,8 @@ namespace FPS.Networking.Domain
         NotRequested,
         Miss,
         Hit,
-        Killed
+        Killed,
+        Blocked
     }
 
     public readonly struct ShotResolution
@@ -375,17 +424,49 @@ namespace FPS.Networking.Domain
             long rewoundTick,
             int targetId,
             double appliedDamage)
+            : this(kind, rewoundTick, targetId, appliedDamage,
+                0, string.Empty, default, default, default,
+                AuthoritativeHitRegion.None, AuthoritativeSurface.None)
+        {
+        }
+
+        public ShotResolution(
+            ShotResolutionKind kind,
+            long rewoundTick,
+            int targetId,
+            double appliedDamage,
+            uint shotSequence,
+            string weaponId,
+            NetVector3 origin,
+            NetVector3 endPoint,
+            NetVector3 normal,
+            AuthoritativeHitRegion hitRegion,
+            AuthoritativeSurface surface)
         {
             Kind = kind;
             RewoundTick = rewoundTick;
             TargetId = targetId;
             AppliedDamage = appliedDamage;
+            ShotSequence = shotSequence;
+            WeaponId = weaponId ?? string.Empty;
+            Origin = origin;
+            EndPoint = endPoint;
+            Normal = normal;
+            HitRegion = hitRegion;
+            Surface = surface;
         }
 
         public ShotResolutionKind Kind { get; }
         public long RewoundTick { get; }
         public int TargetId { get; }
         public double AppliedDamage { get; }
+        public uint ShotSequence { get; }
+        public string WeaponId { get; }
+        public NetVector3 Origin { get; }
+        public NetVector3 EndPoint { get; }
+        public NetVector3 Normal { get; }
+        public AuthoritativeHitRegion HitRegion { get; }
+        public AuthoritativeSurface Surface { get; }
         public bool DidHit => Kind == ShotResolutionKind.Hit ||
             Kind == ShotResolutionKind.Killed;
     }
@@ -421,6 +502,10 @@ namespace FPS.Networking.Domain
         PlayerKilled,
         WaveCompleted,
         WaveFailed,
+        ReloadStarted,
+        ReloadCompleted,
+        WeaponSwitchStarted,
+        WeaponSwitchCompleted,
         CommandRejected
     }
 
@@ -486,6 +571,35 @@ namespace FPS.Networking.Domain
             bool grounded,
             long lastJumpTick,
             double groundHeight)
+            : this(playerId, position, health, acknowledgedSequence,
+                aimYawDegrees, aimPitchDegrees, velocity, stance, grounded,
+                lastJumpTick, groundHeight, "weapon.rifle", 0, 0,
+                false, 0, false, string.Empty, 0,
+                Array.Empty<AuthoritativeWeaponState>())
+        {
+        }
+
+        public AuthoritativePlayerState(
+            int playerId,
+            NetVector3 position,
+            double health,
+            uint acknowledgedSequence,
+            double aimYawDegrees,
+            double aimPitchDegrees,
+            NetVector3 velocity,
+            PlayerStance stance,
+            bool grounded,
+            long lastJumpTick,
+            double groundHeight,
+            string equippedWeaponId,
+            int magazineAmmo,
+            int reserveAmmo,
+            bool reloading,
+            long reloadEndTick,
+            bool switching,
+            string pendingWeaponId,
+            long switchEndTick,
+            IReadOnlyList<AuthoritativeWeaponState> weapons)
         {
             PlayerId = playerId;
             Position = position;
@@ -498,6 +612,15 @@ namespace FPS.Networking.Domain
             Grounded = grounded;
             LastJumpTick = lastJumpTick;
             GroundHeight = groundHeight;
+            EquippedWeaponId = equippedWeaponId ?? string.Empty;
+            MagazineAmmo = Math.Max(0, magazineAmmo);
+            ReserveAmmo = Math.Max(0, reserveAmmo);
+            Reloading = reloading;
+            ReloadEndTick = reloadEndTick;
+            Switching = switching;
+            PendingWeaponId = pendingWeaponId ?? string.Empty;
+            SwitchEndTick = switchEndTick;
+            Weapons = weapons ?? Array.Empty<AuthoritativeWeaponState>();
         }
 
         public int PlayerId { get; }
@@ -511,6 +634,15 @@ namespace FPS.Networking.Domain
         public bool Grounded { get; }
         public long LastJumpTick { get; }
         public double GroundHeight { get; }
+        public string EquippedWeaponId { get; }
+        public int MagazineAmmo { get; }
+        public int ReserveAmmo { get; }
+        public bool Reloading { get; }
+        public long ReloadEndTick { get; }
+        public bool Switching { get; }
+        public string PendingWeaponId { get; }
+        public long SwitchEndTick { get; }
+        public IReadOnlyList<AuthoritativeWeaponState> Weapons { get; }
         public bool IsCrouching => Stance == PlayerStance.Crouching;
         public bool IsAlive => Health > 0d;
 
@@ -532,13 +664,17 @@ namespace FPS.Networking.Domain
             NetVector3 position,
             double radius,
             double health,
-            string dropDefinitionId)
+            string dropDefinitionId,
+            NetVector3 headOffset = default,
+            double headRadius = 0d)
         {
             TargetId = targetId;
             Position = position;
             Radius = radius;
             Health = health;
             DropDefinitionId = dropDefinitionId ?? string.Empty;
+            HeadOffset = headOffset;
+            HeadRadius = headRadius;
         }
 
         public int TargetId { get; }
@@ -546,6 +682,8 @@ namespace FPS.Networking.Domain
         public double Radius { get; }
         public double Health { get; }
         public string DropDefinitionId { get; }
+        public NetVector3 HeadOffset { get; }
+        public double HeadRadius { get; }
         public bool IsAlive => Health > 0d;
     }
 

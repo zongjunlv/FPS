@@ -74,6 +74,12 @@ namespace FPS.Tests.PlayMode.Issue65
         {
             NetworkCoopSessionAuthority authority = CreateAuthority();
             authority.RegisterPlayerClient(10, 1);
+            NetcodePlayerCommand shot = NetcodePlayerCommand.FromDomain(
+                new PlayerInputCommand(
+                    1, 1, 1001, 1, 0d, 0d, 0d, 0d,
+                    fire: true, claimedPosition: default));
+            Assert.That(authority.TryQueueCommand(10, shot, true), Is.True);
+            Assert.That(authority.ServerStep().Commands[0].Accepted, Is.True);
             NetworkPlayerReplica replica = CreateReplica(authority);
             NetworkThirdPersonAnimator driver =
                 replicaObject.AddComponent<NetworkThirdPersonAnimator>();

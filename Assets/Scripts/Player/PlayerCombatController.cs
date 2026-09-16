@@ -192,6 +192,70 @@ public class PlayerCombatController : MonoBehaviour
         return loadout.TrySelect(targetIndex);
     }
 
+    public bool TryPredictNetworkFire()
+    {
+        if (!IsInitialized || EquippedWeapon == null ||
+            playerController.IsPaused || playerController.IsSprinting ||
+            loadout.IsSwitching)
+            return false;
+        EquippedWeapon.SetFiringContext(
+            playerController.AimBlend,
+            input.Move.magnitude,
+            playerController.IsSprinting);
+        playerRecoil.SetMovementAmount(input.Move.magnitude);
+        if (!EquippedWeapon.TryPredictNetworkFire()) return false;
+        playerRecoil.AddRecoil(
+            EquippedWeapon.CurrentVerticalRecoil,
+            EquippedWeapon.CurrentHorizontalRecoil);
+        return true;
+    }
+
+    public bool PresentAuthoritativeNetworkShot(
+        string weaponId,
+        Vector3 origin,
+        Vector3 endPoint,
+        ShotResult result)
+    {
+        if (!TryFindWeapon(weaponId, out WeaponController source))
+            return false;
+        source.PresentAuthoritativeNetworkShot(origin, endPoint, result);
+        if (source != EquippedWeapon)
+            ShotResolved?.Invoke(result);
+        return true;
+    }
+
+    public bool ReconcileAuthoritativeAmmo(
+        string weaponId,
+        int magazine,
+        int reserve)
+    {
+        return TryFindWeapon(weaponId, out WeaponController source) &&
+            source.ReconcileNetworkAmmo(magazine, reserve);
+    }
+
+    public bool TryFindWeapon(
+        string weaponId,
+        out WeaponController result)
+    {
+        string normalized = weaponId?.Trim() ?? string.Empty;
+        for (int index = 0; index < WeaponCount; index++)
+        {
+            WeaponController candidate = GetWeapon(index);
+            if (candidate == null) continue;
+            string stableId = candidate.StableId;
+            bool matches = string.Equals(stableId, normalized,
+                System.StringComparison.Ordinal) ||
+                normalized == "weapon.lpsp.ar" && stableId == "weapon.rifle" ||
+                normalized == "weapon.lpsp.handgun" &&
+                    stableId == "weapon.pistol";
+            if (!matches) continue;
+            result = candidate;
+            return true;
+        }
+        result = null;
+        return false;
+    }
+
     public bool CancelWeaponSwitch()
     {
         return loadout.Interrupt();

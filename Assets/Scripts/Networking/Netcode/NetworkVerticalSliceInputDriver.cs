@@ -27,6 +27,7 @@ namespace FPS.Networking.Netcode
         public long ClientTick => clientTick;
         public NetcodePlayerCommand LastSubmittedCommand { get; private set; }
         public bool HasSubmittedCommand { get; private set; }
+        public event Action<NetcodePlayerCommand> CommandSubmitted;
 
         private void Awake()
         {
@@ -98,6 +99,13 @@ namespace FPS.Networking.Netcode
             aimingHeld = aiming;
         }
 
+        public void SetCombatFrame(string gameplayWeaponId, Vector3 shotOrigin)
+        {
+            if (replica == null)
+                replica = GetComponent<NetworkPlayerReplica>();
+            replica?.ConfigureLocalCombatContext(gameplayWeaponId, shotOrigin);
+        }
+
         public NetcodePlayerCommand SubmitCurrentFrame()
         {
             if (replica == null)
@@ -130,6 +138,7 @@ namespace FPS.Networking.Netcode
                 crouchRequested,
                 aimingHeld);
             HasSubmittedCommand = true;
+            CommandSubmitted?.Invoke(LastSubmittedCommand);
             return LastSubmittedCommand;
         }
 

@@ -37,14 +37,22 @@ namespace FPS.Networking.Netcode
         private uint nextPresentationSequence = 1;
         private long lastConsumedServerTick = -1;
         private long lastPresentationEventSequence;
+        private long lastShotEventSequence;
         private bool presentationBaselineInitialized;
+        private bool shotBaselineInitialized;
         private double estimatedServerTick;
         private bool ownerTestHook;
         private string currentAppearanceId =
             NetworkPresentationIds.DefaultAppearance;
         private string currentWeaponId = NetworkPresentationIds.DefaultWeapon;
+        private string localGameplayWeaponId =
+            NetworkPresentationIds.RifleGameplay;
+        private Vector3 localShotOrigin;
+        private bool hasLocalShotOrigin;
         private readonly List<NetcodePresentationEvent>
             pendingPresentationEvents = new();
+        private readonly List<NetcodeShotFeedbackEvent> pendingShotEvents =
+            new();
 
         public int PlayerId => playerId;
         public Vector3 PresentedPosition { get; private set; }
@@ -73,14 +81,24 @@ namespace FPS.Networking.Netcode
         public string WeaponId => currentWeaponId;
         public long LastPresentationEventSequence =>
             lastPresentationEventSequence;
+        public long LastShotEventSequence => lastShotEventSequence;
+        public int PresentedMagazineAmmo { get; private set; }
+        public int PresentedReserveAmmo { get; private set; }
+        public uint PresentedAcknowledgedSequence { get; private set; }
+        public bool PresentedReloading { get; private set; }
+        public bool PresentedSwitching { get; private set; }
+        public string CombatWeaponId { get; private set; } =
+            NetworkPresentationIds.RifleGameplay;
         public bool IsLocallyControlled => IsOwner || ownerTestHook;
         public bool IsPresentationReady => session != null &&
             session.Rules != null;
+        public bool HasConsumedServerState => lastConsumedServerTick >= 0;
         public event Action<Vector3, float, float, bool, bool> PosePresented;
         public event Action<string> AppearanceChanged;
         public event Action<string> WeaponChanged;
         public event Action<NetworkPresentationAction>
             PresentationActionReceived;
+        public event Action<NetcodeShotFeedbackEvent> ShotFeedbackReceived;
         private double predictionErrorSum;
 
         public override void OnNetworkSpawn()
@@ -288,12 +306,30 @@ namespace FPS.Networking.Netcode
                 predicted,
                 jumpPressed,
                 sprintHeld,
-                crouchRequested));
+                crouchRequested,
+                localGameplayWeaponId,
+                hasLocalShotOrigin
+                    ? NetcodeConversions.ToDomain(localShotOrigin)
+                    : predicted));
             payload.AimingHeld = aimingHeld;
             PresentedSprinting = sprintHeld && !crouchRequested &&
                 moveZ > 0.1f;
             PresentedAiming = aimingHeld && !PresentedSprinting;
             return payload;
+        }
+
+        public void ConfigureLocalCombatContext(
+            string gameplayWeaponId,
+            Vector3 shotOrigin)
+        {
+            string normalized = gameplayWeaponId?.Trim() ?? string.Empty;
+            localGameplayWeaponId = string.Equals(normalized,
+                NetworkPresentationIds.HandgunGameplay,
+                StringComparison.Ordinal)
+                ? NetworkPresentationIds.HandgunGameplay
+                : NetworkPresentationIds.RifleGameplay;
+            localShotOrigin = shotOrigin;
+            hasLocalShotOrigin = true;
         }
 
         public NetcodePlayerCommand SubmitLocalCommand(
@@ -461,6 +497,7 @@ namespace FPS.Networking.Netcode
             }
 
             ConsumeAvailablePresentationEvents();
+            ConsumeAvailableShotEvents();
 
             if (!treatAsLocalOwner)
             {
@@ -503,8 +540,11 @@ namespace FPS.Networking.Netcode
             nextSequence = 1;
             nextPresentationSequence = 1;
             lastPresentationEventSequence = 0;
+            lastShotEventSequence = 0;
             presentationBaselineInitialized = false;
+            shotBaselineInitialized = false;
             pendingPresentationEvents.Clear();
+            pendingShotEvents.Clear();
             PresentedPosition = transform.position;
             PresentedAimYaw = transform.eulerAngles.y;
             PresentedAimPitch = 0f;
@@ -514,6 +554,14 @@ namespace FPS.Networking.Netcode
             PresentedSprinting = false;
             PresentedAiming = false;
             PresentedAlive = true;
+            PresentedMagazineAmmo = 0;
+            PresentedReserveAmmo = 0;
+            PresentedAcknowledgedSequence = 0;
+            PresentedReloading = false;
+            PresentedSwitching = false;
+            CombatWeaponId = NetworkPresentationIds.RifleGameplay;
+            localGameplayWeaponId = NetworkPresentationIds.RifleGameplay;
+            hasLocalShotOrigin = false;
             PredictionSampleCount = 0;
             PredictionCorrectionCount = 0;
             MaximumPredictionError = 0d;
@@ -662,6 +710,15 @@ namespace FPS.Networking.Netcode
             ApplyWeapon(state.WeaponId.ToString());
             PresentedSprinting = state.Sprinting;
             PresentedAiming = state.Aiming;
+            PresentedMagazineAmmo = state.MagazineAmmo;
+            PresentedReserveAmmo = state.ReserveAmmo;
+            PresentedAcknowledgedSequence = state.AcknowledgedSequence;
+            PresentedReloading = state.Reloading;
+            PresentedSwitching = state.Switching;
+            CombatWeaponId = state.CombatWeaponId.IsEmpty
+                ? NetworkPresentationIds.ToGameplayWeaponId(
+                    state.WeaponId.ToString())
+                : state.CombatWeaponId.ToString();
             nextPresentationSequence = Math.Max(
                 nextPresentationSequence,
                 state.AcknowledgedPresentationCommandSequence + 1);
@@ -671,6 +728,13 @@ namespace FPS.Networking.Netcode
                 lastPresentationEventSequence = Math.Max(
                     lastPresentationEventSequence,
                     state.LastPresentationEventSequence);
+            }
+            if (!shotBaselineInitialized)
+            {
+                shotBaselineInitialized = true;
+                lastShotEventSequence = Math.Max(
+                    lastShotEventSequence,
+                    state.LastShotEventSequence);
             }
         }
 
@@ -685,6 +749,27 @@ namespace FPS.Networking.Netcode
                  index < pendingPresentationEvents.Count;
                  index++)
                 ConsumePresentationEvent(pendingPresentationEvents[index]);
+        }
+
+        public bool ConsumeShotFeedbackEvent(NetcodeShotFeedbackEvent value)
+        {
+            if (value.ShooterPlayerId != playerId ||
+                value.Sequence <= lastShotEventSequence)
+                return false;
+            lastShotEventSequence = value.Sequence;
+            ShotFeedbackReceived?.Invoke(value);
+            return true;
+        }
+
+        private void ConsumeAvailableShotEvents()
+        {
+            if (!shotBaselineInitialized || session == null) return;
+            session.GetShotEventsAfter(
+                playerId,
+                lastShotEventSequence,
+                pendingShotEvents);
+            for (int index = 0; index < pendingShotEvents.Count; index++)
+                ConsumeShotFeedbackEvent(pendingShotEvents[index]);
         }
 
         private void ApplyAppearance(string value)

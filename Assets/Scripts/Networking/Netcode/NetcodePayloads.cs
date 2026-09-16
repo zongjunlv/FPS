@@ -27,6 +27,8 @@ namespace FPS.Networking.Netcode
         public const string DefaultWeapon = "weapon.lpsp.ar";
         public const string Rifle = "weapon.lpsp.ar";
         public const string Handgun = "weapon.lpsp.handgun";
+        public const string RifleGameplay = "weapon.rifle";
+        public const string HandgunGameplay = "weapon.pistol";
 
         private static readonly string[] AppearanceWhitelist =
         {
@@ -76,6 +78,24 @@ namespace FPS.Networking.Netcode
             TryResolveWeapon(value, out string resolved)
                 ? resolved
                 : DefaultWeapon;
+
+        public static string ToGameplayWeaponId(string value)
+        {
+            string presentation = ResolveWeaponOrDefault(value);
+            return string.Equals(presentation, Handgun,
+                StringComparison.Ordinal)
+                ? HandgunGameplay
+                : RifleGameplay;
+        }
+
+        public static string ToPresentationWeaponId(string value)
+        {
+            string normalized = value?.Trim() ?? string.Empty;
+            return string.Equals(normalized, HandgunGameplay,
+                StringComparison.Ordinal)
+                ? Handgun
+                : Rifle;
+        }
     }
 
     public struct NetcodePresentationCommand : INetworkSerializable,
@@ -279,6 +299,8 @@ namespace FPS.Networking.Netcode
         public bool SprintHeld;
         public bool CrouchRequested;
         public bool AimingHeld;
+        public FixedString64Bytes WeaponId;
+        public Vector3 ShotOrigin;
 
         public static NetcodePlayerCommand FromDomain(PlayerInputCommand value)
         {
@@ -296,7 +318,9 @@ namespace FPS.Networking.Netcode
                 ClaimedPosition = NetcodeConversions.ToUnity(value.ClaimedPosition),
                 JumpPressed = value.JumpPressed,
                 SprintHeld = value.SprintHeld,
-                CrouchRequested = value.CrouchRequested
+                CrouchRequested = value.CrouchRequested,
+                WeaponId = value.WeaponId,
+                ShotOrigin = NetcodeConversions.ToUnity(value.ShotOrigin)
             };
         }
 
@@ -315,7 +339,11 @@ namespace FPS.Networking.Netcode
                 NetcodeConversions.ToDomain(ClaimedPosition),
                 JumpPressed,
                 SprintHeld,
-                CrouchRequested);
+                CrouchRequested,
+                WeaponId.IsEmpty
+                    ? NetworkPresentationIds.RifleGameplay
+                    : WeaponId.ToString(),
+                NetcodeConversions.ToDomain(ShotOrigin));
         }
 
         public void NetworkSerialize<T>(BufferSerializer<T> serializer)
@@ -335,6 +363,8 @@ namespace FPS.Networking.Netcode
             serializer.SerializeValue(ref SprintHeld);
             serializer.SerializeValue(ref CrouchRequested);
             serializer.SerializeValue(ref AimingHeld);
+            serializer.SerializeValue(ref WeaponId);
+            serializer.SerializeValue(ref ShotOrigin);
         }
 
         public bool Equals(NetcodePlayerCommand other)
@@ -349,7 +379,9 @@ namespace FPS.Networking.Netcode
                 JumpPressed == other.JumpPressed &&
                 SprintHeld == other.SprintHeld &&
                 CrouchRequested == other.CrouchRequested &&
-                AimingHeld == other.AimingHeld;
+                AimingHeld == other.AimingHeld &&
+                WeaponId.Equals(other.WeaponId) &&
+                ShotOrigin.Equals(other.ShotOrigin);
         }
     }
 
@@ -374,6 +406,15 @@ namespace FPS.Networking.Netcode
         public FixedString64Bytes WeaponId;
         public uint AcknowledgedPresentationCommandSequence;
         public long LastPresentationEventSequence;
+        public FixedString64Bytes CombatWeaponId;
+        public int MagazineAmmo;
+        public int ReserveAmmo;
+        public bool Reloading;
+        public long ReloadEndTick;
+        public bool Switching;
+        public FixedString64Bytes PendingCombatWeaponId;
+        public long SwitchEndTick;
+        public long LastShotEventSequence;
 
         public bool IsAlive => Health > 0f;
 
@@ -396,7 +437,15 @@ namespace FPS.Networking.Netcode
                 LastJumpTick = value.LastJumpTick,
                 GroundHeight = (float)value.GroundHeight,
                 AppearanceId = NetworkPresentationIds.DefaultAppearance,
-                WeaponId = NetworkPresentationIds.DefaultWeapon
+                WeaponId = NetworkPresentationIds.DefaultWeapon,
+                CombatWeaponId = value.EquippedWeaponId,
+                MagazineAmmo = value.MagazineAmmo,
+                ReserveAmmo = value.ReserveAmmo,
+                Reloading = value.Reloading,
+                ReloadEndTick = value.ReloadEndTick,
+                Switching = value.Switching,
+                PendingCombatWeaponId = value.PendingWeaponId,
+                SwitchEndTick = value.SwitchEndTick
             };
         }
 
@@ -442,6 +491,15 @@ namespace FPS.Networking.Netcode
             serializer.SerializeValue(
                 ref AcknowledgedPresentationCommandSequence);
             serializer.SerializeValue(ref LastPresentationEventSequence);
+            serializer.SerializeValue(ref CombatWeaponId);
+            serializer.SerializeValue(ref MagazineAmmo);
+            serializer.SerializeValue(ref ReserveAmmo);
+            serializer.SerializeValue(ref Reloading);
+            serializer.SerializeValue(ref ReloadEndTick);
+            serializer.SerializeValue(ref Switching);
+            serializer.SerializeValue(ref PendingCombatWeaponId);
+            serializer.SerializeValue(ref SwitchEndTick);
+            serializer.SerializeValue(ref LastShotEventSequence);
 
             int positionX = 0;
             int positionY = 0;
@@ -523,7 +581,16 @@ namespace FPS.Networking.Netcode
                 AcknowledgedPresentationCommandSequence ==
                     other.AcknowledgedPresentationCommandSequence &&
                 LastPresentationEventSequence ==
-                    other.LastPresentationEventSequence;
+                    other.LastPresentationEventSequence &&
+                CombatWeaponId.Equals(other.CombatWeaponId) &&
+                MagazineAmmo == other.MagazineAmmo &&
+                ReserveAmmo == other.ReserveAmmo &&
+                Reloading == other.Reloading &&
+                ReloadEndTick == other.ReloadEndTick &&
+                Switching == other.Switching &&
+                PendingCombatWeaponId.Equals(other.PendingCombatWeaponId) &&
+                SwitchEndTick == other.SwitchEndTick &&
+                LastShotEventSequence == other.LastShotEventSequence;
         }
 
         private static int QuantizeInt(float value, float scale)
@@ -548,6 +615,8 @@ namespace FPS.Networking.Netcode
         public float Radius;
         public float Health;
         public FixedString64Bytes DropDefinitionId;
+        public Vector3 HeadOffset;
+        public float HeadRadius;
 
         public bool IsAlive => Health > 0f;
 
@@ -560,7 +629,9 @@ namespace FPS.Networking.Netcode
                 Position = NetcodeConversions.ToUnity(value.Position),
                 Radius = (float)value.Radius,
                 Health = (float)value.Health,
-                DropDefinitionId = value.DropDefinitionId
+                DropDefinitionId = value.DropDefinitionId,
+                HeadOffset = NetcodeConversions.ToUnity(value.HeadOffset),
+                HeadRadius = (float)value.HeadRadius
             };
         }
 
@@ -572,6 +643,8 @@ namespace FPS.Networking.Netcode
             serializer.SerializeValue(ref Radius);
             serializer.SerializeValue(ref Health);
             serializer.SerializeValue(ref DropDefinitionId);
+            serializer.SerializeValue(ref HeadOffset);
+            serializer.SerializeValue(ref HeadRadius);
         }
 
         public bool Equals(NetcodeTargetState other)
@@ -579,7 +652,9 @@ namespace FPS.Networking.Netcode
             return TargetId == other.TargetId &&
                 Position.Equals(other.Position) && Radius.Equals(other.Radius) &&
                 Health.Equals(other.Health) &&
-                DropDefinitionId.Equals(other.DropDefinitionId);
+                DropDefinitionId.Equals(other.DropDefinitionId) &&
+                HeadOffset.Equals(other.HeadOffset) &&
+                HeadRadius.Equals(other.HeadRadius);
         }
     }
 
@@ -656,6 +731,85 @@ namespace FPS.Networking.Netcode
                 TargetId == other.TargetId && Value.Equals(other.Value) &&
                 DefinitionId.Equals(other.DefinitionId) &&
                 RejectionReason == other.RejectionReason;
+        }
+    }
+
+    public struct NetcodeShotFeedbackEvent : INetworkSerializable,
+        IEquatable<NetcodeShotFeedbackEvent>
+    {
+        public long ServerTick;
+        public long Sequence;
+        public int ShooterPlayerId;
+        public uint ShotCommandSequence;
+        public FixedString64Bytes WeaponId;
+        public ShotResolutionKind Kind;
+        public int TargetId;
+        public Vector3 Origin;
+        public Vector3 EndPoint;
+        public Vector3 Normal;
+        public AuthoritativeHitRegion HitRegion;
+        public AuthoritativeSurface Surface;
+        public float AppliedDamage;
+
+        public bool DidHit => Kind == ShotResolutionKind.Hit ||
+            Kind == ShotResolutionKind.Killed;
+        public bool DidImpact => DidHit ||
+            Kind == ShotResolutionKind.Blocked;
+
+        public static NetcodeShotFeedbackEvent FromDomain(
+            long serverTick,
+            long sequence,
+            int shooterPlayerId,
+            ShotResolution value)
+        {
+            return new NetcodeShotFeedbackEvent
+            {
+                ServerTick = serverTick,
+                Sequence = sequence,
+                ShooterPlayerId = shooterPlayerId,
+                ShotCommandSequence = value.ShotSequence,
+                WeaponId = value.WeaponId,
+                Kind = value.Kind,
+                TargetId = value.TargetId,
+                Origin = NetcodeConversions.ToUnity(value.Origin),
+                EndPoint = NetcodeConversions.ToUnity(value.EndPoint),
+                Normal = NetcodeConversions.ToUnity(value.Normal),
+                HitRegion = value.HitRegion,
+                Surface = value.Surface,
+                AppliedDamage = (float)value.AppliedDamage
+            };
+        }
+
+        public void NetworkSerialize<T>(BufferSerializer<T> serializer)
+            where T : IReaderWriter
+        {
+            serializer.SerializeValue(ref ServerTick);
+            serializer.SerializeValue(ref Sequence);
+            serializer.SerializeValue(ref ShooterPlayerId);
+            serializer.SerializeValue(ref ShotCommandSequence);
+            serializer.SerializeValue(ref WeaponId);
+            serializer.SerializeValue(ref Kind);
+            serializer.SerializeValue(ref TargetId);
+            serializer.SerializeValue(ref Origin);
+            serializer.SerializeValue(ref EndPoint);
+            serializer.SerializeValue(ref Normal);
+            serializer.SerializeValue(ref HitRegion);
+            serializer.SerializeValue(ref Surface);
+            serializer.SerializeValue(ref AppliedDamage);
+        }
+
+        public bool Equals(NetcodeShotFeedbackEvent other)
+        {
+            return ServerTick == other.ServerTick &&
+                Sequence == other.Sequence &&
+                ShooterPlayerId == other.ShooterPlayerId &&
+                ShotCommandSequence == other.ShotCommandSequence &&
+                WeaponId.Equals(other.WeaponId) && Kind == other.Kind &&
+                TargetId == other.TargetId && Origin.Equals(other.Origin) &&
+                EndPoint.Equals(other.EndPoint) &&
+                Normal.Equals(other.Normal) &&
+                HitRegion == other.HitRegion && Surface == other.Surface &&
+                AppliedDamage.Equals(other.AppliedDamage);
         }
     }
 

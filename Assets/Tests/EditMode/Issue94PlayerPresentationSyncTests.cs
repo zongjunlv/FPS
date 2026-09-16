@@ -148,6 +148,13 @@ namespace FPS.Tests.Architecture
                 WeaponId = "weapon.pistol"
             };
 
+            NetcodePlayerCommand shot = NetcodePlayerCommand.FromDomain(
+                new PlayerInputCommand(
+                    1, 1, 1001, 1, 0d, 0d, 0d, 0d,
+                    fire: true, claimedPosition: default));
+            Assert.That(authority.TryQueueCommand(10, shot, true), Is.True);
+            Assert.That(authority.ServerStep().Commands[0].Accepted, Is.True);
+
             Assert.That(authority.TryApplyPresentationCommand(
                 10, reload), Is.True);
             Assert.That(authority.TryApplyPresentationCommand(
@@ -164,7 +171,7 @@ namespace FPS.Tests.Architecture
                 out NetcodePlayerState state), Is.True);
             Assert.That(state.WeaponId.ToString(),
                 Is.EqualTo(NetworkPresentationIds.Handgun));
-            Assert.That(state.LastPresentationEventSequence, Is.EqualTo(2));
+            Assert.That(state.LastPresentationEventSequence, Is.EqualTo(3));
 
             NetworkPlayerReplica rejoined = CreateReplica();
             rejoined.EnableOwnerTestHook(authority, 1);
@@ -180,6 +187,12 @@ namespace FPS.Tests.Architecture
         {
             NetworkCoopSessionAuthority authority = CreateAuthority();
             authority.RegisterPlayerClient(10, 1);
+            NetcodePlayerCommand shot = NetcodePlayerCommand.FromDomain(
+                new PlayerInputCommand(
+                    1, 1, 1001, 1, 0d, 0d, 0d, 0d,
+                    fire: true, claimedPosition: default));
+            Assert.That(authority.TryQueueCommand(10, shot, true), Is.True);
+            Assert.That(authority.ServerStep().Commands[0].Accepted, Is.True);
             Assert.That(authority.TryApplyPresentationCommand(10,
                 Presentation(1, NetworkPresentationAction.Reload,
                     NetworkPresentationIds.Rifle)), Is.True);

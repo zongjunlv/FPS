@@ -218,6 +218,51 @@ public class WeaponController : MonoBehaviour
         return true;
     }
 
+    public bool TryPredictNetworkFire()
+    {
+        if (Time.time < nextFireTime || IsReloading)
+            return false;
+        if (!ammoState.TryConsumeRound())
+        {
+            PlayDryFireFeedback();
+            return false;
+        }
+
+        nextFireTime = Time.time + FireInterval;
+        spreadState.RegisterShot();
+        if (weapon.FireSound != null)
+        {
+            if (combatEffectPool == null || !combatEffectPool.PlayAudio(
+                    FirePoint.transform.position, weapon.FireSound))
+                fireAudioSource.PlayOneShot(weapon.FireSound);
+        }
+        if (weaponAnimator != null)
+        {
+            weaponAnimator.speed = FireAnimationSpeed;
+            weaponAnimator.Play(FireStateHash, 0, 0f);
+        }
+        muzzleFlash.Play();
+        AmmoChanged?.Invoke();
+        return true;
+    }
+
+    public void PresentAuthoritativeNetworkShot(
+        Vector3 origin,
+        Vector3 endPoint,
+        ShotResult result)
+    {
+        tracerPool?.Play(origin, endPoint, tracerSpeed);
+        LastShotResult = result;
+        ShotResolved?.Invoke(result);
+    }
+
+    public bool ReconcileNetworkAmmo(int magazine, int reserve)
+    {
+        if (CurrentAmmo == magazine && ReserveAmmo == reserve)
+            return false;
+        return TryRestoreAmmo(magazine, reserve);
+    }
+
     public void SetFiringContext(
         float adsBlend,
         float movementAmount,

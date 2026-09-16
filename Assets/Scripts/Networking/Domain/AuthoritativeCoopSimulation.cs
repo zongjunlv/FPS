@@ -164,6 +164,8 @@ namespace FPS.Networking.Domain
         private readonly CoopServerRules rules;
         private readonly Dictionary<int, MutablePlayer> players;
         private readonly Dictionary<int, MutableTarget> targets;
+        private readonly Dictionary<string, AuthoritativeWeaponDefinition>
+            weaponDefinitions;
         private readonly LinkedList<HistoryFrame> history = new();
         private readonly int requiredKills;
         private long currentTick;
@@ -171,6 +173,9 @@ namespace FPS.Networking.Domain
         private int killedTargets;
         private Func<int, NetVector3, bool> standingClearanceValidator =
             (_, _) => true;
+        private Func<int, NetVector3, NetVector3,
+            AuthoritativeShotObstruction> shotObstructionResolver =
+            (_, _, _) => AuthoritativeShotObstruction.Clear;
         private AuthoritativeWaveStatus waveStatus =
             AuthoritativeWaveStatus.Fighting;
 
@@ -178,12 +183,22 @@ namespace FPS.Networking.Domain
             CoopServerRules rules,
             IEnumerable<CoopPlayerSpawn> configuredPlayers,
             IEnumerable<CoopTargetSpawn> configuredTargets,
-            int requiredKills = 0)
+            int requiredKills = 0,
+            IEnumerable<AuthoritativeWeaponDefinition> configuredWeapons = null)
         {
             this.rules = rules ?? throw new ArgumentNullException(nameof(rules));
+            weaponDefinitions = (configuredWeapons ??
+                    AuthoritativeWeaponDefinition.CreateProjectDefaults(rules))
+                .ToDictionary(value => value.WeaponId,
+                    StringComparer.Ordinal);
+            if (weaponDefinitions.Count == 0 ||
+                !weaponDefinitions.ContainsKey("weapon.rifle"))
+                throw new ArgumentException(
+                    "The authoritative loadout requires weapon.rifle.",
+                    nameof(configuredWeapons));
             players = (configuredPlayers ?? throw new ArgumentNullException(
                     nameof(configuredPlayers)))
-                .Select(value => new MutablePlayer(value))
+                .Select(value => new MutablePlayer(value, weaponDefinitions))
                 .ToDictionary(value => value.Id);
             targets = (configuredTargets ?? throw new ArgumentNullException(
                     nameof(configuredTargets)))
@@ -216,11 +231,95 @@ namespace FPS.Networking.Domain
             standingClearanceValidator = validator ?? ((_, _) => true);
         }
 
+        public void SetShotLineOfSightValidator(
+            Func<int, NetVector3, NetVector3, bool> validator)
+        {
+            shotObstructionResolver = validator == null
+                ? (_, _, _) => AuthoritativeShotObstruction.Clear
+                : (playerId, origin, endPoint) =>
+                    validator(playerId, origin, endPoint)
+                        ? AuthoritativeShotObstruction.Clear
+                        : AuthoritativeShotObstruction.At(
+                            endPoint,
+                            default,
+                            AuthoritativeSurface.Concrete);
+        }
+
+        public void SetShotObstructionResolver(
+            Func<int, NetVector3, NetVector3,
+                AuthoritativeShotObstruction> resolver)
+        {
+            shotObstructionResolver = resolver ??
+                ((_, _, _) => AuthoritativeShotObstruction.Clear);
+        }
+
+        public WeaponActionResolution ApplyWeaponAction(
+            int playerId,
+            AuthoritativeWeaponAction action,
+            string requestedWeaponId,
+            ICollection<AuthoritativeEvent> events = null)
+        {
+            if (!players.TryGetValue(playerId, out MutablePlayer player))
+                return new WeaponActionResolution(false,
+                    CommandRejectionReason.UnknownPlayer, action,
+                    requestedWeaponId);
+            if (!player.IsAlive)
+                return new WeaponActionResolution(false,
+                    CommandRejectionReason.InvalidMovement, action,
+                    requestedWeaponId);
+
+            if (action == AuthoritativeWeaponAction.Reload)
+            {
+                MutableWeapon weapon = player.EquippedWeapon;
+                if (player.IsSwitching)
+                    return RejectWeaponAction(action, weapon.Definition.WeaponId,
+                        CommandRejectionReason.Switching);
+                if (weapon.IsReloading)
+                    return RejectWeaponAction(action, weapon.Definition.WeaponId,
+                        CommandRejectionReason.Reloading);
+                if (weapon.MagazineAmmo >= weapon.Definition.MagazineCapacity ||
+                    weapon.ReserveAmmo <= 0)
+                    return RejectWeaponAction(action, weapon.Definition.WeaponId,
+                        CommandRejectionReason.CannotReload);
+                weapon.ReloadEndTick = currentTick +
+                    weapon.Definition.ReloadDurationTicks;
+                events?.Add(Emit(AuthoritativeEventKind.ReloadStarted,
+                    playerId, 0, weapon.ReloadEndTick,
+                    weapon.Definition.WeaponId));
+                return new WeaponActionResolution(true,
+                    CommandRejectionReason.None, action,
+                    weapon.Definition.WeaponId);
+            }
+
+            string normalized = requestedWeaponId?.Trim() ?? string.Empty;
+            if (!weaponDefinitions.ContainsKey(normalized) ||
+                !player.Weapons.ContainsKey(normalized))
+                return RejectWeaponAction(action, normalized,
+                    CommandRejectionReason.UnknownWeapon);
+            if (player.IsSwitching)
+                return RejectWeaponAction(action, normalized,
+                    CommandRejectionReason.Switching);
+            if (string.Equals(player.EquippedWeaponId, normalized,
+                    StringComparison.Ordinal))
+                return RejectWeaponAction(action, normalized,
+                    CommandRejectionReason.WeaponMismatch);
+
+            player.EquippedWeapon.CancelReload();
+            player.PendingWeaponId = normalized;
+            player.SwitchEndTick = currentTick +
+                weaponDefinitions[normalized].SwitchDurationTicks;
+            events?.Add(Emit(AuthoritativeEventKind.WeaponSwitchStarted,
+                playerId, 0, player.SwitchEndTick, normalized));
+            return new WeaponActionResolution(true,
+                CommandRejectionReason.None, action, normalized);
+        }
+
         public AuthoritativeTickResult Step(
             IReadOnlyList<PlayerInputCommand> receivedCommands)
         {
             currentTick++;
             var events = new List<AuthoritativeEvent>();
+            AdvanceCombatState(events);
             var resolutions = new List<CommandResolution>();
             PlayerInputCommand[] commands = (receivedCommands ??
                     Array.Empty<PlayerInputCommand>())
@@ -360,7 +459,9 @@ namespace FPS.Networking.Domain
                 0d);
             if (command.Fire)
             {
-                player.LastFireClientTick = command.ClientTick;
+                MutableWeapon weapon = player.EquippedWeapon;
+                weapon.LastFireTick = command.ClientTick;
+                weapon.MagazineAmmo--;
                 shot = ResolveShot(player, command, events);
             }
 
@@ -460,10 +561,31 @@ namespace FPS.Networking.Domain
                     return CommandRejectionReason.AimRateExceeded;
             }
 
-            if (command.Fire && player.LastFireClientTick != long.MinValue &&
-                command.ClientTick - player.LastFireClientTick <
-                    rules.FireCooldownTicks)
-                return CommandRejectionReason.FireRateExceeded;
+            if (command.Fire)
+            {
+                if (!weaponDefinitions.TryGetValue(command.WeaponId,
+                        out AuthoritativeWeaponDefinition definition) ||
+                    !player.Weapons.TryGetValue(command.WeaponId,
+                        out MutableWeapon weapon))
+                    return CommandRejectionReason.UnknownWeapon;
+                if (!string.Equals(player.EquippedWeaponId,
+                        command.WeaponId, StringComparison.Ordinal))
+                    return CommandRejectionReason.WeaponMismatch;
+                if (player.IsSwitching)
+                    return CommandRejectionReason.Switching;
+                if (weapon.IsReloading)
+                    return CommandRejectionReason.Reloading;
+                if (weapon.MagazineAmmo <= 0)
+                    return CommandRejectionReason.OutOfAmmo;
+                if (!command.ShotOrigin.IsFinite ||
+                    NetVector3.Distance(command.ShotOrigin,
+                        command.ClaimedPosition) > 2.5d)
+                    return CommandRejectionReason.InvalidShotOrigin;
+                if (weapon.LastFireTick != long.MinValue &&
+                    command.ClientTick - weapon.LastFireTick <
+                        definition.FireIntervalTicks)
+                    return CommandRejectionReason.FireRateExceeded;
+            }
             return CommandRejectionReason.None;
         }
 
@@ -473,16 +595,16 @@ namespace FPS.Networking.Domain
             ICollection<AuthoritativeEvent> events)
         {
             HistoryFrame frame = FindHistory(command.ClientTick);
-            NetVector3 origin = frame.TryGetPlayerPosition(
-                shooter.Id,
-                out NetVector3 historicalPosition)
-                ? historicalPosition
-                : shooter.Position;
+            AuthoritativeWeaponDefinition weapon =
+                weaponDefinitions[command.WeaponId];
+            NetVector3 origin = command.ShotOrigin;
             NetVector3 direction = CoopGameplayRules.AimDirection(
                 command.AimYawDegrees,
                 command.AimPitchDegrees);
             MutableTarget selected = null;
             double selectedDistance = double.PositiveInfinity;
+            AuthoritativeHitRegion selectedRegion =
+                AuthoritativeHitRegion.None;
 
             foreach (MutableTarget target in targets.Values
                          .OrderBy(value => value.Id))
@@ -490,22 +612,39 @@ namespace FPS.Networking.Domain
                 if (!target.IsAlive ||
                     !frame.TryGetTargetPosition(target.Id, out NetVector3 center))
                     continue;
-                if (TryRaySphere(
+                double headDistance = 0d;
+                bool hitHead = target.HeadRadius > 0d && TryRaySphere(
+                        origin,
+                        direction,
+                        center + target.HeadOffset,
+                        target.HeadRadius,
+                        weapon.HitscanRange,
+                        out headDistance);
+                if (hitHead && headDistance < selectedDistance)
+                {
+                    selected = target;
+                    selectedDistance = headDistance;
+                    selectedRegion = AuthoritativeHitRegion.Head;
+                }
+                if (!hitHead && TryRaySphere(
                         origin,
                         direction,
                         center,
                         target.Radius,
-                        rules.HitscanRange,
+                        weapon.HitscanRange,
                         out double distance) &&
                     distance < selectedDistance)
                 {
                     selected = target;
                     selectedDistance = distance;
+                    selectedRegion = AuthoritativeHitRegion.Body;
                 }
             }
 
             if (selected == null)
             {
+                NetVector3 endPoint = origin + direction *
+                    weapon.HitscanRange;
                 events.Add(Emit(
                     AuthoritativeEventKind.ShotMissed,
                     shooter.Id,
@@ -515,13 +654,52 @@ namespace FPS.Networking.Domain
                     ShotResolutionKind.Miss,
                     frame.Tick,
                     0,
-                    0d);
+                    0d,
+                    command.Sequence,
+                    weapon.WeaponId,
+                    origin,
+                    endPoint,
+                    direction * -1d,
+                    AuthoritativeHitRegion.None,
+                    AuthoritativeSurface.None);
+            }
+
+            NetVector3 hitPoint = origin + direction * selectedDistance;
+            NetVector3 hitCenter = selectedRegion ==
+                AuthoritativeHitRegion.Head
+                    ? frame.TargetPosition(selected.Id) + selected.HeadOffset
+                    : frame.TargetPosition(selected.Id);
+            NetVector3 normal = (hitPoint - hitCenter).Normalized;
+            AuthoritativeShotObstruction obstruction =
+                shotObstructionResolver(shooter.Id, origin, hitPoint);
+            if (obstruction.Blocked)
+            {
+                events.Add(Emit(AuthoritativeEventKind.ShotMissed,
+                    shooter.Id, 0, frame.Tick));
+                return new ShotResolution(
+                    ShotResolutionKind.Blocked,
+                    frame.Tick,
+                    0,
+                    0d,
+                    command.Sequence,
+                    weapon.WeaponId,
+                    origin,
+                    obstruction.Point,
+                    obstruction.Normal,
+                    AuthoritativeHitRegion.None,
+                    obstruction.Surface == AuthoritativeSurface.None
+                        ? AuthoritativeSurface.Concrete
+                        : obstruction.Surface);
             }
 
             double before = selected.Health;
+            double damage = weapon.BaseDamage *
+                (selectedRegion == AuthoritativeHitRegion.Head
+                    ? weapon.HeadDamageMultiplier
+                    : 1d);
             selected.Health = CoopGameplayRules.ApplyDamage(
                 selected.Health,
-                rules.ShotDamage);
+                damage);
             double applied = before - selected.Health;
             events.Add(Emit(
                 AuthoritativeEventKind.TargetDamaged,
@@ -534,7 +712,14 @@ namespace FPS.Networking.Domain
                     ShotResolutionKind.Hit,
                     frame.Tick,
                     selected.Id,
-                    applied);
+                    applied,
+                    command.Sequence,
+                    weapon.WeaponId,
+                    origin,
+                    hitPoint,
+                    normal,
+                    selectedRegion,
+                    AuthoritativeSurface.Flesh);
             }
 
             killedTargets++;
@@ -567,7 +752,14 @@ namespace FPS.Networking.Domain
                 ShotResolutionKind.Killed,
                 frame.Tick,
                 selected.Id,
-                applied);
+                applied,
+                command.Sequence,
+                weapon.WeaponId,
+                origin,
+                hitPoint,
+                normal,
+                selectedRegion,
+                AuthoritativeSurface.Flesh);
         }
 
         private HistoryFrame FindHistory(long requestedTick)
@@ -579,6 +771,45 @@ namespace FPS.Networking.Domain
                 candidate = frame;
             }
             return candidate;
+        }
+
+        private void AdvanceCombatState(ICollection<AuthoritativeEvent> events)
+        {
+            foreach (MutablePlayer player in players.Values)
+            {
+                foreach (MutableWeapon weapon in player.Weapons.Values)
+                {
+                    if (!weapon.IsReloading ||
+                        currentTick < weapon.ReloadEndTick) continue;
+                    int needed = weapon.Definition.MagazineCapacity -
+                        weapon.MagazineAmmo;
+                    int transferred = Math.Min(needed, weapon.ReserveAmmo);
+                    weapon.MagazineAmmo += transferred;
+                    weapon.ReserveAmmo -= transferred;
+                    weapon.ReloadEndTick = 0;
+                    events.Add(Emit(AuthoritativeEventKind.ReloadCompleted,
+                        player.Id, 0, transferred,
+                        weapon.Definition.WeaponId));
+                }
+
+                if (!player.IsSwitching ||
+                    currentTick < player.SwitchEndTick) continue;
+                player.EquippedWeaponId = player.PendingWeaponId;
+                player.PendingWeaponId = string.Empty;
+                player.SwitchEndTick = 0;
+                events.Add(Emit(
+                    AuthoritativeEventKind.WeaponSwitchCompleted,
+                    player.Id, 0, 0d, player.EquippedWeaponId));
+            }
+        }
+
+        private static WeaponActionResolution RejectWeaponAction(
+            AuthoritativeWeaponAction action,
+            string weaponId,
+            CommandRejectionReason reason)
+        {
+            return new WeaponActionResolution(false, reason, action,
+                weaponId);
         }
 
         private static bool TryRaySphere(
@@ -663,7 +894,10 @@ namespace FPS.Networking.Domain
 
         private sealed class MutablePlayer
         {
-            public MutablePlayer(CoopPlayerSpawn spawn)
+            public MutablePlayer(
+                CoopPlayerSpawn spawn,
+                IReadOnlyDictionary<string, AuthoritativeWeaponDefinition>
+                    definitions)
             {
                 Id = spawn.PlayerId;
                 Position = spawn.Position;
@@ -674,6 +908,9 @@ namespace FPS.Networking.Domain
                 LastJumpTick = long.MinValue;
                 LastClaimedPosition = spawn.Position;
                 Health = spawn.Health;
+                foreach (KeyValuePair<string, AuthoritativeWeaponDefinition>
+                         pair in definitions)
+                    Weapons[pair.Key] = new MutableWeapon(pair.Value);
             }
 
             public int Id;
@@ -689,12 +926,19 @@ namespace FPS.Networking.Domain
             public uint LastSequence;
             public uint AcknowledgedSequence;
             public long LastClientTick = long.MinValue;
-            public long LastFireClientTick = long.MinValue;
             public double AimYaw;
             public double AimPitch;
+            public string EquippedWeaponId = "weapon.rifle";
+            public string PendingWeaponId = string.Empty;
+            public long SwitchEndTick;
+            public readonly Dictionary<string, MutableWeapon> Weapons =
+                new(StringComparer.Ordinal);
             public readonly HashSet<ulong> Nonces = new();
             public readonly Queue<ulong> NonceOrder = new();
             public bool IsAlive => Health > 0d;
+            public bool IsSwitching => SwitchEndTick > 0;
+            public MutableWeapon EquippedWeapon =>
+                Weapons[EquippedWeaponId];
 
             public PlayerMovementState Movement => new(
                 Position,
@@ -717,18 +961,64 @@ namespace FPS.Networking.Domain
                 LastJumpTick = movement.LastJumpTick;
             }
 
-            public AuthoritativePlayerState Snapshot() => new(
-                Id,
-                Position,
-                Health,
-                AcknowledgedSequence,
-                AimYaw,
-                AimPitch,
-                Velocity,
-                Stance,
-                Grounded,
-                LastJumpTick,
-                GroundHeight);
+            public AuthoritativePlayerState Snapshot()
+            {
+                MutableWeapon equipped = EquippedWeapon;
+                return new AuthoritativePlayerState(
+                    Id,
+                    Position,
+                    Health,
+                    AcknowledgedSequence,
+                    AimYaw,
+                    AimPitch,
+                    Velocity,
+                    Stance,
+                    Grounded,
+                    LastJumpTick,
+                    GroundHeight,
+                    EquippedWeaponId,
+                    equipped.MagazineAmmo,
+                    equipped.ReserveAmmo,
+                    equipped.IsReloading,
+                    equipped.ReloadEndTick,
+                    IsSwitching,
+                    PendingWeaponId,
+                    SwitchEndTick,
+                    Weapons.Values
+                        .OrderBy(value => value.Definition.WeaponId)
+                        .Select(value => value.Snapshot())
+                        .ToArray());
+            }
+        }
+
+        private sealed class MutableWeapon
+        {
+            public MutableWeapon(AuthoritativeWeaponDefinition definition)
+            {
+                Definition = definition;
+                MagazineAmmo = definition.MagazineCapacity;
+                ReserveAmmo = definition.InitialReserveAmmo;
+            }
+
+            public AuthoritativeWeaponDefinition Definition;
+            public int MagazineAmmo;
+            public int ReserveAmmo;
+            public long ReloadEndTick;
+            public long LastFireTick = long.MinValue;
+            public bool IsReloading => ReloadEndTick > 0;
+
+            public void CancelReload()
+            {
+                ReloadEndTick = 0;
+            }
+
+            public AuthoritativeWeaponState Snapshot() => new(
+                Definition.WeaponId,
+                MagazineAmmo,
+                ReserveAmmo,
+                IsReloading,
+                ReloadEndTick,
+                LastFireTick);
         }
 
         private sealed class MutableTarget
@@ -740,6 +1030,8 @@ namespace FPS.Networking.Domain
                 Radius = spawn.Radius;
                 Health = spawn.Health;
                 DropDefinitionId = spawn.DropDefinitionId;
+                HeadOffset = spawn.HeadOffset;
+                HeadRadius = spawn.HeadRadius;
             }
 
             public int Id;
@@ -747,6 +1039,8 @@ namespace FPS.Networking.Domain
             public double Radius;
             public double Health;
             public string DropDefinitionId;
+            public NetVector3 HeadOffset;
+            public double HeadRadius;
             public bool IsAlive => Health > 0d;
 
             public AuthoritativeTargetState Snapshot() => new(
@@ -754,7 +1048,9 @@ namespace FPS.Networking.Domain
                 Position,
                 Radius,
                 Health,
-                DropDefinitionId);
+                DropDefinitionId,
+                HeadOffset,
+                HeadRadius);
         }
 
         private sealed class HistoryFrame
@@ -777,6 +1073,7 @@ namespace FPS.Networking.Domain
                 players.TryGetValue(id, out value);
             public bool TryGetTargetPosition(int id, out NetVector3 value) =>
                 targets.TryGetValue(id, out value);
+            public NetVector3 TargetPosition(int id) => targets[id];
         }
     }
 }

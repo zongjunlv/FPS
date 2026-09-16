@@ -30,6 +30,8 @@ namespace FPS.Networking.Netcode
         public float Radius;
         public float Health;
         public string DropDefinitionId;
+        public Vector3 HeadOffset;
+        public float HeadRadius;
 
         public CoopTargetSpawn ToDomain()
         {
@@ -38,7 +40,9 @@ namespace FPS.Networking.Netcode
                 NetcodeConversions.ToDomain(Position),
                 Radius <= 0f ? 0.75d : Radius,
                 Health <= 0f ? 100d : Health,
-                DropDefinitionId);
+                DropDefinitionId,
+                NetcodeConversions.ToDomain(HeadOffset),
+                Mathf.Max(0f, HeadRadius));
         }
     }
 
@@ -78,7 +82,9 @@ namespace FPS.Networking.Netcode
                 Position = new Vector3(0f, 0f, 15f),
                 Radius = 1f,
                 Health = 68f,
-                DropDefinitionId = "medkit"
+                DropDefinitionId = "medkit",
+                HeadOffset = new Vector3(0f, 0.85f, 0f),
+                HeadRadius = 0.32f
             }
         };
         [SerializeField] private int requiredKills = 1;
@@ -285,7 +291,12 @@ namespace FPS.Networking.Netcode
                         maximumAcceleration: 30d,
                         gravity: 20d,
                         jumpSpeed: 7.75d,
-                        minimumJumpIntervalTicks: 12),
+                        minimumJumpIntervalTicks: 12,
+                        fireCooldownTicks: Mathf.Max(1,
+                            Mathf.CeilToInt(
+                                bootstrap.NetworkManager.NetworkConfig.TickRate *
+                                0.1f)),
+                        shotDamage: 10d),
                     ConvertPlayers(players),
                     ConvertTargets(targets),
                     requiredKills);
