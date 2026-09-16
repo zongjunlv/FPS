@@ -64,7 +64,7 @@ public sealed class Issue69GameModeContentTests
             GameModeId.None, GameModeStage.Entry, expectBootstrap: true);
         AssertMarker(GameModeScenePaths.Tutorial,
             GameModeId.Tutorial, GameModeStage.Tutorial,
-            expectBootstrap: true);
+            expectBootstrap: false);
         AssertMarker(GameModeScenePaths.BattlePreparation,
             GameModeId.SoloBattle, GameModeStage.BattlePreparation,
             expectBootstrap: true);

@@ -272,11 +272,12 @@ public sealed class GameModeFlowController : MonoBehaviour
 
     private static void ApplyCursorPolicy(GameModeStage stage)
     {
-        bool menuStage = stage != GameModeStage.Battle;
-        Cursor.visible = menuStage;
-        Cursor.lockState = menuStage
-            ? CursorLockMode.None
-            : CursorLockMode.Locked;
+        bool gameplayStage = stage == GameModeStage.Tutorial ||
+                             stage == GameModeStage.Battle;
+        Cursor.visible = !gameplayStage;
+        Cursor.lockState = gameplayStage
+            ? CursorLockMode.Locked
+            : CursorLockMode.None;
     }
 
     private void NotifyStateChanged()

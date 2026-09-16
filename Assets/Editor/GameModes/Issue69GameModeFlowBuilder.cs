@@ -25,12 +25,7 @@ public static class Issue69GameModeFlowBuilder
             GameModeId.None,
             GameModeStage.Entry,
             catalog);
-        BuildFlowScene(
-            GameModeScenePaths.Tutorial,
-            "新手教学入口",
-            GameModeId.Tutorial,
-            GameModeStage.Tutorial,
-            catalog);
+        Issue71TutorialSceneBuilder.RebuildScene();
         BuildFlowScene(
             GameModeScenePaths.BattlePreparation,
             "战斗准备入口",
