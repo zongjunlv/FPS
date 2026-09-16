@@ -86,7 +86,7 @@ public static class Issue72TutorialContentBuilder
         definition.Configure(
             "tutorial.main",
             "新手训练",
-            5,
+            6,
             CreateDefaultSteps());
         if (!definition.TryValidate(out string error))
         {
@@ -128,9 +128,9 @@ public static class Issue72TutorialContentBuilder
             Step("tutorial.weapon.reload", "第三章 · 武器操作", "更换弹匣",
                 "弹匣已自动预留空位：按 R 并等待完整换弹结束", TutorialEvidenceType.Reload, 1),
             Step("tutorial.damage.body", "第四章 · 伤害认知", "命中躯干",
-                "射击固定靶的躯干部位", TutorialEvidenceType.BodyHit, 1),
+                "使用当前步枪射击静止训练单位的身体，观察基础伤害与倍率", TutorialEvidenceType.BodyHit, 1),
             Step("tutorial.damage.head", "第四章 · 伤害认知", "命中弱点",
-                "射击固定靶的头部并观察伤害差异", TutorialEvidenceType.HeadHit, 1)
+                "继续使用同一把步枪射击头部，对比最终伤害", TutorialEvidenceType.HeadHit, 1)
         };
     }
 

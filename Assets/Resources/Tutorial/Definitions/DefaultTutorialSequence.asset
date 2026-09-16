@@ -14,7 +14,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: FPS.Composition::TutorialSequenceDefinition
   stableId: tutorial.main
   displayName: "\u65B0\u624B\u8BAD\u7EC3"
-  version: 5
+  version: 6
   steps:
   - stableId: tutorial.move.forward
     chapter: "\u7B2C\u4E00\u7AE0 \xB7 \u57FA\u7840\u79FB\u52A8"
@@ -116,14 +116,14 @@ MonoBehaviour:
   - stableId: tutorial.damage.body
     chapter: "\u7B2C\u56DB\u7AE0 \xB7 \u4F24\u5BB3\u8BA4\u77E5"
     title: "\u547D\u4E2D\u8EAF\u5E72"
-    instruction: "\u5C04\u51FB\u56FA\u5B9A\u9776\u7684\u8EAF\u5E72\u90E8\u4F4D"
+    instruction: "\u4F7F\u7528\u5F53\u524D\u6B65\u67AA\u5C04\u51FB\u9759\u6B62\u8BAD\u7EC3\u5355\u4F4D\u7684\u8EAB\u4F53\uFF0C\u89C2\u5BDF\u57FA\u7840\u4F24\u5BB3\u4E0E\u500D\u7387"
     evidenceType: 11
     targetValue: 1
     completionFeedback: "\u5DF2\u5B8C\u6210\uFF1A\u547D\u4E2D\u8EAF\u5E72"
   - stableId: tutorial.damage.head
     chapter: "\u7B2C\u56DB\u7AE0 \xB7 \u4F24\u5BB3\u8BA4\u77E5"
     title: "\u547D\u4E2D\u5F31\u70B9"
-    instruction: "\u5C04\u51FB\u56FA\u5B9A\u9776\u7684\u5934\u90E8\u5E76\u89C2\u5BDF\u4F24\u5BB3\u5DEE\u5F02"
+    instruction: "\u7EE7\u7EED\u4F7F\u7528\u540C\u4E00\u628A\u6B65\u67AA\u5C04\u51FB\u5934\u90E8\uFF0C\u5BF9\u6BD4\u6700\u7EC8\u4F24\u5BB3"
     evidenceType: 12
     targetValue: 1
     completionFeedback: "\u5DF2\u5B8C\u6210\uFF1A\u547D\u4E2D\u5F31\u70B9"
