@@ -1,5 +1,6 @@
 using System;
 using FPS.Networking.Domain;
+using Unity.Collections;
 using Unity.Netcode;
 using UnityEngine;
 
@@ -22,6 +23,11 @@ namespace FPS.Networking.Netcode
             1,
             NetworkVariableReadPermission.Everyone,
             NetworkVariableWritePermission.Server);
+        private readonly NetworkVariable<FixedString64Bytes>
+            replicatedAppearanceId = new(
+                default,
+                NetworkVariableReadPermission.Everyone,
+                NetworkVariableWritePermission.Server);
 
         private LocalPredictionBuffer prediction;
         private RemoteSnapshotInterpolator interpolation;
@@ -38,6 +44,7 @@ namespace FPS.Networking.Netcode
         public Vector3 PresentedVelocity { get; private set; }
         public bool PresentedCrouching { get; private set; }
         public bool PresentedGrounded { get; private set; } = true;
+        public bool PresentedAlive { get; private set; } = true;
         public int PredictionSampleCount { get; private set; }
         public int PredictionCorrectionCount { get; private set; }
         public double MaximumPredictionError { get; private set; }
@@ -48,22 +55,28 @@ namespace FPS.Networking.Netcode
         public RemoteInterpolationSample LastRemoteSample { get; private set; }
         public int PendingPredictionCount => prediction?.PendingCommands.Count ?? 0;
         public NetworkCoopSessionAuthority Session => session;
+        public string AppearanceId => replicatedAppearanceId.Value.ToString();
         public bool IsLocallyControlled => IsOwner || ownerTestHook;
         public bool IsPresentationReady => session != null &&
             session.Rules != null;
         public event Action<Vector3, float, float, bool, bool> PosePresented;
+        public event Action<string> AppearanceChanged;
         private double predictionErrorSum;
 
         public override void OnNetworkSpawn()
         {
             base.OnNetworkSpawn();
+            replicatedAppearanceId.OnValueChanged += HandleAppearanceChanged;
             playerId = replicatedPlayerId.Value;
             ResolveSession();
             EnsurePresentationBuffers();
+            ApplyOwnershipPolicy();
+            AppearanceChanged?.Invoke(AppearanceId);
         }
 
         public override void OnNetworkDespawn()
         {
+            replicatedAppearanceId.OnValueChanged -= HandleAppearanceChanged;
             ResetPresentation();
             base.OnNetworkDespawn();
         }
@@ -81,7 +94,8 @@ namespace FPS.Networking.Netcode
                 estimatedServerTick + Time.unscaledDeltaTime *
                     (session.Rules?.TickRate ?? 60),
                 state.ServerTick);
-            ConsumeServerState(state, IsOwner, estimatedServerTick);
+            ConsumeServerState(state, IsLocallyControlled,
+                estimatedServerTick);
         }
 
         public void Bind(
@@ -110,6 +124,15 @@ namespace FPS.Networking.Netcode
             NetworkCoopSessionAuthority sessionAuthority,
             int authoritativePlayerId)
         {
+            ConfigureServerIdentity(sessionAuthority, authoritativePlayerId,
+                string.Empty);
+        }
+
+        public void ConfigureServerIdentity(
+            NetworkCoopSessionAuthority sessionAuthority,
+            int authoritativePlayerId,
+            string appearanceId)
+        {
             if (IsSpawned && !IsServer)
             {
                 throw new InvalidOperationException(
@@ -124,6 +147,32 @@ namespace FPS.Networking.Netcode
             else
             {
                 replicatedPlayerId.Reset(authoritativePlayerId);
+            }
+            ConfigureServerAppearance(appearanceId);
+            ApplyOwnershipPolicy();
+        }
+
+        public void ConfigureServerAppearance(string appearanceId)
+        {
+            if (IsSpawned && !IsServer)
+            {
+                throw new InvalidOperationException(
+                    "Only the server may configure player appearance.");
+            }
+
+            var normalized = new FixedString64Bytes(
+                appearanceId?.Trim() ?? string.Empty);
+            if (IsSpawned)
+            {
+                if (replicatedAppearanceId.Value.Equals(normalized))
+                    AppearanceChanged?.Invoke(normalized.ToString());
+                else
+                    replicatedAppearanceId.Value = normalized;
+            }
+            else
+            {
+                replicatedAppearanceId.Reset(normalized);
+                AppearanceChanged?.Invoke(normalized.ToString());
             }
         }
 
@@ -270,6 +319,7 @@ namespace FPS.Networking.Netcode
             if (state.ServerTick > lastConsumedServerTick)
             {
                 lastConsumedServerTick = state.ServerTick;
+                PresentedAlive = state.IsAlive;
                 if (treatAsLocalOwner)
                 {
                     LastPredictionCorrection = prediction.Reconcile(
@@ -327,6 +377,7 @@ namespace FPS.Networking.Netcode
         {
             ownerTestHook = true;
             Bind(sessionAuthority, authoritativePlayerId);
+            ApplyOwnershipPolicy();
         }
 
         public void ResetPresentation()
@@ -344,6 +395,7 @@ namespace FPS.Networking.Netcode
             PresentedVelocity = Vector3.zero;
             PresentedCrouching = false;
             PresentedGrounded = true;
+            PresentedAlive = true;
             PredictionSampleCount = 0;
             PredictionCorrectionCount = 0;
             MaximumPredictionError = 0d;
@@ -354,6 +406,14 @@ namespace FPS.Networking.Netcode
         {
             ownerTestHook = false;
             ResetPresentation();
+            ApplyOwnershipPolicy();
+        }
+
+        public void ApplyOwnershipPolicy()
+        {
+            NetworkVerticalSliceInputDriver driver =
+                GetComponent<NetworkVerticalSliceInputDriver>();
+            if (driver != null) driver.enabled = IsLocallyControlled;
         }
 
         private void ResolveSession()
@@ -454,6 +514,13 @@ namespace FPS.Networking.Netcode
                 PresentedAimPitch,
                 PresentedCrouching,
                 PresentedGrounded);
+        }
+
+        private void HandleAppearanceChanged(
+            FixedString64Bytes _,
+            FixedString64Bytes current)
+        {
+            AppearanceChanged?.Invoke(current.ToString());
         }
     }
 }

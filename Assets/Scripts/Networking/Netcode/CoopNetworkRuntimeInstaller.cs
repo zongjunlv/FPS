@@ -50,6 +50,9 @@ namespace FPS.Networking.Netcode
     [RequireComponent(typeof(OptionalNetworkBootstrap))]
     public sealed class CoopNetworkRuntimeInstaller : MonoBehaviour
     {
+        public const string DefaultAppearanceId =
+            "character.quaternius.male-light";
+
         [SerializeField] private NetworkObject sessionAuthorityPrefab;
         [SerializeField] private NetworkObject playerReplicaPrefab;
         [SerializeField] private CoopPlayerSpawnDefinition[] players =
@@ -83,6 +86,7 @@ namespace FPS.Networking.Netcode
 
         private readonly Dictionary<ulong, NetworkObject> playerObjects = new();
         private readonly Dictionary<ulong, int> playerIds = new();
+        private readonly Dictionary<int, string> appearanceIds = new();
         private readonly HashSet<ulong> waitingClients = new();
         private OptionalNetworkBootstrap bootstrap;
         private NetworkCoopSessionAuthority sessionAuthority;
@@ -171,6 +175,32 @@ namespace FPS.Networking.Netcode
             deferPlayerSpawns = defer;
             playerSpawnBarrierReleased = !defer;
         }
+
+        public void ConfigurePlayerAppearance(int playerId, string appearanceId)
+        {
+            if (playerId <= 0)
+                throw new ArgumentOutOfRangeException(nameof(playerId));
+            string normalized = string.IsNullOrWhiteSpace(appearanceId)
+                ? DefaultAppearanceId
+                : appearanceId.Trim();
+            appearanceIds[playerId] = normalized;
+
+            foreach (KeyValuePair<ulong, int> pair in playerIds)
+            {
+                if (pair.Value != playerId ||
+                    !playerObjects.TryGetValue(pair.Key,
+                        out NetworkObject playerObject) ||
+                    playerObject == null) continue;
+                NetworkPlayerReplica replica =
+                    playerObject.GetComponent<NetworkPlayerReplica>();
+                replica?.ConfigureServerAppearance(normalized);
+            }
+        }
+
+        public string AppearanceForPlayer(int playerId) =>
+            appearanceIds.TryGetValue(playerId, out string appearanceId)
+                ? appearanceId
+                : DefaultAppearanceId;
 
         public void ReleasePlayerSpawnBarrier()
         {
@@ -433,7 +463,8 @@ namespace FPS.Networking.Netcode
                     "Player prefab is missing NetworkPlayerReplica.");
             }
 
-            replica.ConfigureServerIdentity(sessionAuthority, playerId);
+            replica.ConfigureServerIdentity(sessionAuthority, playerId,
+                AppearanceForPlayer(playerId));
             DontDestroyOnLoad(playerObject.gameObject);
             playerObject.SpawnAsPlayerObject(
                 clientId,

@@ -109,8 +109,35 @@ public sealed class CoopSceneLoadCoordinator : MonoBehaviour
         if (manager == null || !manager.IsServer) return;
         CoopNetworkRuntimeInstaller installer =
             FindFirstObjectByType<CoopNetworkRuntimeInstaller>();
-        if (installer != null && installer.IsPlayerSpawnDeferred)
+        if (installer == null) return;
+        ConfigurePlayerAppearances(installer);
+        if (installer.IsPlayerSpawnDeferred)
             installer.ReleasePlayerSpawnBarrier();
+    }
+
+    private void ConfigurePlayerAppearances(
+        CoopNetworkRuntimeInstaller installer)
+    {
+        int playerId = 1;
+        if (session.LobbyMembers.Count > 0)
+        {
+            for (int index = 0;
+                 index < session.LobbyMembers.Count &&
+                 playerId <= installer.MaximumPlayers;
+                 index++, playerId++)
+            {
+                installer.ConfigurePlayerAppearance(
+                    playerId,
+                    session.LobbyMembers[index].AppearanceId);
+            }
+            return;
+        }
+
+        string localAppearance = string.IsNullOrWhiteSpace(
+            PlayerAppearanceSelection.CurrentAppearanceId)
+            ? session.PendingAppearanceId
+            : PlayerAppearanceSelection.CurrentAppearanceId;
+        installer.ConfigurePlayerAppearance(1, localAppearance);
     }
 
     private void HandleLoadCancelled(string reason)
