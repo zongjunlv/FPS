@@ -52,9 +52,10 @@ public sealed class GameModeSceneBootstrap : MonoBehaviour
         }
 
         Flow = GameModeFlowController.Ensure(catalog);
+        CoopSessionController coopSession = null;
         if (marker.Mode == GameModeId.Coop)
         {
-            CoopSessionRuntimeBootstrap.EnsureForCurrentMode();
+            coopSession = CoopSessionRuntimeBootstrap.EnsureForCurrentMode();
         }
 
         if (marker.Stage == GameModeStage.Entry)
@@ -70,9 +71,14 @@ public sealed class GameModeSceneBootstrap : MonoBehaviour
         }
         else if (marker.Stage == GameModeStage.CoopLogin)
         {
+            PlayerAppearanceCatalog appearances =
+                Resources.Load<PlayerAppearanceCatalog>(
+                    PlayerAppearanceCatalog.ResourcesPath);
             View = CoopAccountView.Create(Flow,
                 new UnityAuthenticationGateway(),
-                Debug.isDebugBuild || Application.isEditor);
+                Debug.isDebugBuild || Application.isEditor,
+                coopSession,
+                appearances);
         }
         else
         {
