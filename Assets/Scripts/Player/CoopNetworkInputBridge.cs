@@ -62,6 +62,7 @@ public sealed class CoopNetworkInputBridge : MonoBehaviour
 
         ResolveLocalDriver();
         if (networkDriver == null) return;
+        HandleCombatPresentationInput();
         bool jumpRequested = input.JumpPressed;
         if (input.CrouchPressed)
             networkCrouching = !networkCrouching;
@@ -77,7 +78,8 @@ public sealed class CoopNetworkInputBridge : MonoBehaviour
             input.AttackPressed,
             jumpRequested,
             input.SprintHeld,
-            networkCrouching);
+            networkCrouching,
+            player.IsAiming);
     }
 
     private void OnDisable()
@@ -175,5 +177,39 @@ public sealed class CoopNetworkInputBridge : MonoBehaviour
         networkCrouching = crouching;
         player?.ApplyNetworkMovementPose(
             position, yaw, pitch, crouching, grounded);
+    }
+
+    private void HandleCombatPresentationInput()
+    {
+        if (combat == null || networkDriver == null) return;
+
+        int requestedSlot = input.ConsumeWeaponSelection();
+        int cycleDirection = input.ConsumeWeaponCycleDirection();
+        int targetIndex = requestedSlot;
+        if (targetIndex < 0 && cycleDirection != 0 &&
+            combat.WeaponCount > 0)
+        {
+            int step = cycleDirection > 0 ? 1 : -1;
+            targetIndex = (combat.EquippedWeaponIndex + step +
+                combat.WeaponCount) % combat.WeaponCount;
+        }
+        if (targetIndex >= 0 && targetIndex < combat.WeaponCount &&
+            combat.TrySelectWeapon(targetIndex))
+        {
+            string weaponId = NetworkPresentationIds.ResolveWeaponOrDefault(
+                combat.GetWeapon(targetIndex)?.StableId);
+            networkDriver.SubmitPresentationAction(
+                NetworkPresentationAction.SwitchWeapon,
+                weaponId);
+        }
+
+        if (!input.ConsumeReloadPressed() || combat.IsSwitching ||
+            combat.EquippedWeapon == null ||
+            !combat.EquippedWeapon.TryStartReload()) return;
+        player.TrySetAiming(false);
+        networkDriver.SubmitPresentationAction(
+            NetworkPresentationAction.Reload,
+            NetworkPresentationIds.ResolveWeaponOrDefault(
+                combat.EquippedWeapon.StableId));
     }
 }

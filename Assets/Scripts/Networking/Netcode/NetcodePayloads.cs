@@ -6,6 +6,125 @@ using UnityEngine;
 
 namespace FPS.Networking.Netcode
 {
+    public enum NetworkPresentationAction : byte
+    {
+        None = 0,
+        Shoot = 1,
+        Reload = 2,
+        SwitchWeapon = 3,
+        Jump = 4
+    }
+
+    /// <summary>
+    /// Server-side whitelist for identifiers that are allowed to cross the
+    /// gameplay network boundary. Unknown appearance ids fall back safely;
+    /// unknown weapon ids are rejected for live switch commands.
+    /// </summary>
+    public static class NetworkPresentationIds
+    {
+        public const string DefaultAppearance =
+            "character.quaternius.male-light";
+        public const string DefaultWeapon = "weapon.lpsp.ar";
+        public const string Rifle = "weapon.lpsp.ar";
+        public const string Handgun = "weapon.lpsp.handgun";
+
+        private static readonly string[] AppearanceWhitelist =
+        {
+            DefaultAppearance,
+            "character.quaternius.male-dark",
+            "character.quaternius.female-dark"
+        };
+
+        public static bool IsAllowedAppearance(string value)
+        {
+            string normalized = value?.Trim() ?? string.Empty;
+            for (int index = 0; index < AppearanceWhitelist.Length; index++)
+            {
+                if (string.Equals(normalized, AppearanceWhitelist[index],
+                        StringComparison.Ordinal)) return true;
+            }
+            return false;
+        }
+
+        public static string ResolveAppearance(string value) =>
+            IsAllowedAppearance(value) ? value.Trim() : DefaultAppearance;
+
+        public static bool TryResolveWeapon(
+            string value,
+            out string resolved)
+        {
+            string normalized = value?.Trim() ?? string.Empty;
+            if (string.Equals(normalized, Rifle, StringComparison.Ordinal) ||
+                string.Equals(normalized, "weapon.rifle",
+                    StringComparison.Ordinal))
+            {
+                resolved = Rifle;
+                return true;
+            }
+            if (string.Equals(normalized, Handgun, StringComparison.Ordinal) ||
+                string.Equals(normalized, "weapon.pistol",
+                    StringComparison.Ordinal))
+            {
+                resolved = Handgun;
+                return true;
+            }
+            resolved = DefaultWeapon;
+            return false;
+        }
+
+        public static string ResolveWeaponOrDefault(string value) =>
+            TryResolveWeapon(value, out string resolved)
+                ? resolved
+                : DefaultWeapon;
+    }
+
+    public struct NetcodePresentationCommand : INetworkSerializable,
+        IEquatable<NetcodePresentationCommand>
+    {
+        public int PlayerId;
+        public uint Sequence;
+        public NetworkPresentationAction Action;
+        public FixedString64Bytes WeaponId;
+
+        public void NetworkSerialize<T>(BufferSerializer<T> serializer)
+            where T : IReaderWriter
+        {
+            serializer.SerializeValue(ref PlayerId);
+            serializer.SerializeValue(ref Sequence);
+            serializer.SerializeValue(ref Action);
+            serializer.SerializeValue(ref WeaponId);
+        }
+
+        public bool Equals(NetcodePresentationCommand other) =>
+            PlayerId == other.PlayerId && Sequence == other.Sequence &&
+            Action == other.Action && WeaponId.Equals(other.WeaponId);
+    }
+
+    public struct NetcodePresentationEvent : INetworkSerializable,
+        IEquatable<NetcodePresentationEvent>
+    {
+        public long ServerTick;
+        public long Sequence;
+        public int PlayerId;
+        public NetworkPresentationAction Action;
+        public FixedString64Bytes WeaponId;
+
+        public void NetworkSerialize<T>(BufferSerializer<T> serializer)
+            where T : IReaderWriter
+        {
+            serializer.SerializeValue(ref ServerTick);
+            serializer.SerializeValue(ref Sequence);
+            serializer.SerializeValue(ref PlayerId);
+            serializer.SerializeValue(ref Action);
+            serializer.SerializeValue(ref WeaponId);
+        }
+
+        public bool Equals(NetcodePresentationEvent other) =>
+            ServerTick == other.ServerTick && Sequence == other.Sequence &&
+            PlayerId == other.PlayerId && Action == other.Action &&
+            WeaponId.Equals(other.WeaponId);
+    }
+
     public struct NetcodeRulesState : INetworkSerializable,
         IEquatable<NetcodeRulesState>
     {
@@ -159,6 +278,7 @@ namespace FPS.Networking.Netcode
         public bool JumpPressed;
         public bool SprintHeld;
         public bool CrouchRequested;
+        public bool AimingHeld;
 
         public static NetcodePlayerCommand FromDomain(PlayerInputCommand value)
         {
@@ -214,6 +334,7 @@ namespace FPS.Networking.Netcode
             serializer.SerializeValue(ref JumpPressed);
             serializer.SerializeValue(ref SprintHeld);
             serializer.SerializeValue(ref CrouchRequested);
+            serializer.SerializeValue(ref AimingHeld);
         }
 
         public bool Equals(NetcodePlayerCommand other)
@@ -227,7 +348,8 @@ namespace FPS.Networking.Netcode
                 ClaimedPosition.Equals(other.ClaimedPosition) &&
                 JumpPressed == other.JumpPressed &&
                 SprintHeld == other.SprintHeld &&
-                CrouchRequested == other.CrouchRequested;
+                CrouchRequested == other.CrouchRequested &&
+                AimingHeld == other.AimingHeld;
         }
     }
 
@@ -246,6 +368,12 @@ namespace FPS.Networking.Netcode
         public bool Grounded;
         public long LastJumpTick;
         public float GroundHeight;
+        public bool Sprinting;
+        public bool Aiming;
+        public FixedString64Bytes AppearanceId;
+        public FixedString64Bytes WeaponId;
+        public uint AcknowledgedPresentationCommandSequence;
+        public long LastPresentationEventSequence;
 
         public bool IsAlive => Health > 0f;
 
@@ -266,7 +394,9 @@ namespace FPS.Networking.Netcode
                 Stance = (byte)value.Stance,
                 Grounded = value.Grounded,
                 LastJumpTick = value.LastJumpTick,
-                GroundHeight = (float)value.GroundHeight
+                GroundHeight = (float)value.GroundHeight,
+                AppearanceId = NetworkPresentationIds.DefaultAppearance,
+                WeaponId = NetworkPresentationIds.DefaultWeapon
             };
         }
 
@@ -304,16 +434,74 @@ namespace FPS.Networking.Netcode
         {
             serializer.SerializeValue(ref ServerTick);
             serializer.SerializeValue(ref PlayerId);
-            serializer.SerializeValue(ref Position);
-            serializer.SerializeValue(ref Health);
             serializer.SerializeValue(ref AcknowledgedSequence);
-            serializer.SerializeValue(ref AimYawDegrees);
-            serializer.SerializeValue(ref AimPitchDegrees);
-            serializer.SerializeValue(ref Velocity);
             serializer.SerializeValue(ref Stance);
-            serializer.SerializeValue(ref Grounded);
             serializer.SerializeValue(ref LastJumpTick);
-            serializer.SerializeValue(ref GroundHeight);
+            serializer.SerializeValue(ref AppearanceId);
+            serializer.SerializeValue(ref WeaponId);
+            serializer.SerializeValue(
+                ref AcknowledgedPresentationCommandSequence);
+            serializer.SerializeValue(ref LastPresentationEventSequence);
+
+            int positionX = 0;
+            int positionY = 0;
+            int positionZ = 0;
+            short velocityX = 0;
+            short velocityY = 0;
+            short velocityZ = 0;
+            ushort health = 0;
+            ushort yaw = 0;
+            short pitch = 0;
+            int groundHeight = 0;
+            byte flags = 0;
+            if (serializer.IsWriter)
+            {
+                positionX = QuantizeInt(Position.x, 100f);
+                positionY = QuantizeInt(Position.y, 100f);
+                positionZ = QuantizeInt(Position.z, 100f);
+                velocityX = QuantizeShort(Velocity.x, 100f);
+                velocityY = QuantizeShort(Velocity.y, 100f);
+                velocityZ = QuantizeShort(Velocity.z, 100f);
+                health = (ushort)Mathf.Clamp(
+                    Mathf.RoundToInt(Health * 10f), 0, ushort.MaxValue);
+                yaw = (ushort)Mathf.Clamp(Mathf.RoundToInt(
+                    Mathf.Repeat(AimYawDegrees, 360f) * 100f), 0, 35999);
+                pitch = QuantizeShort(
+                    Mathf.Clamp(AimPitchDegrees, -89f, 89f), 100f);
+                groundHeight = QuantizeInt(GroundHeight, 100f);
+                if (Grounded) flags |= 1;
+                if (Sprinting) flags |= 2;
+                if (Aiming) flags |= 4;
+            }
+            serializer.SerializeValue(ref positionX);
+            serializer.SerializeValue(ref positionY);
+            serializer.SerializeValue(ref positionZ);
+            serializer.SerializeValue(ref velocityX);
+            serializer.SerializeValue(ref velocityY);
+            serializer.SerializeValue(ref velocityZ);
+            serializer.SerializeValue(ref health);
+            serializer.SerializeValue(ref yaw);
+            serializer.SerializeValue(ref pitch);
+            serializer.SerializeValue(ref groundHeight);
+            serializer.SerializeValue(ref flags);
+            if (serializer.IsReader)
+            {
+                Position = new Vector3(
+                    positionX / 100f,
+                    positionY / 100f,
+                    positionZ / 100f);
+                Velocity = new Vector3(
+                    velocityX / 100f,
+                    velocityY / 100f,
+                    velocityZ / 100f);
+                Health = health / 10f;
+                AimYawDegrees = yaw / 100f;
+                AimPitchDegrees = pitch / 100f;
+                GroundHeight = groundHeight / 100f;
+                Grounded = (flags & 1) != 0;
+                Sprinting = (flags & 2) != 0;
+                Aiming = (flags & 4) != 0;
+            }
         }
 
         public bool Equals(NetcodePlayerState other)
@@ -328,7 +516,27 @@ namespace FPS.Networking.Netcode
                 Stance == other.Stance &&
                 Grounded == other.Grounded &&
                 LastJumpTick == other.LastJumpTick &&
-                GroundHeight.Equals(other.GroundHeight);
+                GroundHeight.Equals(other.GroundHeight) &&
+                Sprinting == other.Sprinting && Aiming == other.Aiming &&
+                AppearanceId.Equals(other.AppearanceId) &&
+                WeaponId.Equals(other.WeaponId) &&
+                AcknowledgedPresentationCommandSequence ==
+                    other.AcknowledgedPresentationCommandSequence &&
+                LastPresentationEventSequence ==
+                    other.LastPresentationEventSequence;
+        }
+
+        private static int QuantizeInt(float value, float scale)
+        {
+            double scaled = Math.Round((double)value * scale);
+            return (int)Math.Max(int.MinValue,
+                Math.Min(int.MaxValue, scaled));
+        }
+
+        private static short QuantizeShort(float value, float scale)
+        {
+            int scaled = Mathf.RoundToInt(value * scale);
+            return (short)Mathf.Clamp(scaled, short.MinValue, short.MaxValue);
         }
     }
 

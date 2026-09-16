@@ -61,6 +61,7 @@ public sealed class NetworkPlayerAppearancePresenter : MonoBehaviour
     {
         replica ??= GetComponent<NetworkPlayerReplica>();
         replica.AppearanceChanged += HandleAppearanceChanged;
+        replica.WeaponChanged += HandleWeaponChanged;
         replica.PosePresented += HandlePosePresented;
     }
 
@@ -73,6 +74,7 @@ public sealed class NetworkPlayerAppearancePresenter : MonoBehaviour
     {
         if (replica == null) return;
         replica.AppearanceChanged -= HandleAppearanceChanged;
+        replica.WeaponChanged -= HandleWeaponChanged;
         replica.PosePresented -= HandlePosePresented;
     }
 
@@ -108,6 +110,8 @@ public sealed class NetworkPlayerAppearancePresenter : MonoBehaviour
             out _,
             out _);
         animator = appearanceInstance.GetComponent<Animator>();
+        defaultWeaponId = NetworkPresentationIds.ResolveWeaponOrDefault(
+            replica.WeaponId);
         animationDriver ??= GetComponent<NetworkThirdPersonAnimator>();
         animationDriver?.BindAnimator(animator);
         CreateThirdPersonWeapon();
@@ -128,6 +132,15 @@ public sealed class NetworkPlayerAppearancePresenter : MonoBehaviour
     {
         if (!isActiveAndEnabled) return;
         RefreshRepresentation();
+    }
+
+    private void HandleWeaponChanged(string weaponId)
+    {
+        if (!isActiveAndEnabled) return;
+        string safe = NetworkPresentationIds.ResolveWeaponOrDefault(weaponId);
+        if (string.Equals(defaultWeaponId, safe,
+                StringComparison.Ordinal) && weaponInstance != null) return;
+        SetThirdPersonWeapon(safe);
     }
 
     private void HandlePosePresented(

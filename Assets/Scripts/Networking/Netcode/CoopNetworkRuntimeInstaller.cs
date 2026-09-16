@@ -51,7 +51,7 @@ namespace FPS.Networking.Netcode
     public sealed class CoopNetworkRuntimeInstaller : MonoBehaviour
     {
         public const string DefaultAppearanceId =
-            "character.quaternius.male-light";
+            NetworkPresentationIds.DefaultAppearance;
 
         [SerializeField] private NetworkObject sessionAuthorityPrefab;
         [SerializeField] private NetworkObject playerReplicaPrefab;
@@ -180,10 +180,12 @@ namespace FPS.Networking.Netcode
         {
             if (playerId <= 0)
                 throw new ArgumentOutOfRangeException(nameof(playerId));
-            string normalized = string.IsNullOrWhiteSpace(appearanceId)
-                ? DefaultAppearanceId
-                : appearanceId.Trim();
+            string normalized = NetworkPresentationIds.ResolveAppearance(
+                appearanceId);
             appearanceIds[playerId] = normalized;
+            if (sessionAuthority != null && sessionAuthority.IsConfigured)
+                sessionAuthority.ConfigurePlayerAppearance(
+                    playerId, normalized);
 
             foreach (KeyValuePair<ulong, int> pair in playerIds)
             {

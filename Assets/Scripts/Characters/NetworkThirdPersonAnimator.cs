@@ -34,18 +34,23 @@ public sealed class NetworkThirdPersonAnimator : MonoBehaviour
     {
         replica ??= GetComponent<NetworkPlayerReplica>();
         replica.PosePresented += HandlePosePresented;
+        replica.PresentationActionReceived += HandlePresentationAction;
     }
 
     private void OnDisable()
     {
         if (replica != null)
+        {
             replica.PosePresented -= HandlePosePresented;
+            replica.PresentationActionReceived -= HandlePresentationAction;
+        }
     }
 
     public void BindAnimator(Animator target)
     {
         animator = target;
         if (animator == null) return;
+        if (replica != null) aiming = replica.PresentedAiming;
         animator.applyRootMotion = false;
         animator.updateMode = AnimatorUpdateMode.Normal;
         animator.cullingMode = AnimatorCullingMode.AlwaysAnimate;
@@ -172,7 +177,24 @@ public sealed class NetworkThirdPersonAnimator : MonoBehaviour
         bool grounded)
     {
         if (replica == null) return;
+        SetAiming(replica.PresentedAiming);
         ApplyPresentation(replica.PresentedVelocity, aimPitch,
             crouching, grounded, Time.unscaledDeltaTime);
+    }
+
+    private void HandlePresentationAction(NetworkPresentationAction action)
+    {
+        switch (action)
+        {
+            case NetworkPresentationAction.Shoot:
+                PlayCombatAction(ThirdPersonCombatAction.Shoot);
+                break;
+            case NetworkPresentationAction.Reload:
+                PlayCombatAction(ThirdPersonCombatAction.Reload);
+                break;
+            case NetworkPresentationAction.SwitchWeapon:
+                PlayCombatAction(ThirdPersonCombatAction.SwitchWeapon);
+                break;
+        }
     }
 }

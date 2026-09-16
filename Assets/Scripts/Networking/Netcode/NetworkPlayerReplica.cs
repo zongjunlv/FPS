@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using FPS.Networking.Domain;
 using Unity.Collections;
 using Unity.Netcode;
@@ -33,9 +34,17 @@ namespace FPS.Networking.Netcode
         private RemoteSnapshotInterpolator interpolation;
         private uint nextSequence = 1;
         private ulong nonceSalt = 0x65C00FUL;
+        private uint nextPresentationSequence = 1;
         private long lastConsumedServerTick = -1;
+        private long lastPresentationEventSequence;
+        private bool presentationBaselineInitialized;
         private double estimatedServerTick;
         private bool ownerTestHook;
+        private string currentAppearanceId =
+            NetworkPresentationIds.DefaultAppearance;
+        private string currentWeaponId = NetworkPresentationIds.DefaultWeapon;
+        private readonly List<NetcodePresentationEvent>
+            pendingPresentationEvents = new();
 
         public int PlayerId => playerId;
         public Vector3 PresentedPosition { get; private set; }
@@ -44,6 +53,8 @@ namespace FPS.Networking.Netcode
         public Vector3 PresentedVelocity { get; private set; }
         public bool PresentedCrouching { get; private set; }
         public bool PresentedGrounded { get; private set; } = true;
+        public bool PresentedSprinting { get; private set; }
+        public bool PresentedAiming { get; private set; }
         public bool PresentedAlive { get; private set; } = true;
         public int PredictionSampleCount { get; private set; }
         public int PredictionCorrectionCount { get; private set; }
@@ -58,12 +69,18 @@ namespace FPS.Networking.Netcode
         public float PresentationSprintSpeed => session?.Rules == null
             ? 6f
             : (float)session.Rules.SprintSpeed;
-        public string AppearanceId => replicatedAppearanceId.Value.ToString();
+        public string AppearanceId => currentAppearanceId;
+        public string WeaponId => currentWeaponId;
+        public long LastPresentationEventSequence =>
+            lastPresentationEventSequence;
         public bool IsLocallyControlled => IsOwner || ownerTestHook;
         public bool IsPresentationReady => session != null &&
             session.Rules != null;
         public event Action<Vector3, float, float, bool, bool> PosePresented;
         public event Action<string> AppearanceChanged;
+        public event Action<string> WeaponChanged;
+        public event Action<NetworkPresentationAction>
+            PresentationActionReceived;
         private double predictionErrorSum;
 
         public override void OnNetworkSpawn()
@@ -74,6 +91,8 @@ namespace FPS.Networking.Netcode
             ResolveSession();
             EnsurePresentationBuffers();
             ApplyOwnershipPolicy();
+            currentAppearanceId = NetworkPresentationIds.ResolveAppearance(
+                replicatedAppearanceId.Value.ToString());
             AppearanceChanged?.Invoke(AppearanceId);
         }
 
@@ -163,20 +182,23 @@ namespace FPS.Networking.Netcode
                     "Only the server may configure player appearance.");
             }
 
-            var normalized = new FixedString64Bytes(
-                appearanceId?.Trim() ?? string.Empty);
+            string safeAppearance = NetworkPresentationIds.ResolveAppearance(
+                appearanceId);
+            var normalized = new FixedString64Bytes(safeAppearance);
             if (IsSpawned)
             {
                 if (replicatedAppearanceId.Value.Equals(normalized))
-                    AppearanceChanged?.Invoke(normalized.ToString());
+                    ApplyAppearance(normalized.ToString());
                 else
                     replicatedAppearanceId.Value = normalized;
             }
             else
             {
                 replicatedAppearanceId.Reset(normalized);
-                AppearanceChanged?.Invoke(normalized.ToString());
+                ApplyAppearance(normalized.ToString());
             }
+            if (session != null && session.IsConfigured)
+                session.ConfigurePlayerAppearance(playerId, safeAppearance);
         }
 
         public NetcodePlayerCommand BuildPredictedCommand(
@@ -202,6 +224,23 @@ namespace FPS.Networking.Netcode
             bool jumpPressed,
             bool sprintHeld,
             bool crouchRequested)
+        {
+            return BuildPredictedCommand(moveX, moveZ, aimYawDegrees,
+                aimPitchDegrees, fire, clientTick, jumpPressed, sprintHeld,
+                crouchRequested, aimingHeld: false);
+        }
+
+        public NetcodePlayerCommand BuildPredictedCommand(
+            float moveX,
+            float moveZ,
+            float aimYawDegrees,
+            float aimPitchDegrees,
+            bool fire,
+            long clientTick,
+            bool jumpPressed,
+            bool sprintHeld,
+            bool crouchRequested,
+            bool aimingHeld)
         {
             RequireLocalOwner();
             if (!EnsurePresentationBuffers())
@@ -235,7 +274,8 @@ namespace FPS.Networking.Netcode
             PresentedCrouching = movement.IsCrouching;
             PresentedGrounded = movement.Grounded;
             ApplyPresentedPose();
-            return NetcodePlayerCommand.FromDomain(new PlayerInputCommand(
+            NetcodePlayerCommand payload =
+                NetcodePlayerCommand.FromDomain(new PlayerInputCommand(
                 playerId,
                 sequence,
                 nonce,
@@ -249,6 +289,11 @@ namespace FPS.Networking.Netcode
                 jumpPressed,
                 sprintHeld,
                 crouchRequested));
+            payload.AimingHeld = aimingHeld;
+            PresentedSprinting = sprintHeld && !crouchRequested &&
+                moveZ > 0.1f;
+            PresentedAiming = aimingHeld && !PresentedSprinting;
+            return payload;
         }
 
         public NetcodePlayerCommand SubmitLocalCommand(
@@ -275,6 +320,23 @@ namespace FPS.Networking.Netcode
             bool sprintHeld,
             bool crouchRequested)
         {
+            return SubmitLocalCommand(moveX, moveZ, aimYawDegrees,
+                aimPitchDegrees, fire, clientTick, jumpPressed, sprintHeld,
+                crouchRequested, aimingHeld: false);
+        }
+
+        public NetcodePlayerCommand SubmitLocalCommand(
+            float moveX,
+            float moveZ,
+            float aimYawDegrees,
+            float aimPitchDegrees,
+            bool fire,
+            long clientTick,
+            bool jumpPressed,
+            bool sprintHeld,
+            bool crouchRequested,
+            bool aimingHeld)
+        {
             NetcodePlayerCommand payload = BuildPredictedCommand(
                 moveX,
                 moveZ,
@@ -284,7 +346,8 @@ namespace FPS.Networking.Netcode
                 clientTick,
                 jumpPressed,
                 sprintHeld,
-                crouchRequested);
+                crouchRequested,
+                aimingHeld);
             if (session == null || !session.IsSpawned)
             {
                 throw new InvalidOperationException(
@@ -300,6 +363,46 @@ namespace FPS.Networking.Netcode
                 session.SubmitInputRpc(payload);
             }
 
+            return payload;
+        }
+
+        public NetcodePresentationCommand BuildPresentationCommand(
+            NetworkPresentationAction action,
+            string weaponId = null)
+        {
+            RequireLocalOwner();
+            string safeWeapon = currentWeaponId;
+            if (action == NetworkPresentationAction.SwitchWeapon)
+            {
+                if (!NetworkPresentationIds.TryResolveWeapon(
+                        weaponId, out safeWeapon))
+                {
+                    throw new ArgumentException(
+                        "Weapon id is not permitted by the server whitelist.",
+                        nameof(weaponId));
+                }
+            }
+            return new NetcodePresentationCommand
+            {
+                PlayerId = playerId,
+                Sequence = nextPresentationSequence++,
+                Action = action,
+                WeaponId = safeWeapon
+            };
+        }
+
+        public NetcodePresentationCommand SubmitPresentationAction(
+            NetworkPresentationAction action,
+            string weaponId = null)
+        {
+            NetcodePresentationCommand payload = BuildPresentationCommand(
+                action, weaponId);
+            if (session == null || !session.IsSpawned)
+            {
+                throw new InvalidOperationException(
+                    "A spawned session authority is required to submit RPCs.");
+            }
+            session.SubmitPresentationRpc(payload);
             return payload;
         }
 
@@ -319,10 +422,14 @@ namespace FPS.Networking.Netcode
             {
                 return;
             }
+            if (state.ServerTick >= lastConsumedServerTick)
+            {
+                PresentedAlive = state.IsAlive;
+                ApplyPresentationState(state);
+            }
             if (state.ServerTick > lastConsumedServerTick)
             {
                 lastConsumedServerTick = state.ServerTick;
-                PresentedAlive = state.IsAlive;
                 if (treatAsLocalOwner)
                 {
                     LastPredictionCorrection = prediction.Reconcile(
@@ -352,6 +459,8 @@ namespace FPS.Networking.Netcode
                     interpolation.Push(state.ToRemoteSnapshot());
                 }
             }
+
+            ConsumeAvailablePresentationEvents();
 
             if (!treatAsLocalOwner)
             {
@@ -392,12 +501,18 @@ namespace FPS.Networking.Netcode
             lastConsumedServerTick = -1;
             estimatedServerTick = 0d;
             nextSequence = 1;
+            nextPresentationSequence = 1;
+            lastPresentationEventSequence = 0;
+            presentationBaselineInitialized = false;
+            pendingPresentationEvents.Clear();
             PresentedPosition = transform.position;
             PresentedAimYaw = transform.eulerAngles.y;
             PresentedAimPitch = 0f;
             PresentedVelocity = Vector3.zero;
             PresentedCrouching = false;
             PresentedGrounded = true;
+            PresentedSprinting = false;
+            PresentedAiming = false;
             PresentedAlive = true;
             PredictionSampleCount = 0;
             PredictionCorrectionCount = 0;
@@ -459,7 +574,10 @@ namespace FPS.Networking.Netcode
                     playerId,
                     initial);
                 if (hasState)
+                {
                     prediction.Reconcile(state.ToDomain());
+                    ApplyPresentationState(state);
+                }
                 PlayerMovementState movement = prediction.PredictedMovement;
                 PresentedPosition = NetcodeConversions.ToUnity(initial);
                 PresentedVelocity = NetcodeConversions.ToUnity(
@@ -523,7 +641,68 @@ namespace FPS.Networking.Netcode
             FixedString64Bytes _,
             FixedString64Bytes current)
         {
-            AppearanceChanged?.Invoke(current.ToString());
+            ApplyAppearance(current.ToString());
+        }
+
+        public bool ConsumePresentationEvent(NetcodePresentationEvent value)
+        {
+            if (value.PlayerId != playerId ||
+                value.Sequence <= lastPresentationEventSequence)
+                return false;
+            lastPresentationEventSequence = value.Sequence;
+            if (value.Action == NetworkPresentationAction.SwitchWeapon)
+                ApplyWeapon(value.WeaponId.ToString());
+            PresentationActionReceived?.Invoke(value.Action);
+            return true;
+        }
+
+        private void ApplyPresentationState(NetcodePlayerState state)
+        {
+            ApplyAppearance(state.AppearanceId.ToString());
+            ApplyWeapon(state.WeaponId.ToString());
+            PresentedSprinting = state.Sprinting;
+            PresentedAiming = state.Aiming;
+            nextPresentationSequence = Math.Max(
+                nextPresentationSequence,
+                state.AcknowledgedPresentationCommandSequence + 1);
+            if (!presentationBaselineInitialized)
+            {
+                presentationBaselineInitialized = true;
+                lastPresentationEventSequence = Math.Max(
+                    lastPresentationEventSequence,
+                    state.LastPresentationEventSequence);
+            }
+        }
+
+        private void ConsumeAvailablePresentationEvents()
+        {
+            if (!presentationBaselineInitialized || session == null) return;
+            session.GetPresentationEventsAfter(
+                playerId,
+                lastPresentationEventSequence,
+                pendingPresentationEvents);
+            for (int index = 0;
+                 index < pendingPresentationEvents.Count;
+                 index++)
+                ConsumePresentationEvent(pendingPresentationEvents[index]);
+        }
+
+        private void ApplyAppearance(string value)
+        {
+            string safe = NetworkPresentationIds.ResolveAppearance(value);
+            if (string.Equals(currentAppearanceId, safe,
+                    StringComparison.Ordinal)) return;
+            currentAppearanceId = safe;
+            AppearanceChanged?.Invoke(currentAppearanceId);
+        }
+
+        private void ApplyWeapon(string value)
+        {
+            string safe = NetworkPresentationIds.ResolveWeaponOrDefault(value);
+            if (string.Equals(currentWeaponId, safe,
+                    StringComparison.Ordinal)) return;
+            currentWeaponId = safe;
+            WeaponChanged?.Invoke(currentWeaponId);
         }
     }
 }

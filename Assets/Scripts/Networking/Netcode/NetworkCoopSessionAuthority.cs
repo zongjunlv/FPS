@@ -15,6 +15,7 @@ namespace FPS.Networking.Netcode
     public sealed class NetworkCoopSessionAuthority : NetworkBehaviour
     {
         private const int MaximumReplicatedEvents = 64;
+        private const int MaximumPresentationEvents = 64;
 
         [SerializeField] private bool autoSimulate = true;
 
@@ -38,14 +39,26 @@ namespace FPS.Networking.Netcode
             null,
             NetworkVariableReadPermission.Everyone,
             NetworkVariableWritePermission.Server);
+        private readonly NetworkList<NetcodePresentationEvent>
+            presentationEvents = new(
+                null,
+                NetworkVariableReadPermission.Everyone,
+                NetworkVariableWritePermission.Server);
 
         private readonly Dictionary<ulong, int> playerByClient = new();
         private readonly List<PlayerInputCommand> pendingCommands = new();
+        private readonly Dictionary<(int playerId, uint sequence),
+            NetcodePlayerCommand> pendingPresentationInputs = new();
+        private readonly Dictionary<int, ServerPresentationState>
+            playerPresentation = new();
+        private readonly List<NetcodePresentationEvent>
+            offlinePresentationEvents = new();
         private AuthoritativeCoopSimulation simulation;
         private AuthoritativeTickResult lastResult;
         private AuthoritativeWorldSnapshot lastSnapshot;
         private double accumulatedSeconds;
         private bool testServerAuthority;
+        private long nextPresentationEventSequence;
         private readonly Collider[] standingOverlaps = new Collider[16];
 
         public event Action<AuthoritativeTickResult> ServerTickCompleted;
@@ -64,6 +77,8 @@ namespace FPS.Networking.Netcode
         public int ReplicatedPlayerCount => playerStates.Count;
         public int ReplicatedTargetCount => targetStates.Count;
         public int ReplicatedEventCount => authorityEvents.Count;
+        public int ReplicatedPresentationEventCount =>
+            IsSpawned ? presentationEvents.Count : offlinePresentationEvents.Count;
         public AuthoritativeTickResult LastServerResult => lastResult;
         public AuthoritativeWorldSnapshot LastAuthoritativeSnapshot =>
             lastSnapshot ?? simulation?.CaptureSnapshot();
@@ -119,9 +134,18 @@ namespace FPS.Networking.Netcode
                 rulesState.Reset(replicatedRules);
             }
             pendingCommands.Clear();
+            pendingPresentationInputs.Clear();
+            playerPresentation.Clear();
+            offlinePresentationEvents.Clear();
+            nextPresentationEventSequence = 0;
             accumulatedSeconds = 0d;
             lastResult = null;
             lastSnapshot = simulation.CaptureSnapshot();
+            for (int index = 0; index < lastSnapshot.Players.Count; index++)
+            {
+                int playerId = lastSnapshot.Players[index].PlayerId;
+                playerPresentation[playerId] = ServerPresentationState.Default;
+            }
             if (IsSpawned && IsServer)
             {
                 PublishSnapshot(lastSnapshot,
@@ -166,6 +190,17 @@ namespace FPS.Networking.Netcode
                 forceFire: true);
         }
 
+        [Rpc(SendTo.Server, InvokePermission = RpcInvokePermission.Everyone,
+            Delivery = RpcDelivery.Reliable)]
+        public void SubmitPresentationRpc(
+            NetcodePresentationCommand payload,
+            RpcParams rpcParams = default)
+        {
+            TryApplyPresentationCommand(
+                rpcParams.Receive.SenderClientId,
+                payload);
+        }
+
         /// <summary>
         /// Server-side transport/authentication seam. This is public so a
         /// multi-process PlayMode fixture can inject the actual sender id.
@@ -186,7 +221,80 @@ namespace FPS.Networking.Netcode
             }
 
             pendingCommands.Add(payload.ToDomain(forceFire));
+            pendingPresentationInputs[(payload.PlayerId, payload.Sequence)] =
+                payload;
             return true;
+        }
+
+        public bool TryApplyPresentationCommand(
+            ulong senderClientId,
+            NetcodePresentationCommand payload)
+        {
+            if (!CanServerWrite || simulation == null ||
+                !playerByClient.TryGetValue(senderClientId, out int playerId) ||
+                payload.PlayerId != playerId ||
+                !playerPresentation.TryGetValue(playerId,
+                    out ServerPresentationState state) ||
+                payload.Sequence == 0 ||
+                payload.Sequence <= state.LastPresentationCommandSequence)
+            {
+                UnauthorizedCommandRejected?.Invoke(
+                    senderClientId,
+                    payload.PlayerId);
+                return false;
+            }
+
+            if (payload.Action != NetworkPresentationAction.Reload &&
+                payload.Action != NetworkPresentationAction.SwitchWeapon)
+            {
+                return false;
+            }
+
+            string weaponId = state.WeaponId;
+            if (payload.Action == NetworkPresentationAction.SwitchWeapon)
+            {
+                if (!NetworkPresentationIds.TryResolveWeapon(
+                        payload.WeaponId.ToString(), out weaponId))
+                {
+                    return false;
+                }
+                state.WeaponId = weaponId;
+            }
+
+            state.LastPresentationCommandSequence = payload.Sequence;
+            playerPresentation[playerId] = state;
+            EmitPresentationEvent(playerId, payload.Action, weaponId);
+            RefreshReplicatedPlayerState(playerId);
+            return true;
+        }
+
+        public void ConfigurePlayerPresentation(
+            int playerId,
+            string appearanceId,
+            string weaponId)
+        {
+            RequireServerWrite();
+            if (!playerPresentation.TryGetValue(playerId,
+                    out ServerPresentationState state))
+            {
+                throw new ArgumentOutOfRangeException(nameof(playerId));
+            }
+            state.AppearanceId = NetworkPresentationIds.ResolveAppearance(
+                appearanceId);
+            state.WeaponId = NetworkPresentationIds.ResolveWeaponOrDefault(
+                weaponId);
+            playerPresentation[playerId] = state;
+            RefreshReplicatedPlayerState(playerId);
+        }
+
+        public void ConfigurePlayerAppearance(int playerId, string appearanceId)
+        {
+            if (!playerPresentation.TryGetValue(playerId,
+                    out ServerPresentationState state))
+            {
+                throw new ArgumentOutOfRangeException(nameof(playerId));
+            }
+            ConfigurePlayerPresentation(playerId, appearanceId, state.WeaponId);
         }
 
         public AuthoritativeTickResult ServerStep()
@@ -201,6 +309,8 @@ namespace FPS.Networking.Netcode
             PlayerInputCommand[] commands = pendingCommands.ToArray();
             pendingCommands.Clear();
             lastResult = simulation.Step(commands);
+            ApplyAcceptedPresentationInputs(lastResult.Commands);
+            pendingPresentationInputs.Clear();
             lastSnapshot = lastResult.Snapshot;
             PublishSnapshot(lastResult.Snapshot, lastResult.Events);
             ServerTickCompleted?.Invoke(lastResult);
@@ -293,6 +403,7 @@ namespace FPS.Networking.Netcode
                         state = NetcodePlayerState.FromDomain(
                             snapshot.Tick,
                             snapshot.Players[index]);
+                        ApplyPresentationState(ref state);
                         return true;
                     }
                 }
@@ -300,6 +411,42 @@ namespace FPS.Networking.Netcode
 
             state = default;
             return false;
+        }
+
+        public int GetPresentationEventsAfter(
+            int playerId,
+            long afterSequence,
+            List<NetcodePresentationEvent> destination)
+        {
+            if (destination == null)
+                throw new ArgumentNullException(nameof(destination));
+            destination.Clear();
+            if (IsSpawned)
+            {
+                for (int index = 0; index < presentationEvents.Count; index++)
+                {
+                    NetcodePresentationEvent value = presentationEvents[index];
+                    if (value.PlayerId == playerId &&
+                        value.Sequence > afterSequence)
+                        destination.Add(value);
+                }
+            }
+            else
+            {
+                for (int index = 0;
+                     index < offlinePresentationEvents.Count;
+                     index++)
+                {
+                    NetcodePresentationEvent value =
+                        offlinePresentationEvents[index];
+                    if (value.PlayerId == playerId &&
+                        value.Sequence > afterSequence)
+                        destination.Add(value);
+                }
+            }
+            destination.Sort((left, right) =>
+                left.Sequence.CompareTo(right.Sequence));
+            return destination.Count;
         }
 
         public NetcodeTargetState GetReplicatedTarget(int index) =>
@@ -323,12 +470,16 @@ namespace FPS.Networking.Netcode
         public void ResetServerTestHook()
         {
             pendingCommands.Clear();
+            pendingPresentationInputs.Clear();
             playerByClient.Clear();
+            playerPresentation.Clear();
+            offlinePresentationEvents.Clear();
             simulation = null;
             lastResult = null;
             lastSnapshot = null;
             testServerAuthority = false;
             accumulatedSeconds = 0d;
+            nextPresentationEventSequence = 0;
         }
 
         private bool CanServerWrite => IsServer || testServerAuthority ||
@@ -354,12 +505,29 @@ namespace FPS.Networking.Netcode
             }
 
             long lastEventSequence = worldState.Value.LastEventSequence;
-            playerStates.Clear();
             for (int index = 0; index < snapshot.Players.Count; index++)
             {
-                playerStates.Add(NetcodePlayerState.FromDomain(
+                NetcodePlayerState player = NetcodePlayerState.FromDomain(
                     snapshot.Tick,
-                    snapshot.Players[index]));
+                    snapshot.Players[index]);
+                ApplyPresentationState(ref player);
+                int existingIndex = FindReplicatedPlayerIndex(player.PlayerId);
+                if (existingIndex >= 0) playerStates[existingIndex] = player;
+                else playerStates.Add(player);
+            }
+            for (int index = playerStates.Count - 1; index >= 0; index--)
+            {
+                bool found = false;
+                for (int playerIndex = 0;
+                     playerIndex < snapshot.Players.Count;
+                     playerIndex++)
+                {
+                    if (snapshot.Players[playerIndex].PlayerId !=
+                        playerStates[index].PlayerId) continue;
+                    found = true;
+                    break;
+                }
+                if (!found) playerStates.RemoveAt(index);
             }
 
             targetStates.Clear();
@@ -388,6 +556,124 @@ namespace FPS.Networking.Netcode
                 WaveStatus = snapshot.WaveStatus,
                 KilledTargets = snapshot.KilledTargets,
                 LastEventSequence = lastEventSequence
+            };
+        }
+
+        private void ApplyAcceptedPresentationInputs(
+            IReadOnlyList<CommandResolution> resolutions)
+        {
+            for (int index = 0; index < resolutions.Count; index++)
+            {
+                CommandResolution resolution = resolutions[index];
+                PlayerInputCommand command = resolution.Command;
+                if (!pendingPresentationInputs.TryGetValue(
+                        (command.PlayerId, command.Sequence),
+                        out NetcodePlayerCommand payload) ||
+                    !resolution.Accepted ||
+                    !playerPresentation.TryGetValue(command.PlayerId,
+                        out ServerPresentationState state))
+                {
+                    continue;
+                }
+
+                state.Sprinting = payload.SprintHeld &&
+                    !payload.CrouchRequested && payload.MoveZ > 0.1f;
+                state.Aiming = payload.AimingHeld && !state.Sprinting;
+                playerPresentation[command.PlayerId] = state;
+                if (command.JumpPressed)
+                    EmitPresentationEvent(command.PlayerId,
+                        NetworkPresentationAction.Jump, state.WeaponId);
+                if (command.Fire)
+                    EmitPresentationEvent(command.PlayerId,
+                        NetworkPresentationAction.Shoot, state.WeaponId);
+            }
+        }
+
+        private void EmitPresentationEvent(
+            int playerId,
+            NetworkPresentationAction action,
+            string weaponId)
+        {
+            var value = new NetcodePresentationEvent
+            {
+                ServerTick = simulation?.CurrentTick ?? 0,
+                Sequence = ++nextPresentationEventSequence,
+                PlayerId = playerId,
+                Action = action,
+                WeaponId = NetworkPresentationIds.ResolveWeaponOrDefault(
+                    weaponId)
+            };
+            offlinePresentationEvents.Add(value);
+            while (offlinePresentationEvents.Count >
+                   MaximumPresentationEvents)
+                offlinePresentationEvents.RemoveAt(0);
+            if (playerPresentation.TryGetValue(playerId,
+                    out ServerPresentationState state))
+            {
+                state.LastEventSequence = value.Sequence;
+                playerPresentation[playerId] = state;
+            }
+            if (!IsSpawned || !IsServer) return;
+            presentationEvents.Add(value);
+            while (presentationEvents.Count > MaximumPresentationEvents)
+                presentationEvents.RemoveAt(0);
+        }
+
+        private void ApplyPresentationState(ref NetcodePlayerState state)
+        {
+            if (!playerPresentation.TryGetValue(state.PlayerId,
+                    out ServerPresentationState presentation))
+                presentation = ServerPresentationState.Default;
+            state.AppearanceId = presentation.AppearanceId;
+            state.WeaponId = presentation.WeaponId;
+            state.Sprinting = presentation.Sprinting;
+            state.Aiming = presentation.Aiming;
+            state.AcknowledgedPresentationCommandSequence =
+                presentation.LastPresentationCommandSequence;
+            state.LastPresentationEventSequence =
+                presentation.LastEventSequence;
+        }
+
+        private void RefreshReplicatedPlayerState(int playerId)
+        {
+            if (!IsSpawned || !IsServer || lastSnapshot == null) return;
+            for (int index = 0; index < lastSnapshot.Players.Count; index++)
+            {
+                if (lastSnapshot.Players[index].PlayerId != playerId) continue;
+                NetcodePlayerState state = NetcodePlayerState.FromDomain(
+                    lastSnapshot.Tick, lastSnapshot.Players[index]);
+                ApplyPresentationState(ref state);
+                int replicatedIndex = FindReplicatedPlayerIndex(playerId);
+                if (replicatedIndex >= 0)
+                    playerStates[replicatedIndex] = state;
+                else
+                    playerStates.Add(state);
+                return;
+            }
+        }
+
+        private int FindReplicatedPlayerIndex(int playerId)
+        {
+            for (int index = 0; index < playerStates.Count; index++)
+            {
+                if (playerStates[index].PlayerId == playerId) return index;
+            }
+            return -1;
+        }
+
+        private struct ServerPresentationState
+        {
+            public string AppearanceId;
+            public string WeaponId;
+            public bool Sprinting;
+            public bool Aiming;
+            public uint LastPresentationCommandSequence;
+            public long LastEventSequence;
+
+            public static ServerPresentationState Default => new()
+            {
+                AppearanceId = NetworkPresentationIds.DefaultAppearance,
+                WeaponId = NetworkPresentationIds.DefaultWeapon
             };
         }
     }
