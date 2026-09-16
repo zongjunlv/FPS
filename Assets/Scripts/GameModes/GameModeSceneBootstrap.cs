@@ -68,6 +68,12 @@ public sealed class GameModeSceneBootstrap : MonoBehaviour
                     PlayerAppearanceCatalog.ResourcesPath);
             View = BattleCharacterSelectionView.Create(Flow, appearances);
         }
+        else if (marker.Stage == GameModeStage.CoopLogin)
+        {
+            View = CoopAccountView.Create(Flow,
+                new UnityAuthenticationGateway(),
+                Debug.isDebugBuild || Application.isEditor);
+        }
         else
         {
             View = ModeDestinationView.Create(Flow, marker.Mode, marker.Stage);

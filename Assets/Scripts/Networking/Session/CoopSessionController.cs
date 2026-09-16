@@ -434,9 +434,8 @@ namespace FPS.Networking.Session
             }
 
             if (!AuthenticationService.Instance.IsSignedIn)
-            {
-                await AuthenticationService.Instance.SignInAnonymouslyAsync();
-            }
+                throw new InvalidOperationException(
+                    "请先在多人合作登录页完成账号登录。匿名身份仅用于显式开发调试。");
         }
 
         private static string NormalizeProfile(string profile)

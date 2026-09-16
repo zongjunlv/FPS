@@ -10,7 +10,8 @@
     "Unity.InputSystem",
     "Unity.InputSystem.ForUI",
     "Unity.InputSystem.TestFramework",
-    "UnityEngine.UI"
+    "UnityEngine.UI",
+    "Unity.TextMeshPro"
   ],
   "includePlatforms": [],
   "excludePlatforms": [],

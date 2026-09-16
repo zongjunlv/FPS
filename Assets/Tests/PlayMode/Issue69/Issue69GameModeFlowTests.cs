@@ -118,10 +118,13 @@ namespace FPS.Tests.PlayMode.Issue69
                     ModeDestinationView>();
                 BattleCharacterSelectionView characterSelection =
                     Object.FindFirstObjectByType<BattleCharacterSelectionView>();
+                CoopAccountView account =
+                    Object.FindFirstObjectByType<CoopAccountView>();
                 if (modes[index] == GameModeId.Tutorial)
                 {
                     Assert.That(destination, Is.Null, paths[index]);
                     Assert.That(characterSelection, Is.Null, paths[index]);
+                    Assert.That(account, Is.Null, paths[index]);
                     Assert.That(Object.FindFirstObjectByType<
                         PlayerGameplayRig>(), Is.Not.Null, paths[index]);
                     Assert.That(Object.FindFirstObjectByType<PlayerController>(),
@@ -133,17 +136,25 @@ namespace FPS.Tests.PlayMode.Issue69
                 {
                     Assert.That(destination, Is.Null, paths[index]);
                     Assert.That(characterSelection, Is.Not.Null, paths[index]);
+                    Assert.That(account, Is.Null, paths[index]);
                     Assert.That(Object.FindFirstObjectByType<PlayerController>(),
                         Is.Null, paths[index]);
                     characterSelection.ReturnButton.onClick.Invoke();
                 }
                 else
                 {
-                    Assert.That(destination, Is.Not.Null, paths[index]);
+                    Assert.That(destination, Is.Null, paths[index]);
                     Assert.That(characterSelection, Is.Null, paths[index]);
+                    Assert.That(account, Is.Not.Null, paths[index]);
                     Assert.That(Object.FindFirstObjectByType<PlayerController>(),
                         Is.Null, paths[index]);
-                    destination.ReturnButton.onClick.Invoke();
+                    float accountDeadline = Time.realtimeSinceStartup + 20f;
+                    while (account.Controller.IsBusy &&
+                           Time.realtimeSinceStartup < accountDeadline)
+                        yield return null;
+                    Assert.That(account.Controller.IsBusy, Is.False,
+                        "账号会话恢复不应永久阻塞返回操作。");
+                    account.ReturnButton.onClick.Invoke();
                 }
 
                 yield return WaitForScene(GameModeScenePaths.Entry);
@@ -218,8 +229,15 @@ namespace FPS.Tests.PlayMode.Issue69
             Assert.That(Object.FindFirstObjectByType<NetworkManager>()
                 .IsListening, Is.True);
 
-            Object.FindFirstObjectByType<ModeDestinationView>()
-                .ReturnButton.onClick.Invoke();
+            CoopAccountView account =
+                Object.FindFirstObjectByType<CoopAccountView>();
+            Assert.That(account, Is.Not.Null);
+            float accountDeadline = Time.realtimeSinceStartup + 20f;
+            while (account.Controller.IsBusy &&
+                   Time.realtimeSinceStartup < accountDeadline)
+                yield return null;
+            Assert.That(account.Controller.IsBusy, Is.False);
+            account.ReturnButton.onClick.Invoke();
             yield return WaitForScene(GameModeScenePaths.Entry);
             yield return null;
 
