@@ -90,6 +90,7 @@ for client_index in 1 2; do
     -issue65-role client -issue65-port "${port}" \
     -issue86-account "local-player-${client_index}" \
     -issue86-version "${version}" \
+    -issue99-match "${match_id}" \
     -logFile "${log_dir}/client-${client_index}.log" &
   pids+=("$!")
 done

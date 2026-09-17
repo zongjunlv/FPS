@@ -206,6 +206,10 @@ namespace FPS.Networking.Netcode
                     "Connection credentials must be configured before startup.");
             ResolveComponents();
             EnsureNetworkConfig();
+            // NGO serializes connection data only when both peers agree that
+            // connection approval is enabled. The client must therefore use
+            // the same config bit as the authoritative server.
+            networkManager.NetworkConfig.ConnectionApproval = true;
             networkManager.NetworkConfig.ConnectionData = string.IsNullOrEmpty(
                 credential)
                 ? Array.Empty<byte>()

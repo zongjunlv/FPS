@@ -14,6 +14,7 @@
     "FPS.Performance.HybridAi",
     "FPS.Networking.Domain",
     "FPS.Networking.Diagnostics",
+    "FPS.Networking.Acceptance",
     "FPS.Networking.Netcode",
     "FPS.Networking.Session",
     "FPS.Inventory",

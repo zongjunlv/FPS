@@ -98,9 +98,8 @@ namespace FPS.Tests.PlayMode.Issue65
             Assert.That(authority.TryQueueCommand(10UL, stand, false), Is.True);
             CommandResolution resolution = authority.ServerStep().Commands[0];
 
-            Assert.That(resolution.Accepted, Is.False);
-            Assert.That(resolution.RejectionReason,
-                Is.EqualTo(CommandRejectionReason.StanceBlocked));
+            Assert.That(resolution.Accepted, Is.True,
+                "空间不足时应接受输入并保持下蹲，而不是锁死后续操作。");
             Assert.That(authority.LastAuthoritativeSnapshot.Player(1).IsCrouching,
                 Is.True);
         }

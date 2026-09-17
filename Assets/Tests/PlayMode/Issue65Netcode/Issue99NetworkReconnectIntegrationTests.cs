@@ -74,7 +74,11 @@ namespace FPS.Tests.PlayMode.Issue65
             Assert.That(authority.TryQueueCommand(101,
                 PlayerCommand(1, 2, 1002), false), Is.False);
 
-            authority.RegisterPlayerClient(303, 1);
+            for (int index = 0; index < 60; index++)
+                authority.ServerStep();
+            whileDisconnected = authority.LastAuthoritativeSnapshot;
+            authority.RegisterPlayerClient(303, 1,
+                resetInputClock: true);
             authority.UnregisterPlayerClient(101);
             Assert.That(authority.TryGetBoundClient(1, out ulong current),
                 Is.True);
@@ -119,7 +123,7 @@ namespace FPS.Tests.PlayMode.Issue65
             replica.EnableOwnerTestHook(authority, 1);
             replica.ConsumeServerState(restored, true, restored.ServerTick);
             NetcodePlayerCommand movement = replica.BuildPredictedCommand(
-                0f, 0f, 0f, 0f, false, restored.ServerTick + 1);
+                1f, 0f, 0f, 0f, false, restored.ServerTick + 1);
             NetcodePresentationCommand presentation =
                 replica.BuildPresentationCommand(
                     NetworkPresentationAction.Reload);
@@ -138,6 +142,11 @@ namespace FPS.Tests.PlayMode.Issue65
                 Is.EqualTo(restored.AcknowledgedMissionSequence + 1));
             Assert.That(authority.TryQueueCommand(303, movement, false),
                 Is.True);
+            authority.ServerStep();
+            Assert.That(authority.LastServerResult.Commands.Count,
+                Is.EqualTo(1));
+            Assert.That(authority.LastServerResult.Commands[0].Accepted,
+                Is.True, "重连后的首个输入必须建立新的客户端时钟基线");
         }
 
         [Test]

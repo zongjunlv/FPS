@@ -59,3 +59,18 @@ Tools/Networking/launch_local_cluster.sh
 `clientId` 与权威模拟玩家槽位。生产环境应由独立后台持有签名密钥；
 `launch_local_cluster.sh` 仅为本机联调，让服务器和两个测试客户端共享一次性
 环境变量密钥，密钥及完整凭证不会写入日志。
+
+## Issue 100 真实多进程验收门禁
+
+构建一台专用服务器与一个客户端产物，并运行“服务器 + 两个独立客户端”的
+四档真实网络验收：
+
+```bash
+Tools/Networking/build_issue100_acceptance.sh
+Tools/Networking/run_issue100_multiprocess.sh
+```
+
+第二条命令默认静默录制正常网络档的连续演示视频（无音轨），并把所有进程的
+日志、快照、时间线、网络指标与最终报告写到
+`artifacts/networking/issue100/<run-id>/`。完整门禁和指标说明见
+[`docs/networking/issue-100.md`](../../docs/networking/issue-100.md)。

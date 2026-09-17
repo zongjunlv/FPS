@@ -1,0 +1,55 @@
+name: Issue 100 Multi-Process Acceptance
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "Assets/Scripts/Networking/**"
+      - "Assets/Tests/EditMode/Issue100*"
+      - "Assets/Editor/Networking/Issue100*"
+      - "Tools/Networking/**"
+      - "scripts/networking/**"
+      - ".github/workflows/issue100-multiprocess.yml"
+
+concurrency:
+  group: issue100-multiprocess-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  real-server-two-clients:
+    name: Dedicated Server + Client A + Client B
+    runs-on: [self-hosted, macOS, unity]
+    timeout-minutes: 60
+    env:
+      UNITY_CLI: ${{ vars.UNITY_CLI }}
+      FPS_ACCEPTANCE_PLATFORM: macos
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Verify report gate unit tests
+        run: python3 -m unittest scripts/networking/issue100_report_gate_test.py
+
+      - name: Build dedicated server and acceptance client
+        run: Tools/Networking/build_issue100_acceptance.sh
+
+      - name: Run four real multi-process scenarios and record demo
+        run: Tools/Networking/run_issue100_multiprocess.sh
+
+      - name: Publish acceptance summary
+        if: always()
+        run: |
+          report="$(find artifacts/networking/issue100 -name report.md -type f -print | sort | tail -1)"
+          if [[ -n "$report" && -f "$report" ]]; then
+            cat "$report" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upload process logs, snapshots, metrics, report and video
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: issue100-multiprocess-${{ github.run_id }}
+          path: artifacts/networking/issue100
+          if-no-files-found: error
+          retention-days: 30

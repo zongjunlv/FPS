@@ -24,10 +24,13 @@ namespace FPS.Networking.Netcode
         private bool aimingHeld;
         private double accumulatedSeconds;
         private long clientTick;
+        private object exclusiveInputOwner;
 
         public long ClientTick => clientTick;
         public NetcodePlayerCommand LastSubmittedCommand { get; private set; }
         public bool HasSubmittedCommand { get; private set; }
+        public bool HasExclusiveInputOwner => exclusiveInputOwner != null;
+        public bool CanSubmitCurrentFrame => HasServerTickBudget();
         public event Action<NetcodePlayerCommand> CommandSubmitted;
 
         private void Awake()
@@ -63,6 +66,12 @@ namespace FPS.Networking.Netcode
             int safety = 0;
             while (accumulatedSeconds >= tickSeconds && safety++ < 4)
             {
+                if (!HasServerTickBudget())
+                {
+                    accumulatedSeconds = Math.Min(
+                        accumulatedSeconds, tickSeconds);
+                    break;
+                }
                 accumulatedSeconds -= tickSeconds;
                 SubmitCurrentFrame();
             }
@@ -95,6 +104,66 @@ namespace FPS.Networking.Netcode
         }
 
         public void SetInputFrame(
+            Vector2 move,
+            float absoluteAimYawDegrees,
+            float absoluteAimPitchDegrees,
+            bool firePressed,
+            bool jumpPressed,
+            bool sprintRequested,
+            bool crouching,
+            bool aiming)
+        {
+            if (exclusiveInputOwner != null) return;
+            ApplyInputFrame(move, absoluteAimYawDegrees,
+                absoluteAimPitchDegrees, firePressed, jumpPressed,
+                sprintRequested, crouching, aiming);
+        }
+
+        /// <summary>
+        /// Grants one automation/replay producer exclusive control over the
+        /// input frame. Normal gameplay writers remain connected but their
+        /// frames are ignored until the owner releases the lease.
+        /// </summary>
+        public bool TryAcquireExclusiveInput(object owner)
+        {
+            if (owner == null) throw new ArgumentNullException(nameof(owner));
+            if (exclusiveInputOwner != null &&
+                !ReferenceEquals(exclusiveInputOwner, owner))
+                return false;
+            exclusiveInputOwner = owner;
+            return true;
+        }
+
+        public bool ReleaseExclusiveInput(object owner)
+        {
+            if (owner == null ||
+                !ReferenceEquals(exclusiveInputOwner, owner))
+                return false;
+            exclusiveInputOwner = null;
+            return true;
+        }
+
+        public bool SetExclusiveInputFrame(
+            object owner,
+            Vector2 move,
+            float absoluteAimYawDegrees,
+            float absoluteAimPitchDegrees,
+            bool firePressed,
+            bool jumpPressed,
+            bool sprintRequested,
+            bool crouching,
+            bool aiming)
+        {
+            if (owner == null ||
+                !ReferenceEquals(exclusiveInputOwner, owner))
+                return false;
+            ApplyInputFrame(move, absoluteAimYawDegrees,
+                absoluteAimPitchDegrees, firePressed, jumpPressed,
+                sprintRequested, crouching, aiming);
+            return true;
+        }
+
+        private void ApplyInputFrame(
             Vector2 move,
             float absoluteAimYawDegrees,
             float absoluteAimPitchDegrees,
@@ -155,6 +224,32 @@ namespace FPS.Networking.Netcode
             HasSubmittedCommand = true;
             CommandSubmitted?.Invoke(LastSubmittedCommand);
             return LastSubmittedCommand;
+        }
+
+        public bool TrySubmitCurrentFrame(
+            out NetcodePlayerCommand command)
+        {
+            if (!HasServerTickBudget())
+            {
+                command = default;
+                return false;
+            }
+            command = SubmitCurrentFrame();
+            return true;
+        }
+
+        private bool HasServerTickBudget()
+        {
+            if (replica == null)
+                replica = GetComponent<NetworkPlayerReplica>();
+            if (replica == null || !replica.IsLocallyControlled ||
+                !replica.IsPresentationReady || replica.Session == null ||
+                replica.Session.Rules == null)
+                return false;
+            long maximumTick = replica.Session.WorldState.ServerTick +
+                               replica.Session.Rules
+                                   .MaximumFutureCommandTicks;
+            return clientTick < maximumTick;
         }
 
         public void ResetDriver()

@@ -46,7 +46,7 @@ namespace FPS.Tests.Architecture
         }
 
         [Test]
-        public void ServerRejectsJumpSpamAndStandingWithoutHeadroom()
+        public void ServerKeepsCrouchWithoutHeadroomAndRejectsJumpSpam()
         {
             CoopServerRules rules = Rules();
             AuthoritativeCoopSimulation simulation = Simulation(rules);
@@ -62,8 +62,9 @@ namespace FPS.Tests.Architecture
             PlayerInputCommand blockedStand = PredictedCommand(
                 rules, state, 2, crouch: false);
             Assert.That(simulation.Step(new[] { blockedStand })
-                    .Commands.Single().RejectionReason,
-                Is.EqualTo(CommandRejectionReason.StanceBlocked));
+                    .Commands.Single().Accepted,
+                Is.True,
+                "空间不足时应接受移动/瞄准输入，只保持下蹲姿态。");
             Assert.That(simulation.CaptureSnapshot().Player(1).IsCrouching,
                 Is.True);
 
@@ -152,6 +153,42 @@ namespace FPS.Tests.Architecture
             Assert.That(restored.Grounded, Is.False);
             Assert.That(restored.LastJumpTick, Is.EqualTo(14));
             Assert.That(restored.GroundHeight, Is.EqualTo(0.5d));
+        }
+
+        [Test]
+        public void ReconciliationPreservesTickGapAfterAcknowledgedInput()
+        {
+            CoopServerRules rules = Rules();
+            var prediction = new LocalPredictionBuffer(rules, 1, default);
+            PlayerInputCommand first = Command(
+                10, default, moveZ: 1d);
+            prediction.Predict(first);
+            PlayerMovementState authoritativeMovement =
+                CoopGameplayRules.IntegrateMovement(
+                    InitialMovement(), first, 1, rules);
+            PlayerInputCommand delayed = Command(
+                13, prediction.PredictedPosition, moveZ: 1d);
+            NetVector3 expected = prediction.Predict(delayed);
+            var authoritative = new AuthoritativePlayerState(
+                1,
+                authoritativeMovement.Position,
+                100d,
+                first.Sequence,
+                0d,
+                0d,
+                authoritativeMovement.Velocity,
+                authoritativeMovement.Stance,
+                authoritativeMovement.Grounded,
+                authoritativeMovement.LastJumpTick,
+                authoritativeMovement.GroundHeight);
+
+            PredictionCorrection correction =
+                prediction.Reconcile(authoritative);
+
+            Assert.That(correction.ErrorDistance,
+                Is.EqualTo(0d).Within(0.000001d));
+            Assert.That(prediction.PredictedPosition,
+                Is.EqualTo(expected));
         }
 
         [TestCase(0)]

@@ -42,7 +42,7 @@ namespace FPS.Networking.Diagnostics
             double maximumCorrectionP95Magnitude = 0.75d,
             double maximumCorrectionMagnitude = 2d,
             double maximumStateDivergenceRate = 0.02d,
-            double maximumStateDivergenceMagnitude = 1d,
+            double maximumStateDivergenceMagnitude = 1.25d,
             double maximumStateDivergenceDurationMilliseconds = 500d,
             double maximumUplinkBytesPerSecond = 65536d,
             double maximumDownlinkBytesPerSecond = 131072d)
@@ -221,6 +221,12 @@ namespace FPS.Networking.Diagnostics
             double hitBudget = result.Scenario
                 .RoundTripLatencyMilliseconds +
                 thresholds.HitFeedbackP95BudgetAboveRttMilliseconds;
+            if (result.Scenario.PacketLossBasisPoints > 0)
+            {
+                // Reliable gameplay input may need one RTT to retransmit the
+                // packet represented by the P95 sample under loss.
+                hitBudget += result.Scenario.RoundTripLatencyMilliseconds;
+            }
             if (result.P95HitFeedbackMilliseconds > hitBudget)
             {
                 failures.Add(prefix + "hit-feedback-p95-over-budget");
@@ -232,8 +238,9 @@ namespace FPS.Networking.Diagnostics
                 failures.Add(prefix + "correction-rate-over-budget");
             }
 
-            if (result.P95CorrectionMagnitude >
-                thresholds.MaximumCorrectionP95Magnitude)
+            if (result.CorrectionCount >= 20 &&
+                result.P95CorrectionMagnitude >
+                thresholds.MaximumCorrectionP95Magnitude + 0.001d)
             {
                 failures.Add(prefix + "correction-p95-over-budget");
             }

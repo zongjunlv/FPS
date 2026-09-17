@@ -49,6 +49,7 @@ namespace FPS.Networking.Domain
         private readonly List<PlayerInputCommand> pending = new();
         private PlayerMovementState predictedMovement;
         private long lastPredictedTick = long.MinValue;
+        private long lastAcknowledgedClientTick = long.MinValue;
 
         public LocalPredictionBuffer(
             CoopServerRules rules,
@@ -113,10 +114,18 @@ namespace FPS.Networking.Domain
                     nameof(authoritative));
 
             NetVector3 before = predictedMovement.Position;
+            foreach (PlayerInputCommand command in pending)
+            {
+                if (command.Sequence <= authoritative.AcknowledgedSequence &&
+                    command.ClientTick > lastAcknowledgedClientTick)
+                {
+                    lastAcknowledgedClientTick = command.ClientTick;
+                }
+            }
             pending.RemoveAll(command =>
                 command.Sequence <= authoritative.AcknowledgedSequence);
             PlayerMovementState replayMovement = authoritative.Movement;
-            long replayTick = long.MinValue;
+            long replayTick = lastAcknowledgedClientTick;
             foreach (PlayerInputCommand command in pending.OrderBy(
                          value => value.Sequence))
             {

@@ -329,12 +329,27 @@ namespace FPS.Networking.Netcode
             instance.Spawn(destroyWithScene: false);
             try
             {
+                int tickRate = (int)bootstrap.NetworkManager.NetworkConfig
+                    .TickRate;
+                int inputHistoryTicks = Mathf.Max(12,
+                    Mathf.CeilToInt(tickRate * 0.5f));
                 sessionAuthority.ConfigureServer(
                     new CoopServerRules(
-                        tickRate: (int)bootstrap.NetworkManager.NetworkConfig.TickRate,
+                        tickRate: tickRate,
+                        // Reliable ordered input can be delayed by a transport
+                        // retransmit. Keep half a second of authenticated input
+                        // history so legal commands survive head-of-line delay;
+                        // movement/aim/displacement validation remains intact.
+                        maximumPastCommandTicks: inputHistoryTicks,
+                        historyCapacity: Mathf.Max(64,
+                            inputHistoryTicks + 2),
                         maximumMoveSpeed: 5d,
                         claimedPositionTolerance: 0.45d,
-                        predictionCorrectionThreshold: 0.08d,
+                        // Two 60 Hz sprint ticks are about 0.167 m. Treat
+                        // smaller reconciliation drift as network jitter, not
+                        // a visible correction; larger errors still smooth or
+                        // snap through the existing 1.5 m hard threshold.
+                        predictionCorrectionThreshold: 0.18d,
                         predictionSnapThreshold: 1.5d,
                         walkSpeed: 2d,
                         sprintSpeed: 5d,
@@ -471,7 +486,8 @@ namespace FPS.Networking.Netcode
                 }
 
                 sessionAuthority.RegisterPlayerClient(clientId,
-                    approved.SimulationPlayerId);
+                    approved.SimulationPlayerId,
+                    resetInputClock: approved.IsReconnection);
                 SpawnPlayer(clientId, approved.SimulationPlayerId);
                 return;
             }

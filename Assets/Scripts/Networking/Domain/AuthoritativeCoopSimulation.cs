@@ -573,6 +573,15 @@ namespace FPS.Networking.Domain
             return events;
         }
 
+        public void ResetPlayerInputClock(int playerId)
+        {
+            if (!players.TryGetValue(playerId, out MutablePlayer player))
+                throw new ArgumentOutOfRangeException(nameof(playerId));
+            player.LastClientTick = long.MinValue;
+            player.LastClaimedPosition = player.Position;
+            ReplaceCurrentHistory();
+        }
+
         public void InitializePlayerConnections(
             IEnumerable<int> connectedPlayerIds)
         {
@@ -1284,8 +1293,6 @@ namespace FPS.Networking.Domain
                                     !command.CrouchRequested;
             bool standingClearance = !requestsStanding ||
                 standingClearanceValidator(player.Id, player.Position);
-            if (requestsStanding && !standingClearance)
-                return CommandRejectionReason.StanceBlocked;
 
             nextMovement = CoopGameplayRules.IntegrateMovement(
                 player.Movement,
@@ -1293,10 +1300,14 @@ namespace FPS.Networking.Domain
                 elapsedTicks,
                 rules,
                 standingClearance);
+            double missedTickAllowance = rules.MaximumMoveSpeed *
+                rules.FixedDeltaSeconds * Math.Max(0, elapsedTicks - 1) * 2d;
+            double claimedPositionTolerance =
+                rules.ClaimedPositionTolerance + missedTickAllowance;
             if (NetVector3.Distance(
                     nextMovement.Position,
                     command.ClaimedPosition) >
-                rules.ClaimedPositionTolerance)
+                claimedPositionTolerance + 0.000001d)
                 return CommandRejectionReason.ImpossibleDisplacement;
 
             if (player.LastClientTick != long.MinValue)

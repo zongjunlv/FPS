@@ -239,7 +239,10 @@ namespace FPS.Networking.Netcode
             }
         }
 
-        public void RegisterPlayerClient(ulong clientId, int playerId)
+        public void RegisterPlayerClient(
+            ulong clientId,
+            int playerId,
+            bool resetInputClock = false)
         {
             RequireServerWrite();
             if (playerId <= 0)
@@ -260,6 +263,8 @@ namespace FPS.Networking.Netcode
             clientByPlayer[playerId] = clientId;
             if (simulation != null)
             {
+                if (resetInputClock)
+                    simulation.ResetPlayerInputClock(playerId);
                 IReadOnlyList<AuthoritativeEvent> events =
                     simulation.SetPlayerConnected(playerId, true);
                 lastSnapshot = simulation.CaptureSnapshot();
@@ -318,9 +323,23 @@ namespace FPS.Networking.Netcode
         public bool TryGetBoundPlayer(ulong clientId, out int playerId) =>
             playerByClient.TryGetValue(clientId, out playerId);
 
+        // Player commands share one ordered reliable stream. Movement, jump
+        // and fire use the same domain sequence, so mixing reliable and
+        // unreliable RPC channels can let a later movement command overtake a
+        // discrete action under packet loss and poison reconciliation.
         [Rpc(SendTo.Server, InvokePermission = RpcInvokePermission.Everyone,
-            Delivery = RpcDelivery.Unreliable)]
+            Delivery = RpcDelivery.Reliable)]
         public void SubmitInputRpc(
+            NetcodePlayerCommand payload,
+            RpcParams rpcParams = default)
+        {
+            TryQueueCommand(rpcParams.Receive.SenderClientId, payload,
+                forceFire: false);
+        }
+
+        [Rpc(SendTo.Server, InvokePermission = RpcInvokePermission.Everyone,
+            Delivery = RpcDelivery.Reliable)]
+        public void SubmitActionInputRpc(
             NetcodePlayerCommand payload,
             RpcParams rpcParams = default)
         {

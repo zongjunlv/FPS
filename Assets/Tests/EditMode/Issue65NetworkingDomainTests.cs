@@ -107,6 +107,43 @@ namespace FPS.Tests.Architecture
         }
 
         [Test]
+        public void MissingInputTicksExpandOnlyTheLegalMovementAllowance()
+        {
+            var rules = new CoopServerRules(
+                tickRate: 10,
+                maximumFutureCommandTicks: 2,
+                historyCapacity: 16,
+                maximumMoveSpeed: 5d,
+                claimedPositionTolerance: 0.05d,
+                walkSpeed: 5d);
+            AuthoritativeCoopSimulation simulation = CreateSimulation(rules);
+            AuthoritativeTickResult first = simulation.Step(new[]
+            {
+                Command(1, 1, 1, 1, 0d, 1d,
+                    new NetVector3(0d, 0d, 0.5d))
+            });
+            Assert.That(first.Commands.Single().Accepted, Is.True);
+            simulation.Step(Array.Empty<PlayerInputCommand>());
+            simulation.Step(Array.Empty<PlayerInputCommand>());
+
+            AuthoritativeTickResult recovered = simulation.Step(new[]
+            {
+                Command(1, 2, 2, 4, 1d, 0d,
+                    new NetVector3(2.4d, 0d, 0.5d))
+            });
+            Assert.That(recovered.Commands.Single().Accepted, Is.True,
+                "丢失 Tick 后应容纳这段时间内最大合法速度产生的位置差。");
+
+            AuthoritativeTickResult cheated = simulation.Step(new[]
+            {
+                Command(1, 3, 3, 5, 0d, 0d,
+                    new NetVector3(20d, 0d, 0d))
+            });
+            Assert.That(cheated.Commands.Single().RejectionReason,
+                Is.EqualTo(CommandRejectionReason.ImpossibleDisplacement));
+        }
+
+        [Test]
         public void HitscanRewindsBoundedHistoryAndUsesHistoricalTargetPosition()
         {
             var rules = new CoopServerRules(

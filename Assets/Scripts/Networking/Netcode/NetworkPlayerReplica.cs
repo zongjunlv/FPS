@@ -109,6 +109,7 @@ namespace FPS.Networking.Netcode
         public event Action<NetworkPresentationAction>
             PresentationActionReceived;
         public event Action<NetcodeShotFeedbackEvent> ShotFeedbackReceived;
+        public event Action<long, PredictionCorrection> PredictionReconciled;
         private double predictionErrorSum;
 
         public override void OnNetworkSpawn()
@@ -405,6 +406,10 @@ namespace FPS.Networking.Netcode
             {
                 session.SubmitShotRpc(payload);
             }
+            else if (jumpPressed)
+            {
+                session.SubmitActionInputRpc(payload);
+            }
             else
             {
                 session.SubmitInputRpc(payload);
@@ -570,6 +575,9 @@ namespace FPS.Networking.Netcode
                 {
                     LastPredictionCorrection = prediction.Reconcile(
                         state.ToDomain());
+                    PredictionReconciled?.Invoke(
+                        state.ServerTick,
+                        LastPredictionCorrection);
                     PredictionSampleCount++;
                     predictionErrorSum += LastPredictionCorrection.ErrorDistance;
                     MaximumPredictionError = Math.Max(

@@ -2,6 +2,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
 using FPS.Networking.Domain;
 using FPS.Networking.Netcode;
 using NUnit.Framework;
@@ -50,6 +51,82 @@ namespace FPS.Tests.PlayMode.Issue65
             Assert.That(bootstrap.IsListening, Is.False);
             Assert.That(bootstrap.NetworkManager.IsServer, Is.False);
             Assert.That(bootstrap.NetworkManager.IsClient, Is.False);
+        }
+
+        [UnityTest]
+        public IEnumerator Bootstrap_ClientCredentialEnablesApprovalConfig()
+        {
+            OptionalNetworkBootstrap bootstrap = Track(
+                OptionalNetworkBootstrap.CreateRuntime(
+                    new NetworkEndpointSettings
+                    {
+                        Address = "127.0.0.1",
+                        ListenAddress = "127.0.0.1",
+                        Port = 17968,
+                        TickRate = 60
+                    }));
+
+            bootstrap.ConfigureClientCredential("signed-short-lived-ticket");
+            yield return null;
+
+            Assert.That(bootstrap.NetworkManager.NetworkConfig
+                .ConnectionApproval, Is.True);
+            Assert.That(bootstrap.NetworkManager.NetworkConfig.ConnectionData,
+                Is.Not.Empty);
+        }
+
+        [Test]
+        public void InputDriver_ExclusiveOwnerPreventsGameplayWriterOverride()
+        {
+            GameObject gameObject = Track(new GameObject(
+                "Issue100 Exclusive Input Driver"));
+            gameObject.AddComponent<NetworkPlayerReplica>();
+            NetworkVerticalSliceInputDriver driver = gameObject.AddComponent<
+                NetworkVerticalSliceInputDriver>();
+            var owner = new object();
+
+            Assert.That(driver.TryAcquireExclusiveInput(owner), Is.True);
+            Assert.That(driver.SetExclusiveInputFrame(owner, Vector2.zero,
+                0f, 0f, false, false, false, true, false), Is.True);
+            driver.SetInputFrame(Vector2.zero, 0f, 0f, false, false,
+                false, false, false);
+
+            FieldInfo crouch = typeof(NetworkVerticalSliceInputDriver)
+                .GetField("crouchRequested",
+                    BindingFlags.Instance | BindingFlags.NonPublic);
+            Assert.That(crouch, Is.Not.Null);
+            Assert.That((bool)crouch.GetValue(driver), Is.True,
+                "普通玩家输入不得覆盖自动验收持有的独占输入帧。");
+            Assert.That(driver.ReleaseExclusiveInput(owner), Is.True);
+            driver.SetInputFrame(Vector2.zero, 0f, 0f, false, false,
+                false, false, false);
+            Assert.That((bool)crouch.GetValue(driver), Is.False);
+        }
+
+        [Test]
+        public void InputDriver_WaitsWhenClientTickReachesServerFutureBudget()
+        {
+            NetworkCoopSessionAuthority authority = CreateAuthority();
+            authority.RegisterPlayerClient(10, 1);
+            GameObject gameObject = Track(new GameObject(
+                "Issue100 Tick Budget Input Driver"));
+            NetworkPlayerReplica replica = gameObject.AddComponent<
+                NetworkPlayerReplica>();
+            NetworkVerticalSliceInputDriver driver = gameObject.AddComponent<
+                NetworkVerticalSliceInputDriver>();
+            replica.EnableOwnerTestHook(authority, 1);
+
+            FieldInfo clientTick = typeof(NetworkVerticalSliceInputDriver)
+                .GetField("clientTick",
+                    BindingFlags.Instance | BindingFlags.NonPublic);
+            Assert.That(clientTick, Is.Not.Null);
+            clientTick.SetValue(driver, 1L);
+
+            Assert.That(driver.CanSubmitCurrentFrame, Is.False,
+                "客户端不得发送超过服务端允许未来窗口的输入 Tick。");
+            authority.ServerStep();
+            Assert.That(driver.CanSubmitCurrentFrame, Is.True,
+                "服务端 Tick 推进后应重新开放一个输入发送配额。");
         }
 
         [UnityTest]

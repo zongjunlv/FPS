@@ -297,6 +297,9 @@ namespace FPS.Networking.Netcode
                         Mathf.Cos((float)angle) * radius),
                     Radius = index == 5 ? 1.45f : 1.1f,
                     Health = index == 5 ? 135f : 68f,
+                    HeadOffset = new Vector3(0f,
+                        index == 5 ? 1.05f : 0.85f, 0f),
+                    HeadRadius = index == 5 ? 0.38f : 0.32f,
                     DropDefinitionId = index % 3 == 0
                         ? "medkit"
                         : string.Empty,
@@ -307,7 +310,9 @@ namespace FPS.Networking.Netcode
                     MoveSpeed = index % 2 == 0 ? 2.4f : 2.9f,
                     AttackRange = 1.8f,
                     AttackDamage = index == 5 ? 9f : 6f,
-                    AttackIntervalTicks = index == 5 ? 64 : 60
+                    AttackIntervalTicks = index == 5 ? 64 : 60,
+                    RewardExperience = index == 5 ? 150 : 100,
+                    DropQuantity = 1
                 };
             }
             return result;
