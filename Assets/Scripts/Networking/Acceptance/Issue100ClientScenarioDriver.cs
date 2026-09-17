@@ -254,15 +254,22 @@ namespace FPS.Networking.Acceptance
             yield return WaitUntil(() => !network.IsListening, 5d);
             yield return new WaitForSecondsRealtime(0.35f);
 
-            if (!CoopAdmissionEnvironment.TryCreateCodec(
-                    out CoopConnectionTicketCodec codec, out string error))
+            string ticket = options.ReconnectCredential;
+            if (string.IsNullOrWhiteSpace(ticket))
             {
-                Abort(Issue100AcceptanceSteps.ReconnectRestore, error);
-                yield break;
+                if (!CoopAdmissionEnvironment.TryCreateCodec(
+                        out CoopConnectionTicketCodec codec,
+                        out string error))
+                {
+                    Abort(Issue100AcceptanceSteps.ReconnectRestore, error);
+                    yield break;
+                }
+                ticket = codec.Issue(options.AccountId,
+                    new CoopBuildCompatibility("local-dev", "1",
+                        "citynew-v1"),
+                    DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
+                    matchId: options.MatchId);
             }
-            string ticket = codec.Issue(options.AccountId, "local-dev",
-                DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
-                matchId: options.MatchId);
             if (!controller.ReconnectWithCredential(ticket))
             {
                 Abort(Issue100AcceptanceSteps.ReconnectRestore,

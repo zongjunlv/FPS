@@ -367,6 +367,10 @@ namespace FPS.Networking.Netcode
                     ConvertTargets(targets),
                     requiredKills,
                     missionDefinition);
+                if (bootstrap.AdmissionService != null &&
+                    !bootstrap.NetworkManager.IsHost)
+                    sessionAuthority.InitializePlayerConnections(
+                        Array.Empty<int>());
             }
             catch
             {

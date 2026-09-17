@@ -272,6 +272,24 @@ namespace FPS.Networking.Netcode
             }
         }
 
+        /// <summary>
+        /// Establishes the authoritative connection baseline before a remote
+        /// allocation is handed to clients. Dedicated servers begin with no
+        /// active players so AI and mission failure cannot advance during the
+        /// deployment/connection gap.
+        /// </summary>
+        public void InitializePlayerConnections(
+            IEnumerable<int> connectedPlayerIds)
+        {
+            RequireServerWrite();
+            if (simulation == null)
+                throw new InvalidOperationException(
+                    "ConfigureServer must be called before initializing connections.");
+            simulation.InitializePlayerConnections(connectedPlayerIds);
+            lastSnapshot = simulation.CaptureSnapshot();
+            PublishSnapshot(lastSnapshot, Array.Empty<AuthoritativeEvent>());
+        }
+
         public void UnregisterPlayerClient(ulong clientId)
         {
             RequireServerWrite();

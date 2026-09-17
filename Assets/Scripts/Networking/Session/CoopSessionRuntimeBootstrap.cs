@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using FPS.Networking.Netcode;
 using UnityEngine;
 
@@ -69,20 +70,57 @@ namespace FPS.Networking.Session
             NetworkEndpointSettings settings =
                 NetworkEndpointSettings.Localhost;
             settings.Port = port;
+            string address = Argument("-issue65-address");
+            if (!string.IsNullOrWhiteSpace(address))
+                settings.Address = address.Trim();
             if (string.Equals(role, "client", StringComparison.OrdinalIgnoreCase))
             {
                 string account = Argument("-issue86-account");
                 string version = Argument("-issue86-version");
                 if (string.IsNullOrWhiteSpace(version)) version = "local-dev";
-                if (!string.IsNullOrWhiteSpace(account) &&
+                string protocol = Argument("-issue101-protocol-version");
+                if (string.IsNullOrWhiteSpace(protocol)) protocol = "1";
+                string content = Argument("-issue101-content-version");
+                if (string.IsNullOrWhiteSpace(content)) content = "citynew-v1";
+                var localCompatibility = new CoopBuildCompatibility(version,
+                    protocol, content);
+                string ticket = CredentialArgument(
+                    "-issue86-ticket", "-issue86-ticket-file");
+                if (string.IsNullOrWhiteSpace(ticket) &&
+                    !string.IsNullOrWhiteSpace(account) &&
                     CoopAdmissionEnvironment.TryCreateCodec(
                         out CoopConnectionTicketCodec codec, out _))
                 {
-                    string ticket = codec.Issue(account, version,
+                    ticket = codec.Issue(account, localCompatibility,
                         DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
                         matchId: Argument("-issue99-match"));
-                    controller.ConfigureConnectionCredential(ticket);
                 }
+
+                string serverVersion = Argument(
+                    "-issue101-server-version");
+                string serverProtocol = Argument(
+                    "-issue101-server-protocol-version");
+                string serverContent = Argument(
+                    "-issue101-server-content-version");
+                if (!string.IsNullOrWhiteSpace(serverVersion) ||
+                    !string.IsNullOrWhiteSpace(serverProtocol) ||
+                    !string.IsNullOrWhiteSpace(serverContent))
+                {
+                    var connection = new RemoteMatchConnectionInfo
+                    {
+                        host = settings.Address,
+                        port = settings.Port,
+                        matchId = Argument("-issue99-match"),
+                        applicationVersion = serverVersion,
+                        protocolVersion = serverProtocol,
+                        contentVersion = serverContent,
+                        maximumPlayers = 2
+                    };
+                    controller.StartRemote(connection, localCompatibility,
+                        ticket);
+                    return;
+                }
+                controller.ConfigureConnectionCredential(ticket);
             }
             controller.StartDirect(
                 string.Equals(role, "host",
@@ -110,6 +148,28 @@ namespace FPS.Networking.Session
             }
 
             return string.Empty;
+        }
+
+        private static string CredentialArgument(string directKey,
+            string fileKey)
+        {
+            string path = Argument(fileKey);
+            if (!string.IsNullOrWhiteSpace(path))
+            {
+                try
+                {
+                    return File.ReadAllText(Path.GetFullPath(path)).Trim();
+                }
+                catch (IOException)
+                {
+                    return string.Empty;
+                }
+                catch (UnauthorizedAccessException)
+                {
+                    return string.Empty;
+                }
+            }
+            return Argument(directKey).Trim();
         }
     }
 }

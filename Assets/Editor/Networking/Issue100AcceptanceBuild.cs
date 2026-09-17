@@ -23,6 +23,8 @@ public static class Issue100AcceptanceBuild
         public string scene;
         public string unityVersion;
         public string productVersion;
+        public string protocolVersion;
+        public string contentVersion;
         public string builtAtUtc;
         public string serverBuildSubtarget;
         public string serverOutput;
@@ -80,6 +82,10 @@ public static class Issue100AcceptanceBuild
                 scene = CityNewScene,
                 unityVersion = Application.unityVersion,
                 productVersion = PlayerSettings.bundleVersion,
+                protocolVersion = VersionOption(
+                    "-issue101ProtocolVersion", "1"),
+                contentVersion = VersionOption(
+                    "-issue101ContentVersion", "citynew-v1"),
                 builtAtUtc = DateTime.UtcNow.ToString("O"),
                 serverBuildSubtarget = serverSubtarget ==
                     StandaloneBuildSubtarget.Server
@@ -260,5 +266,11 @@ public static class Issue100AcceptanceBuild
                 return arguments[index + 1];
         }
         return string.Empty;
+    }
+
+    private static string VersionOption(string key, string fallback)
+    {
+        string value = Option(key).Trim();
+        return string.IsNullOrWhiteSpace(value) ? fallback : value;
     }
 }

@@ -12,6 +12,7 @@ namespace FPS.Networking.Netcode
         public const int DefaultMaximumPlayers = 2;
         public const int DefaultSeed = 18018;
         public const uint DefaultTickRate = 60;
+        public const int DefaultIdleTimeoutSeconds = 120;
 
         public string MapName = "CityNew";
         public string MapScenePath = CityNewScenePath;
@@ -20,7 +21,10 @@ namespace FPS.Networking.Netcode
         public int MaximumPlayers = DefaultMaximumPlayers;
         public int Seed = DefaultSeed;
         public string Version = "development";
+        public string ProtocolVersion = "1";
+        public string ContentVersion = "citynew-v1";
         public uint TickRate = DefaultTickRate;
+        public int IdleTimeoutSeconds = DefaultIdleTimeoutSeconds;
         public string DiagnosticsPath = string.Empty;
 
         public static bool IsRequested(IReadOnlyList<string> arguments)
@@ -91,18 +95,44 @@ namespace FPS.Networking.Netcode
 
             string version = Value(options, "-server-version",
                 configuration.Version).Trim();
-            if (version.Length < 1 || version.Length > 64)
+            if (!IsIdentifier(version, 1, 64))
             {
-                error = "服务器版本参数需要包含 1—64 个字符。";
+                error = "服务器版本需要包含 1—64 个字母、数字、点、短横线或下划线。";
                 return false;
             }
             configuration.Version = version;
+
+            configuration.ProtocolVersion = Value(options,
+                "-server-protocol-version", "1").Trim();
+            if (!IsIdentifier(configuration.ProtocolVersion, 1, 64))
+            {
+                error = "服务器协议版本需要包含 1—64 个字母、数字、点、短横线或下划线。";
+                return false;
+            }
+
+            configuration.ContentVersion = Value(options,
+                "-server-content-version", "citynew-v1").Trim();
+            if (!IsIdentifier(configuration.ContentVersion, 1, 64))
+            {
+                error = "服务器内容版本需要包含 1—64 个字母、数字、点、短横线或下划线。";
+                return false;
+            }
 
             if (!TryUInt(options, "-server-tick-rate", DefaultTickRate,
                     out configuration.TickRate) || configuration.TickRate < 10 ||
                 configuration.TickRate > 240)
             {
                 error = "服务器 Tick Rate 必须是 10—240 的整数。";
+                return false;
+            }
+
+            if (!TryInt(options, "-server-idle-timeout",
+                    DefaultIdleTimeoutSeconds,
+                    out configuration.IdleTimeoutSeconds) ||
+                configuration.IdleTimeoutSeconds < 15 ||
+                configuration.IdleTimeoutSeconds > 86400)
+            {
+                error = "服务器空闲回收时间必须是 15—86400 秒的整数。";
                 return false;
             }
 

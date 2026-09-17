@@ -73,6 +73,8 @@ namespace FPS.Networking.Netcode
         public event Action<OptionalNetworkState> StateChanged;
         public event Action<ulong> ClientConnected;
         public event Action<ulong> ClientDisconnected;
+        public event Action<ulong, CoopAdmissionDecision>
+            ConnectionAdmissionEvaluated;
 
         public bool AutoStart
         {
@@ -395,6 +397,8 @@ namespace FPS.Networking.Netcode
                     CoopAdmissionFailure.InvalidCredential)
                 : admissionService.Approve(request.ClientNetworkId,
                     request.Payload);
+            ConnectionAdmissionEvaluated?.Invoke(request.ClientNetworkId,
+                decision);
             response.Approved = decision.Approved;
             response.CreatePlayerObject = false;
             response.Pending = false;

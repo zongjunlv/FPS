@@ -20,6 +20,10 @@ namespace FPS.Tests.Architecture
             Assert.That(configuration.TickRate, Is.EqualTo(60));
             Assert.That(configuration.Seed, Is.EqualTo(18018));
             Assert.That(configuration.Version, Is.EqualTo("1.2.3"));
+            Assert.That(configuration.ProtocolVersion, Is.EqualTo("1"));
+            Assert.That(configuration.ContentVersion,
+                Is.EqualTo("citynew-v1"));
+            Assert.That(configuration.IdleTimeoutSeconds, Is.EqualTo(120));
             Assert.That(configuration.DiagnosticsPath,
                 Does.EndWith("server-local-match-diagnostics.json"));
         }
@@ -36,7 +40,10 @@ namespace FPS.Tests.Architecture
                 "-server-max-players", "6",
                 "-server-seed", "85001",
                 "-server-version", "2.4.0-server",
+                "-server-protocol-version", "net-7",
+                "-server-content-version", "citynew-2026.09",
                 "-server-tick-rate", "30",
+                "-server-idle-timeout", "300",
                 "-server-diagnostics", "/tmp/issue85.json"
             };
 
@@ -48,7 +55,11 @@ namespace FPS.Tests.Architecture
             Assert.That(result.MaximumPlayers, Is.EqualTo(6));
             Assert.That(result.Seed, Is.EqualTo(85001));
             Assert.That(result.Version, Is.EqualTo("2.4.0-server"));
+            Assert.That(result.ProtocolVersion, Is.EqualTo("net-7"));
+            Assert.That(result.ContentVersion,
+                Is.EqualTo("citynew-2026.09"));
             Assert.That(result.TickRate, Is.EqualTo(30));
+            Assert.That(result.IdleTimeoutSeconds, Is.EqualTo(300));
             Assert.That(result.DiagnosticsPath,
                 Is.EqualTo("/tmp/issue85.json"));
         }
@@ -58,6 +69,10 @@ namespace FPS.Tests.Architecture
         [TestCase("-server-tick-rate", "9", "Tick Rate")]
         [TestCase("-server-match", "bad match", "战局 ID")]
         [TestCase("-server-map", "MissingMap", "地图")]
+        [TestCase("-server-version", "bad version", "服务器版本")]
+        [TestCase("-server-protocol-version", "bad version", "协议版本")]
+        [TestCase("-server-content-version", "bad/content", "内容版本")]
+        [TestCase("-server-idle-timeout", "14", "空闲回收")]
         public void InvalidArgumentsFailWithChineseGuidance(string key,
             string value, string expected)
         {

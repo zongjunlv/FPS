@@ -17,7 +17,9 @@ namespace FPS.Networking.Netcode
         ServerFull = 6,
         VersionMismatch = 7,
         SessionMismatch = 8,
-        ReconnectWindowExpired = 9
+        ReconnectWindowExpired = 9,
+        ProtocolMismatch = 10,
+        ContentMismatch = 11
     }
 
     public readonly struct CoopConnectionClaims
@@ -124,6 +126,10 @@ namespace FPS.Networking.Netcode
                     "服务器人数已满，请稍后重试。",
                 CoopAdmissionFailure.VersionMismatch =>
                     "客户端版本与服务器不一致，请更新后重试。",
+                CoopAdmissionFailure.ProtocolMismatch =>
+                    "客户端网络协议与服务器不兼容，请更新后重试。",
+                CoopAdmissionFailure.ContentMismatch =>
+                    "客户端游戏内容与服务器不兼容，请更新后重试。",
                 CoopAdmissionFailure.SessionMismatch =>
                     "连接凭证不属于当前战局，请重新进入房间。",
                 CoopAdmissionFailure.ReconnectWindowExpired =>
@@ -160,7 +166,7 @@ namespace FPS.Networking.Netcode
             string account = NormalizeField(accountPlayerId,
                 nameof(accountPlayerId), 128);
             string normalizedVersion = NormalizeField(version,
-                nameof(version), 64);
+                nameof(version), 256);
             if (lifetimeSeconds < 1 ||
                 lifetimeSeconds > MaximumLifetimeSeconds)
                 throw new ArgumentOutOfRangeException(nameof(lifetimeSeconds));
@@ -186,6 +192,13 @@ namespace FPS.Networking.Netcode
             return signedValue + "." + Base64UrlEncode(signature);
         }
 
+        public string Issue(string accountPlayerId,
+            CoopBuildCompatibility compatibility,
+            long issuedAtUnixSeconds, int lifetimeSeconds = 120,
+            string nonce = null, string matchId = "") => Issue(
+            accountPlayerId, compatibility.ToTicketValue(),
+            issuedAtUnixSeconds, lifetimeSeconds, nonce, matchId);
+
         public bool TryValidate(string credential, long nowUnixSeconds,
             out CoopConnectionClaims claims, out CoopAdmissionFailure failure)
         {
@@ -210,7 +223,7 @@ namespace FPS.Networking.Netcode
             if (values.Length != 5 && values.Length != 6 ||
                 !TryDecodeText(values[0], out string account) ||
                 !TryDecodeText(values[1], out string version) ||
-                !IsSafeField(account, 128) || !IsSafeField(version, 64) ||
+                !IsSafeField(account, 128) || !IsSafeField(version, 256) ||
                 !IsSafeField(values[2], 64) ||
                 !long.TryParse(values[3], NumberStyles.Integer,
                     CultureInfo.InvariantCulture, out long issuedAt) ||
@@ -319,6 +332,7 @@ namespace FPS.Networking.Netcode
     {
         private readonly CoopConnectionTicketCodec codec;
         private readonly string expectedVersion;
+        private readonly CoopBuildCompatibility? expectedCompatibility;
         private readonly int maximumPlayers;
         private readonly Func<long> utcNowSeconds;
         private readonly int reconnectGraceSeconds;
@@ -358,6 +372,17 @@ namespace FPS.Networking.Netcode
             expectedMatchId = matchId?.Trim() ?? string.Empty;
         }
 
+        public CoopConnectionAdmissionService(
+            CoopConnectionTicketCodec ticketCodec,
+            CoopBuildCompatibility compatibility,
+            int playerLimit, Func<long> clock = null,
+            int reconnectWindowSeconds = 30, string matchId = "") : this(
+            ticketCodec, compatibility.ToTicketValue(), playerLimit, clock,
+            reconnectWindowSeconds, matchId)
+        {
+            expectedCompatibility = compatibility;
+        }
+
         public int ApprovedCount => byClient.Count;
         public int ReservedCount
         {
@@ -395,10 +420,10 @@ namespace FPS.Networking.Netcode
                     out CoopConnectionClaims claims,
                     out CoopAdmissionFailure validationFailure))
                 return CoopAdmissionDecision.Reject(validationFailure);
-            if (!string.Equals(claims.Version, expectedVersion,
-                    StringComparison.Ordinal))
-                return CoopAdmissionDecision.Reject(
-                    CoopAdmissionFailure.VersionMismatch);
+            CoopAdmissionFailure compatibilityFailure =
+                ResolveCompatibilityFailure(claims.Version);
+            if (compatibilityFailure != CoopAdmissionFailure.None)
+                return CoopAdmissionDecision.Reject(compatibilityFailure);
             if (!string.IsNullOrEmpty(expectedMatchId) &&
                 !string.Equals(claims.MatchId, expectedMatchId,
                     StringComparison.Ordinal))
@@ -436,6 +461,30 @@ namespace FPS.Networking.Netcode
             clientByAccount.Add(claims.AccountPlayerId, clientId);
             usedNonces.Add(claims.Nonce, claims.ExpiresAtUnixSeconds);
             return CoopAdmissionDecision.Allow(identity);
+        }
+
+        private CoopAdmissionFailure ResolveCompatibilityFailure(
+            string ticketVersion)
+        {
+            if (!expectedCompatibility.HasValue)
+                return string.Equals(ticketVersion, expectedVersion,
+                    StringComparison.Ordinal)
+                    ? CoopAdmissionFailure.None
+                    : CoopAdmissionFailure.VersionMismatch;
+            if (!CoopBuildCompatibility.TryParseTicketValue(ticketVersion,
+                    out CoopBuildCompatibility client))
+                return CoopAdmissionFailure.VersionMismatch;
+            CoopBuildCompatibility server = expectedCompatibility.Value;
+            if (!string.Equals(client.ApplicationVersion,
+                    server.ApplicationVersion, StringComparison.Ordinal))
+                return CoopAdmissionFailure.VersionMismatch;
+            if (!string.Equals(client.ProtocolVersion,
+                    server.ProtocolVersion, StringComparison.Ordinal))
+                return CoopAdmissionFailure.ProtocolMismatch;
+            if (!string.Equals(client.ContentVersion,
+                    server.ContentVersion, StringComparison.Ordinal))
+                return CoopAdmissionFailure.ContentMismatch;
+            return CoopAdmissionFailure.None;
         }
 
         public bool TryGetIdentity(ulong clientId,

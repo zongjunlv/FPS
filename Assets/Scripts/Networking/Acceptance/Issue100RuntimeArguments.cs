@@ -14,6 +14,7 @@ namespace FPS.Networking.Acceptance
         public string AccountId { get; private set; } = string.Empty;
         public string AppearanceId { get; private set; } = string.Empty;
         public string MatchId { get; private set; } = string.Empty;
+        public string ReconnectCredential { get; private set; } = string.Empty;
         public bool Reconnect { get; private set; }
         public bool RecordVideo { get; private set; }
         public string VideoPipePath { get; private set; } = string.Empty;
@@ -90,6 +91,9 @@ namespace FPS.Networking.Acceptance
                 AppearanceId = Value(arguments,
                     "-issue100-appearance").Trim(),
                 MatchId = matchId,
+                ReconnectCredential = CredentialValue(arguments,
+                    "-issue101-reconnect-ticket",
+                    "-issue101-reconnect-ticket-file"),
                 Reconnect = HasFlag(arguments, "-issue100-reconnect"),
                 RecordVideo = HasFlag(arguments, "-issue100-record-video"),
                 VideoPipePath = Value(arguments,
@@ -167,6 +171,30 @@ namespace FPS.Networking.Acceptance
                     return arguments[index + 1] ?? string.Empty;
             }
             return string.Empty;
+        }
+
+        private static string CredentialValue(
+            IReadOnlyList<string> arguments,
+            string directKey,
+            string fileKey)
+        {
+            string path = Value(arguments, fileKey).Trim();
+            if (!string.IsNullOrWhiteSpace(path))
+            {
+                try
+                {
+                    return File.ReadAllText(Path.GetFullPath(path)).Trim();
+                }
+                catch (IOException)
+                {
+                    return string.Empty;
+                }
+                catch (UnauthorizedAccessException)
+                {
+                    return string.Empty;
+                }
+            }
+            return Value(arguments, directKey).Trim();
         }
     }
 }

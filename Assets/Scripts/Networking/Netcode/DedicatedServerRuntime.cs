@@ -4,6 +4,8 @@ using System.IO;
 using System.Threading;
 using FPS.Networking.Domain;
 using Unity.Netcode;
+using Unity.Networking.Transport;
+using Unity.Networking.Transport.Analytics;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 
@@ -84,10 +86,22 @@ namespace FPS.Networking.Netcode
         public int maximumPlayers;
         public int seed;
         public string version;
+        public string protocolVersion;
+        public string contentVersion;
         public uint tickRate;
+        public int idleTimeoutSeconds;
         public double uptimeSeconds;
         public int connectedClients;
         public long authoritativeTick;
+        public string missionPhase;
+        public string waveStatus;
+        public ulong receivedBytes;
+        public ulong transmittedBytes;
+        public double receivedBytesPerSecond;
+        public double transmittedBytesPerSecond;
+        public int rejectedConnections;
+        public string lastAdmissionFailure;
+        public string lastRuntimeException;
         public string timestampUtc;
     }
 
@@ -105,6 +119,17 @@ namespace FPS.Networking.Netcode
         private bool shutdownStarted;
         private bool allowQuit;
         private int exitCode;
+        private DedicatedServerIdlePolicy idlePolicy;
+        private float nextDiagnosticsAt;
+        private DriverStatistics previousTraffic;
+        private float previousTrafficAt;
+        private bool hasTrafficSample;
+        private double receivedBytesPerSecond;
+        private double transmittedBytesPerSecond;
+        private int rejectedConnections;
+        private string lastAdmissionFailure = string.Empty;
+        private string lastRuntimeException = string.Empty;
+        private bool diagnosticsWriteInProgress;
 
         public static bool IsActive { get; private set; }
         public DedicatedServerConfiguration Configuration => configuration;
@@ -139,6 +164,9 @@ namespace FPS.Networking.Netcode
             Application.wantsToQuit += HandleWantsToQuit;
             Console.CancelKeyPress += HandleCancelKeyPress;
             AppDomain.CurrentDomain.ProcessExit += HandleProcessExit;
+            AppDomain.CurrentDomain.UnhandledException +=
+                HandleUnhandledException;
+            Application.logMessageReceived += HandleLogMessage;
         }
 
         private IEnumerator Start()
@@ -153,12 +181,17 @@ namespace FPS.Networking.Netcode
             }
 
             Time.fixedDeltaTime = 1f / configuration.TickRate;
+            idlePolicy = new DedicatedServerIdlePolicy(
+                configuration.IdleTimeoutSeconds, startedAt);
             Application.targetFrameRate = (int)configuration.TickRate;
             QualitySettings.vSyncCount = 0;
             Log("INITIALIZING", $"map={configuration.MapName} " +
                 $"port={configuration.Port} match={configuration.MatchId} " +
                 $"players={configuration.MaximumPlayers} seed={configuration.Seed} " +
-                $"tick={configuration.TickRate} version={configuration.Version}");
+                $"tick={configuration.TickRate} version={configuration.Version} " +
+                $"protocol={configuration.ProtocolVersion} " +
+                $"content={configuration.ContentVersion} " +
+                $"idle={configuration.IdleTimeoutSeconds}s");
 
             if (SceneManager.GetActiveScene().path != configuration.MapScenePath)
             {
@@ -207,6 +240,19 @@ namespace FPS.Networking.Netcode
 
         private void Update()
         {
+            if (IsReady && network?.NetworkManager != null)
+            {
+                float now = Time.realtimeSinceStartup;
+                int connected = network.NetworkManager.ConnectedClientsIds.Count;
+                if (!shutdownRequested && idlePolicy != null &&
+                    idlePolicy.ShouldRecycle(now, connected))
+                    RequestShutdown("idle-timeout");
+                if (now >= nextDiagnosticsAt)
+                {
+                    nextDiagnosticsAt = now + 5f;
+                    SaveDiagnostics("ready", "heartbeat");
+                }
+            }
             if (shutdownRequested && !shutdownStarted)
                 StartCoroutine(ShutdownRoutine());
         }
@@ -219,13 +265,18 @@ namespace FPS.Networking.Netcode
             network = OptionalNetworkBootstrap.CreateRuntime(endpoint,
                 "Dedicated Network Runtime");
             DontDestroyOnLoad(network.gameObject);
+            network.ConnectionAdmissionEvaluated += HandleAdmissionEvaluated;
+            network.StateChanged += HandleNetworkStateChanged;
             if (!CoopAdmissionEnvironment.TryCreateCodec(
                     out CoopConnectionTicketCodec ticketCodec,
                     out error))
                 return false;
             network.ConfigureServerAdmission(
                 new CoopConnectionAdmissionService(ticketCodec,
-                    configuration.Version, configuration.MaximumPlayers,
+                    new CoopBuildCompatibility(configuration.Version,
+                        configuration.ProtocolVersion,
+                        configuration.ContentVersion),
+                    configuration.MaximumPlayers,
                     matchId: configuration.MatchId));
             installer = network.gameObject.AddComponent<
                 CoopNetworkRuntimeInstaller>();
@@ -373,9 +424,58 @@ namespace FPS.Networking.Netcode
             shutdownRequested = true;
         }
 
+        private void HandleUnhandledException(object sender,
+            UnhandledExceptionEventArgs arguments)
+        {
+            object value = arguments.ExceptionObject;
+            lastRuntimeException = value == null
+                ? "UnknownUnhandledException"
+                : value.GetType().Name;
+            shutdownReason = "unhandled-exception";
+            exitCode = 5;
+            shutdownRequested = true;
+        }
+
+        private void HandleLogMessage(string condition, string stackTrace,
+            LogType type)
+        {
+            if (type != LogType.Exception) return;
+            lastRuntimeException = string.IsNullOrWhiteSpace(condition)
+                ? "UnityException"
+                : condition.Split('\n')[0];
+            SaveDiagnostics("failed", "unhandled-exception");
+        }
+
+        private void HandleAdmissionEvaluated(ulong clientId,
+            CoopAdmissionDecision decision)
+        {
+            if (decision.Approved) return;
+            rejectedConnections++;
+            lastAdmissionFailure = decision.Failure + ": " + decision.Reason;
+            Log("AUTH_REJECTED", $"client={clientId} " +
+                $"failure={decision.Failure}");
+            SaveDiagnostics("ready", "authentication-rejected");
+        }
+
+        private void HandleNetworkStateChanged(OptionalNetworkState state)
+        {
+            if (state != OptionalNetworkState.Failed) return;
+            lastRuntimeException = string.IsNullOrWhiteSpace(
+                network?.LastFailure)
+                ? "TransportFailure"
+                : network.LastFailure;
+            SaveDiagnostics("failed", "transport-failure");
+            RequestShutdown("transport-failure", 4);
+        }
+
         private void OnApplicationQuit()
         {
-            SaveDiagnostics(IsReady ? "stopped" : "not-ready", shutdownReason);
+            // ShutdownRoutine already captured the final authority/transport
+            // snapshot before NGO teardown. Do not overwrite it with zeros
+            // after NetworkManager and the authority have been destroyed.
+            if (!shutdownStarted)
+                SaveDiagnostics(IsReady ? "stopped" : "not-ready",
+                    shutdownReason);
             network?.Shutdown();
         }
 
@@ -385,6 +485,15 @@ namespace FPS.Networking.Netcode
             Application.wantsToQuit -= HandleWantsToQuit;
             Console.CancelKeyPress -= HandleCancelKeyPress;
             AppDomain.CurrentDomain.ProcessExit -= HandleProcessExit;
+            AppDomain.CurrentDomain.UnhandledException -=
+                HandleUnhandledException;
+            Application.logMessageReceived -= HandleLogMessage;
+            if (network != null)
+            {
+                network.ConnectionAdmissionEvaluated -=
+                    HandleAdmissionEvaluated;
+                network.StateChanged -= HandleNetworkStateChanged;
+            }
             IsActive = false;
         }
 
@@ -392,10 +501,26 @@ namespace FPS.Networking.Netcode
         {
             if (configuration == null ||
                 string.IsNullOrWhiteSpace(configuration.DiagnosticsPath)) return;
+            if (diagnosticsWriteInProgress) return;
+            diagnosticsWriteInProgress = true;
             try
             {
                 NetworkCoopSessionAuthority authority =
                     installer != null ? installer.SessionAuthority : null;
+                DriverStatistics traffic = ReadTraffic();
+                float now = Time.realtimeSinceStartup;
+                if (hasTrafficSample)
+                {
+                    double elapsed = Math.Max(0.001d, now - previousTrafficAt);
+                    receivedBytesPerSecond = Delta(traffic.RxTotalBytes,
+                        previousTraffic.RxTotalBytes) / elapsed;
+                    transmittedBytesPerSecond = Delta(traffic.TxTotalBytes,
+                        previousTraffic.TxTotalBytes) / elapsed;
+                }
+                previousTraffic = traffic;
+                previousTrafficAt = now;
+                hasTrafficSample = true;
+                NetcodeWorldState world = authority?.WorldState ?? default;
                 var report = new DedicatedServerDiagnostics
                 {
                     status = status,
@@ -406,26 +531,62 @@ namespace FPS.Networking.Netcode
                     maximumPlayers = configuration.MaximumPlayers,
                     seed = configuration.Seed,
                     version = configuration.Version,
+                    protocolVersion = configuration.ProtocolVersion,
+                    contentVersion = configuration.ContentVersion,
                     tickRate = configuration.TickRate,
+                    idleTimeoutSeconds = configuration.IdleTimeoutSeconds,
                     uptimeSeconds = Time.realtimeSinceStartup - startedAt,
                     connectedClients = network?.NetworkManager != null
                         ? network.NetworkManager.ConnectedClientsIds.Count
                         : 0,
                     authoritativeTick = authority?.LastAuthoritativeSnapshot?.Tick ?? 0,
+                    missionPhase = authority == null
+                        ? "NotInitialized"
+                        : world.MissionPhase.ToString(),
+                    waveStatus = authority == null
+                        ? "NotInitialized"
+                        : world.WaveStatus.ToString(),
+                    receivedBytes = traffic.RxTotalBytes,
+                    transmittedBytes = traffic.TxTotalBytes,
+                    receivedBytesPerSecond = receivedBytesPerSecond,
+                    transmittedBytesPerSecond = transmittedBytesPerSecond,
+                    rejectedConnections = rejectedConnections,
+                    lastAdmissionFailure = lastAdmissionFailure,
+                    lastRuntimeException = lastRuntimeException,
                     timestampUtc = DateTime.UtcNow.ToString("O")
                 };
                 string path = configuration.DiagnosticsPath;
                 string directory = Path.GetDirectoryName(path);
                 if (!string.IsNullOrWhiteSpace(directory))
                     Directory.CreateDirectory(directory);
-                File.WriteAllText(path, JsonUtility.ToJson(report, true));
+                string temporary = path + ".tmp";
+                File.WriteAllText(temporary,
+                    JsonUtility.ToJson(report, true));
+                if (File.Exists(path))
+                    File.Replace(temporary, path, null);
+                else
+                    File.Move(temporary, path);
             }
             catch (Exception exception)
             {
                 Debug.LogError($"{LogPrefix}[DIAGNOSTICS_FAILED] " +
                                exception.GetType().Name, this);
             }
+            finally
+            {
+                diagnosticsWriteInProgress = false;
+            }
         }
+
+        private DriverStatistics ReadTraffic()
+        {
+            if (network?.Transport == null) return default;
+            ref NetworkDriver driver = ref network.Transport.GetNetworkDriver();
+            return driver.IsCreated ? driver.GetStatistics() : default;
+        }
+
+        private static ulong Delta(ulong current, ulong previous) =>
+            current >= previous ? current - previous : current;
 
         private static void Log(string state, string message)
         {

@@ -1,5 +1,8 @@
 using System;
 using System.IO;
+using System.Linq;
+using System.Security.Cryptography;
+using System.Text;
 using UnityEditor;
 using UnityEditor.Build.Reporting;
 using UnityEngine;
@@ -12,13 +15,17 @@ public static class Issue85DedicatedServerBuild
     [Serializable]
     private sealed class BuildManifest
     {
+        public string schemaVersion = "fps-dedicated-build-v2";
         public string target;
         public string output;
         public string scene;
         public string unityVersion;
         public string productVersion;
+        public string protocolVersion;
+        public string contentVersion;
         public string builtAtUtc;
         public ulong totalBytes;
+        public string sha256;
     }
 
     public static void Build()
@@ -60,6 +67,12 @@ public static class Issue85DedicatedServerBuild
                     $"专用服务器构建失败：{report.summary.result}，" +
                     $"errors={report.summary.totalErrors}");
 
+            string protocolVersion = Option("-serverProtocolVersion");
+            if (string.IsNullOrWhiteSpace(protocolVersion))
+                protocolVersion = "1";
+            string contentVersion = Option("-serverContentVersion");
+            if (string.IsNullOrWhiteSpace(contentVersion))
+                contentVersion = "citynew-v1";
             string manifestPath = Path.Combine(
                 Path.GetDirectoryName(output) ?? ".",
                 "dedicated-server-build.json");
@@ -70,9 +83,12 @@ public static class Issue85DedicatedServerBuild
                 scene = CityNewScene,
                 unityVersion = Application.unityVersion,
                 productVersion = PlayerSettings.bundleVersion,
+                protocolVersion = protocolVersion.Trim(),
+                contentVersion = contentVersion.Trim(),
                 builtAtUtc = DateTime.UtcNow.ToString("O"),
-                totalBytes = report.summary.totalSize
-            }, true));
+                totalBytes = report.summary.totalSize,
+                sha256 = HashArtifact(output)
+            }, true), new UTF8Encoding(false));
             Debug.Log($"[DEDICATED_SERVER_BUILD][SUCCEEDED] output={output} " +
                       $"bytes={report.summary.totalSize} manifest={manifestPath}");
         }
@@ -149,4 +165,35 @@ public static class Issue85DedicatedServerBuild
         }
         return string.Empty;
     }
+
+    private static string HashArtifact(string path)
+    {
+        using SHA256 hash = SHA256.Create();
+        if (File.Exists(path))
+        {
+            using FileStream stream = File.OpenRead(path);
+            return Hex(hash.ComputeHash(stream));
+        }
+        if (!Directory.Exists(path))
+            throw new FileNotFoundException("服务器构建产物不存在。", path);
+        foreach (string file in Directory.GetFiles(path, "*",
+                     SearchOption.AllDirectories).OrderBy(value => value,
+                     StringComparer.Ordinal))
+        {
+            string relative = file.Substring(path.Length).Replace('\\', '/');
+            byte[] name = Encoding.UTF8.GetBytes(relative + "\n");
+            hash.TransformBlock(name, 0, name.Length, name, 0);
+            using FileStream stream = File.OpenRead(file);
+            byte[] buffer = new byte[64 * 1024];
+            int read;
+            while ((read = stream.Read(buffer, 0, buffer.Length)) > 0)
+                hash.TransformBlock(buffer, 0, read, buffer, 0);
+        }
+        hash.TransformFinalBlock(Array.Empty<byte>(), 0, 0);
+        return Hex(hash.Hash);
+    }
+
+    private static string Hex(byte[] value) =>
+        BitConverter.ToString(value).Replace("-", string.Empty)
+            .ToLowerInvariant();
 }

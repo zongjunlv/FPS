@@ -184,6 +184,37 @@ namespace FPS.Networking.Session
         }
 
         /// <summary>
+        /// Validates an allocation response before opening the transport. This
+        /// keeps incompatible clients out of the NGO handshake and provides a
+        /// precise, user-facing reason instead of a generic disconnect.
+        /// </summary>
+        public bool StartRemote(RemoteMatchConnectionInfo connection,
+            CoopBuildCompatibility localCompatibility, string credential)
+        {
+            CoopCompatibilityDecision decision =
+                RemoteMatchCompatibilityValidator.Validate(
+                    localCompatibility, connection);
+            if (!decision.Compatible)
+            {
+                LastFailure = decision.Message;
+                SetState(CoopSessionState.Failed);
+                return false;
+            }
+            if (string.IsNullOrWhiteSpace(credential))
+            {
+                LastFailure = "远程战局缺少短期连接凭证，请重新申请战局。";
+                SetState(CoopSessionState.Failed);
+                return false;
+            }
+
+            ConfigureConnectionCredential(credential);
+            var endpoint = NetworkEndpointSettings.Localhost;
+            endpoint.Address = connection.host.Trim();
+            endpoint.Port = connection.port;
+            return StartDirect(false, endpoint);
+        }
+
+        /// <summary>
         /// Restarts only the client transport with a newly issued one-time
         /// credential while retaining the current lobby and battle context.
         /// </summary>

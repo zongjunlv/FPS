@@ -1,3 +1,4 @@
+using System.IO;
 using FPS.Networking.Acceptance;
 using FPS.Networking.Diagnostics;
 using NUnit.Framework;
@@ -135,6 +136,39 @@ namespace FPS.Tests.Architecture
             Assert.That(Issue100RuntimeArguments.TryParse(missingPipe,
                 out _, out string pipeError), Is.False);
             Assert.That(pipeError, Does.Contain("video-pipe"));
+        }
+
+        [Test]
+        public void ReconnectCredentialCanBeReadFromPrivateRuntimeFile()
+        {
+            string path = Path.Combine(Path.GetTempPath(),
+                "issue101-reconnect.ticket");
+            File.WriteAllText(path, "short-lived-ticket");
+            try
+            {
+                string[] arguments =
+                {
+                    "player", "-issue100-acceptance",
+                    "-issue100-role", "client-b",
+                    "-issue100-run-id", "run-101",
+                    "-issue100-scenario", "rtt-000-loss-00",
+                    "-issue100-output", "/tmp/issue101/client-b",
+                    "-issue86-account", "acceptance-b",
+                    "-issue99-match", "match-101",
+                    "-issue101-reconnect-ticket-file", path
+                };
+
+                bool parsed = Issue100RuntimeArguments.TryParse(arguments,
+                    out Issue100RuntimeArguments options, out string error);
+
+                Assert.That(parsed, Is.True, error);
+                Assert.That(options.ReconnectCredential,
+                    Is.EqualTo("short-lived-ticket"));
+            }
+            finally
+            {
+                File.Delete(path);
+            }
         }
     }
 }
