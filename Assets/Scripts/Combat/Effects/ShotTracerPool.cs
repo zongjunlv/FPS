@@ -1,3 +1,4 @@
+using FPS.Networking.Netcode;
 using UnityEngine;
 
 public sealed class ShotTracerPool : MonoBehaviour
@@ -11,6 +12,11 @@ public sealed class ShotTracerPool : MonoBehaviour
     {
         get
         {
+            if (tracers == null)
+            {
+                return 0;
+            }
+
             int count = 0;
 
             foreach (ShotTracerController tracer in tracers)
@@ -31,6 +37,11 @@ public sealed class ShotTracerPool : MonoBehaviour
 
     private void Awake()
     {
+        if (DedicatedServerRuntime.IsActive)
+        {
+            return;
+        }
+
         CreateMaterial();
         Prewarm();
     }
@@ -40,6 +51,11 @@ public sealed class ShotTracerPool : MonoBehaviour
         Vector3 end,
         float speed)
     {
+        if (DedicatedServerRuntime.IsActive || tracers == null)
+        {
+            return null;
+        }
+
         ShotTracerController tracer = FindAvailableTracer();
         tracer.Activate(start, end, speed);
         return tracer;
@@ -52,6 +68,11 @@ public sealed class ShotTracerPool : MonoBehaviour
         Color startColor,
         Color endColor)
     {
+        if (DedicatedServerRuntime.IsActive || tracers == null)
+        {
+            return null;
+        }
+
         ShotTracerController tracer = FindAvailableTracer();
         tracer.Activate(start, end, speed, startColor, endColor);
         return tracer;

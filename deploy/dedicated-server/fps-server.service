@@ -1,0 +1,52 @@
+[Unit]
+Description=FPS Unity Dedicated Server
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=fps
+Group=fps
+WorkingDirectory=/srv/fps
+EnvironmentFile=/etc/fps/server.env
+EnvironmentFile=/etc/fps/server.conf
+Environment=HOME=/srv/fps/data/home
+Environment=XDG_CONFIG_HOME=/srv/fps/data/xdg-config
+Environment=XDG_CACHE_HOME=/srv/fps/data/xdg-cache
+ExecStartPre=/usr/bin/test -x /srv/fps/current/FPSDedicatedServer.x86_64
+ExecStart=/usr/bin/python3 /srv/fps/current/tools/issue101_server_manager.py run \
+  --binary /srv/fps/current/FPSDedicatedServer.x86_64 \
+  --public-host ${FPS_PUBLIC_HOST} \
+  --port ${FPS_SERVER_PORT} \
+  --match-id ${FPS_MATCH_ID} \
+  --account ${FPS_ACCOUNT_A} \
+  --account ${FPS_ACCOUNT_B} \
+  --maximum-players 2 \
+  --seed ${FPS_MATCH_SEED} \
+  --application-version ${FPS_APPLICATION_VERSION} \
+  --protocol-version ${FPS_PROTOCOL_VERSION} \
+  --content-version ${FPS_CONTENT_VERSION} \
+  --tick-rate 60 \
+  --idle-timeout ${FPS_IDLE_TIMEOUT} \
+  --ticket-lifetime ${FPS_TICKET_LIFETIME} \
+  --state-root /srv/fps/data \
+  --allocation-output /srv/fps/data/${FPS_MATCH_ID}/allocation.json
+ExecStop=/usr/bin/python3 /srv/fps/current/tools/issue101_server_manager.py stop \
+  --state /srv/fps/data/${FPS_MATCH_ID}/server-state.json \
+  --reason systemd-stop
+Restart=on-failure
+RestartSec=5
+TimeoutStartSec=120
+TimeoutStopSec=30
+KillMode=control-group
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/srv/fps/data /srv/fps/logs
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target

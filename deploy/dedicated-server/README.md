@@ -47,6 +47,13 @@ python3 scripts/networking/issue101_server_manager.py start \
 
 返回的 allocation 包含公网地址、端口、战局 ID、三层版本和两名玩家各自的一次性连接/重连票据，不包含签名密钥。安全组只需开放对应 UDP 端口。
 
+生产主机应使用仓库中的 `fps-server.service`，让 systemd 监管前台
+`run` 命令及其 Unity 子进程。把 `server.conf.example` 复制到
+`/etc/fps/server.conf` 并填写非敏感的公网地址、端口、版本和战局参数；
+签名密钥仍只保存在权限为 `0600` 的 `/etc/fps/server.env`。发布目录放在
+`/srv/fps/releases/<release-id>`，`/srv/fps/current` 只指向当前版本，便于
+校验后原子切换和回滚。
+
 ## 4. 诊断与停止
 
 ```bash

@@ -1,4 +1,5 @@
 using System.Collections;
+using FPS.Networking.Netcode;
 using UnityEngine;
 using UnityEngine.Animations;
 using UnityEngine.Playables;
@@ -46,23 +47,27 @@ public sealed class EnemyCombatController : MonoBehaviour
         enemy = GetComponent<EnemyController>();
         perception = GetComponent<EnemyPerceptionController>();
         navigation = GetComponent<EnemyNavigationController>();
-        animator = GetComponentInChildren<Animator>(true);
-        audioSource = GetComponent<AudioSource>();
         abilities = GetComponent<EnemyAbilityController>();
         lod = GetComponent<EnemyAiLodController>();
-        visualAnimator = GetComponent<EnemyVisualAnimator>();
 
-        if (audioSource == null)
+        if (!DedicatedServerRuntime.IsActive)
         {
-            audioSource = gameObject.AddComponent<AudioSource>();
+            animator = GetComponentInChildren<Animator>(true);
+            audioSource = GetComponent<AudioSource>();
+            visualAnimator = GetComponent<EnemyVisualAnimator>();
+
+            if (audioSource == null)
+            {
+                audioSource = gameObject.AddComponent<AudioSource>();
+            }
+            audioSource.playOnAwake = false;
+            audioSource.spatialBlend = 1f;
+            audioSource.minDistance = 1f;
+            audioSource.maxDistance = 25f;
+            presentation =
+                Resources.Load<EnemyCombatPresentationProfile>(
+                    "EnemyCombatPresentation");
         }
-        audioSource.playOnAwake = false;
-        audioSource.spatialBlend = 1f;
-        audioSource.minDistance = 1f;
-        audioSource.maxDistance = 25f;
-        presentation =
-            Resources.Load<EnemyCombatPresentationProfile>(
-                "EnemyCombatPresentation");
         attackState = new EnemyAttackStateMachine();
         RefreshAbilityProfile();
     }
@@ -341,13 +346,16 @@ public sealed class EnemyCombatController : MonoBehaviour
             }
         }
 
-        EnsureRangedTracerPool();
-        rangedTracerPool?.Play(
-            origin,
-            endPoint,
-            abilities.TracerSpeed,
-            EnemyTracerStart,
-            EnemyTracerEnd);
+        if (!DedicatedServerRuntime.IsActive)
+        {
+            EnsureRangedTracerPool();
+            rangedTracerPool?.Play(
+                origin,
+                endPoint,
+                abilities.TracerSpeed,
+                EnemyTracerStart,
+                EnemyTracerEnd);
+        }
         PlayAttackPresentation();
     }
 
@@ -371,6 +379,11 @@ public sealed class EnemyCombatController : MonoBehaviour
 
     private void PlayAttackPresentation()
     {
+        if (DedicatedServerRuntime.IsActive)
+        {
+            return;
+        }
+
         if (presentation != null &&
             presentation.AttackImpact != null)
         {

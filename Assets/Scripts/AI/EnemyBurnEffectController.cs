@@ -1,4 +1,5 @@
 using FPS.GameplayEffects;
+using FPS.Networking.Netcode;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
@@ -115,7 +116,10 @@ public sealed class EnemyBurnEffectController : MonoBehaviour
             gameObject,
             "Enemy Status Effects");
         EnsureDefinition();
-        EnsurePresentation();
+        if (!DedicatedServerRuntime.IsActive)
+        {
+            EnsurePresentation();
+        }
         SyncPresentation();
     }
 

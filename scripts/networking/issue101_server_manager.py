@@ -106,6 +106,32 @@ def require_secret() -> str:
     return value
 
 
+def process_is_alive(pid: Any) -> bool:
+    """Return whether a recorded process still exists.
+
+    Lifecycle JSON survives machine and service restarts, so it cannot be used
+    as the sole source of truth for the single-match guard.
+    """
+    try:
+        normalized = int(pid or 0)
+    except (TypeError, ValueError):
+        return False
+    if normalized <= 0:
+        return False
+    try:
+        os.kill(normalized, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def state_has_live_process(state: dict[str, Any]) -> bool:
+    return any(process_is_alive(state.get(key)) for key in (
+        "serverPid", "launcherPid", "processGroupId"))
+
+
 def server_command(args: argparse.Namespace, binary: pathlib.Path,
                    diagnostics: pathlib.Path) -> list[str]:
     return [
@@ -213,8 +239,16 @@ def start(args: argparse.Namespace) -> int:
     diagnostics_path = match_root / "server-diagnostics.json"
     log_path = match_root / "server.log"
     existing = read_json(state_path)
-    if existing.get("lifecycleStatus") in ("starting", "ready"):
-        raise ValueError("同名战局仍在运行，不能重复启动")
+    if existing.get("lifecycleStatus") in ("launching", "starting", "ready"):
+        if state_has_live_process(existing):
+            raise ValueError("同名战局仍在运行，不能重复启动")
+        existing.update({
+            "lifecycleStatus": "stopped",
+            "reason": "stale-state-recovered",
+            "endedAtUtc": iso(),
+        })
+        existing.pop("command", None)
+        write_state(state_path, existing)
     command = server_command(args, binary, diagnostics_path)
     state = {
         "schemaVersion": SCHEMA,
@@ -349,29 +383,63 @@ def status(args: argparse.Namespace) -> int:
     return 0
 
 
+def lifecycle_exit_code(lifecycle: str) -> int | None:
+    if lifecycle in ("launching", "starting", "ready"):
+        return None
+    if lifecycle in ("stopped", "recycled"):
+        return 0
+    if lifecycle == "crashed":
+        return 1
+    return None
+
+
+def run(args: argparse.Namespace) -> int:
+    """Start one match and remain in the foreground for a service manager."""
+    result = start(args)
+    if result != 0:
+        return result
+    state_path = args.state_root.resolve() / args.match_id / "server-state.json"
+    while True:
+        state = read_json(state_path)
+        exit_code = lifecycle_exit_code(str(state.get("lifecycleStatus", "")))
+        if exit_code is not None:
+            return exit_code
+        time.sleep(0.5)
+
+
+def add_start_arguments(command: argparse.ArgumentParser) -> None:
+    command.add_argument("--binary", type=pathlib.Path, required=True)
+    command.add_argument("--public-host", required=True)
+    command.add_argument("--port", type=int, default=7777)
+    command.add_argument("--match-id", default="remote-" +
+                         utc_now().strftime("%Y%m%dT%H%M%SZ"))
+    command.add_argument("--account", action="append", default=[])
+    command.add_argument("--maximum-players", type=int, default=2)
+    command.add_argument("--seed", type=int, default=18018)
+    command.add_argument("--application-version", default="development")
+    command.add_argument("--protocol-version", default="1")
+    command.add_argument("--content-version", default="citynew-v1")
+    command.add_argument("--tick-rate", type=int, default=60)
+    command.add_argument("--idle-timeout", type=int, default=120)
+    command.add_argument("--ticket-lifetime", type=int, default=600)
+    command.add_argument("--startup-timeout", type=int, default=90)
+    command.add_argument("--state-root", type=pathlib.Path,
+                         default=pathlib.Path(
+                             "artifacts/networking/issue101/runtime"))
+    command.add_argument("--allocation-output", type=pathlib.Path)
+
+
 def parser() -> argparse.ArgumentParser:
     root = argparse.ArgumentParser()
     commands = root.add_subparsers(dest="command", required=True)
     start_parser = commands.add_parser("start")
-    start_parser.add_argument("--binary", type=pathlib.Path, required=True)
-    start_parser.add_argument("--public-host", required=True)
-    start_parser.add_argument("--port", type=int, default=7777)
-    start_parser.add_argument("--match-id", default="remote-" +
-                              utc_now().strftime("%Y%m%dT%H%M%SZ"))
-    start_parser.add_argument("--account", action="append", default=[])
-    start_parser.add_argument("--maximum-players", type=int, default=2)
-    start_parser.add_argument("--seed", type=int, default=18018)
-    start_parser.add_argument("--application-version", default="development")
-    start_parser.add_argument("--protocol-version", default="1")
-    start_parser.add_argument("--content-version", default="citynew-v1")
-    start_parser.add_argument("--tick-rate", type=int, default=60)
-    start_parser.add_argument("--idle-timeout", type=int, default=120)
-    start_parser.add_argument("--ticket-lifetime", type=int, default=600)
-    start_parser.add_argument("--startup-timeout", type=int, default=90)
-    start_parser.add_argument("--state-root", type=pathlib.Path,
-                              default=pathlib.Path("artifacts/networking/issue101/runtime"))
-    start_parser.add_argument("--allocation-output", type=pathlib.Path)
+    add_start_arguments(start_parser)
     start_parser.set_defaults(handler=start)
+
+    run_parser = commands.add_parser(
+        "run", help="启动战局并保持前台运行，供 systemd 等服务管理器监管")
+    add_start_arguments(run_parser)
+    run_parser.set_defaults(handler=run)
 
     monitor_parser = commands.add_parser("monitor", help=argparse.SUPPRESS)
     monitor_parser.add_argument("--state", type=pathlib.Path, required=True)

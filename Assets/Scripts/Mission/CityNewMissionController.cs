@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using FPS.Networking.Netcode;
 using FPS.Simulation;
 using UnityEngine;
 using UnityEngine.InputSystem;
@@ -588,6 +589,11 @@ public sealed class CityNewMissionController : MonoBehaviour
 
     private void EnsureOutcomeView()
     {
+        if (DedicatedServerRuntime.IsActive)
+        {
+            return;
+        }
+
         hud ??= FindAnyObjectByType<UnifiedGameHud>();
         if (hud == null || hud.OutcomeLayer == null)
         {

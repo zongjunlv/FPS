@@ -7,6 +7,7 @@ import hmac
 import importlib.util
 import pathlib
 import unittest
+from unittest import mock
 
 
 PATH = pathlib.Path(__file__).with_name("issue101_server_manager.py")
@@ -60,6 +61,27 @@ class Issue101ServerManagerTests(unittest.TestCase):
         for value in ("bad value", "bad/path", "bad;value", ""):
             with self.assertRaises(ValueError):
                 MODULE.validate_identifier(value, "test")
+
+    def test_foreground_runner_maps_terminal_lifecycle_to_exit_code(self):
+        for lifecycle in ("launching", "starting", "ready", "unknown"):
+            self.assertIsNone(MODULE.lifecycle_exit_code(lifecycle))
+        for lifecycle in ("stopped", "recycled"):
+            self.assertEqual(MODULE.lifecycle_exit_code(lifecycle), 0)
+        self.assertEqual(MODULE.lifecycle_exit_code("crashed"), 1)
+
+    def test_active_state_requires_a_live_recorded_process(self):
+        state = {
+            "lifecycleStatus": "ready",
+            "serverPid": 101,
+            "launcherPid": 102,
+            "processGroupId": 101,
+        }
+        with mock.patch.object(MODULE, "process_is_alive",
+                               side_effect=lambda pid: pid == 102):
+            self.assertTrue(MODULE.state_has_live_process(state))
+        with mock.patch.object(MODULE, "process_is_alive",
+                               return_value=False):
+            self.assertFalse(MODULE.state_has_live_process(state))
 
 
 if __name__ == "__main__":
