@@ -29,6 +29,7 @@
 - [前往 Releases 页面](https://github.com/zongjunlv/FPS/releases/latest)
 - [直接下载 Windows x86_64 客户端](https://github.com/zongjunlv/FPS/releases/download/v0.2.0/FPS-PVE-Demo-v0.2.0-Windows-x86_64.zip)
 - [直接下载 macOS 客户端](https://github.com/zongjunlv/FPS/releases/download/v0.1.0/FPS-PVE-Demo-v0.1.0-macOS-universal.zip)
+- Windows SHA-256：`1209bafe84db7fd05972c4421823f084c39c8f577e4f7b45c93752da2179ec13`
 - macOS SHA-256：`4621702e0740dfa21127979f342629b2bdc914c489ce511677163f3907756520`
 
 Windows 解压后运行 `FPS-PVE-Demo.exe`；请保留 EXE、`FPS-PVE-Demo_Data`、`UnityPlayer.dll` 和 `MonoBleedingEdge` 在同一目录。macOS 解压后运行 `FPS-PVE-Demo.app`；当前 macOS 客户端采用 ad-hoc 签名，尚未经过 Apple 公证，如果首次启动被 Gatekeeper 拦截，请在 Finder 中右键应用并选择“打开”。联机模式依赖网络服务，公开服务可能因维护临时不可用。
@@ -268,7 +269,7 @@ deploy/dedicated-server/          # Linux 服务端部署模板
 
 ## 当前限制与后续计划
 
-- 公开 Release 当前仅提供 macOS Universal 客户端，Windows Build Support 安装完成后会补充 Windows 版本。
+- 公开 Release 已提供 Windows x86_64 与 macOS Universal 客户端；Windows 版本尚未进行代码签名，首次启动可能出现 SmartScreen 提示。
 - macOS 客户端尚未使用 Apple Developer ID 公证签名。
 - 联机玩法当前以双人 PVE 为目标，不包含大规模匹配、观战和竞技反作弊。
 - 混合 ECS 仍是可切换实验路径；在全部硬门禁通过前不会替换正式 GameObject AI。
