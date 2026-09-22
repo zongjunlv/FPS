@@ -28,6 +28,7 @@ public sealed class ModeEntryView : MonoBehaviour
     private bool ownsFont;
     private TMP_Text statusText;
     private UnityEngine.UI.Image statusBackground;
+    private bool authenticationUnlocked = true;
 
     public IReadOnlyList<UnityEngine.UI.Button> Buttons => buttons;
     public string VisibleStatus => statusText != null
@@ -59,6 +60,15 @@ public sealed class ModeEntryView : MonoBehaviour
         }
 
         return null;
+    }
+
+    public void SetAuthenticationUnlocked(bool unlocked)
+    {
+        authenticationUnlocked = unlocked;
+        Refresh();
+        if (!unlocked || buttons.Count == 0 || EventSystem.current == null)
+            return;
+        EventSystem.current.SetSelectedGameObject(buttons[0].gameObject);
     }
 
     private void Build(
@@ -338,14 +348,17 @@ public sealed class ModeEntryView : MonoBehaviour
 
         for (int index = 0; index < buttons.Count; index++)
         {
-            buttons[index].interactable = !flow.IsLoading;
+            buttons[index].interactable = authenticationUnlocked &&
+                                          !flow.IsLoading;
         }
 
         string status = !string.IsNullOrWhiteSpace(flow.FailureMessage)
             ? flow.FailureMessage
             : flow.IsLoading
                 ? $"{flow.StatusMessage}  {flow.LoadingProgress:P0}"
-                : "等待选择";
+                : authenticationUnlocked
+                    ? "等待选择"
+                    : "请先完成账号登录";
         statusText.text = status;
         bool failed = !string.IsNullOrWhiteSpace(flow.FailureMessage);
         statusText.color = failed

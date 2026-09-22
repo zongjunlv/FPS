@@ -40,13 +40,9 @@ namespace FPS.Networking.Session
         private bool ShouldBlock()
         {
             session ??= GetComponent<CoopSessionController>();
-            if (session != null &&
-                session.State == CoopSessionState.Reconnecting)
-                return true;
             NetworkManager manager = NetworkManager.Singleton;
-            if (manager == null || !manager.IsClient ||
-                !manager.IsConnectedClient)
-                return false;
+            bool hasLocalReplica = false;
+            bool hasConsumedServerState = false;
             NetworkPlayerReplica[] replicas =
                 FindObjectsByType<NetworkPlayerReplica>(
                     FindObjectsInactive.Include,
@@ -54,9 +50,48 @@ namespace FPS.Networking.Session
             for (int index = 0; index < replicas.Length; index++)
             {
                 if (!replicas[index].IsLocallyControlled) continue;
-                return !replicas[index].HasConsumedServerState;
+                hasLocalReplica = true;
+                hasConsumedServerState =
+                    replicas[index].HasConsumedServerState;
+                break;
             }
-            return true;
+
+            return ShouldBlockForState(
+                session?.State ?? CoopSessionState.Offline,
+                session != null && session.HasActiveSession,
+                session?.LobbyPhase ?? CoopSessionController.PhaseLobby,
+                manager != null && manager.IsClient,
+                manager != null && manager.IsConnectedClient,
+                hasLocalReplica,
+                hasConsumedServerState);
+        }
+
+        public static bool ShouldBlockForState(
+            CoopSessionState sessionState,
+            bool hasActiveSession,
+            string sessionPhase,
+            bool isNetworkClient,
+            bool isConnectedClient,
+            bool hasLocalReplica,
+            bool hasConsumedServerState)
+        {
+            if (sessionState == CoopSessionState.Reconnecting) return true;
+            if (sessionState != CoopSessionState.Connected) return false;
+
+            // Session/Relay rooms intentionally defer player spawning while
+            // members select characters and ready up in the lobby. No replica
+            // in this phase is expected and must never trigger a reconnect gate.
+            if (hasActiveSession &&
+                !string.Equals(sessionPhase,
+                    CoopSessionController.PhaseLoading,
+                    System.StringComparison.Ordinal) &&
+                !string.Equals(sessionPhase,
+                    CoopSessionController.PhaseBattle,
+                    System.StringComparison.Ordinal))
+                return false;
+
+            if (!isNetworkClient || !isConnectedClient) return false;
+            return !hasLocalReplica || !hasConsumedServerState;
         }
     }
 }

@@ -60,6 +60,13 @@ namespace FPS.Tests.Architecture
                         "FPS.Networking.Domain",
                         "FPS.Networking.Netcode"
                     },
+                    ["FPS.Networking.Acceptance"] = new[]
+                    {
+                        "FPS.Networking.Domain",
+                        "FPS.Networking.Diagnostics",
+                        "FPS.Networking.Netcode",
+                        "FPS.Networking.Session"
+                    },
                     ["FPS.Inventory"] = new[]
                     {
                         "FPS.Core",
@@ -85,6 +92,7 @@ namespace FPS.Tests.Architecture
                         "FPS.AI.Hybrid.Shared",
                         "FPS.AI.HybridEcs",
                         "FPS.Performance.HybridAi",
+                        "FPS.Networking.Domain",
                         "FPS.Networking.Netcode",
                         "FPS.Networking.Session",
                         "FPS.Inventory",

@@ -18,7 +18,8 @@ namespace FPS.Core.GameModes
         BattlePreparation = 20,
         Battle = 21,
         CoopLogin = 30,
-        CoopLobby = 31
+        CoopLobby = 31,
+        CoopBattle = 32
     }
 
     public static class GameModeIds
@@ -168,7 +169,8 @@ namespace FPS.Core.GameModes
                     stage == GameModeStage.Battle,
                 GameModeId.Coop =>
                     stage == GameModeStage.CoopLogin ||
-                    stage == GameModeStage.CoopLobby,
+                    stage == GameModeStage.CoopLobby ||
+                    stage == GameModeStage.CoopBattle,
                 _ => false
             };
         }

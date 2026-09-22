@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Collections;
 using System.IO;
 using System.Threading;
@@ -206,6 +207,17 @@ namespace FPS.Networking.Netcode
             }
             yield return null;
 
+            CoopEnvironmentReadinessRegistry.EnsureCityNewEnvironment();
+            float environmentDeadline = Time.realtimeSinceStartup + 30f;
+            while (!CoopEnvironmentReadinessRegistry.IsCityNewReady &&
+                   Time.realtimeSinceStartup < environmentDeadline)
+                yield return null;
+            if (!CoopEnvironmentReadinessRegistry.IsCityNewReady)
+            {
+                Fail("CityNew 导航环境准备超时。", 3);
+                yield break;
+            }
+
             DedicatedServerPresentationResult stripped =
                 DedicatedServerPresentationStripper.Strip();
             Log("HEADLESS", $"camera={stripped.Cameras} canvas={stripped.Canvases} " +
@@ -244,6 +256,10 @@ namespace FPS.Networking.Netcode
             {
                 float now = Time.realtimeSinceStartup;
                 int connected = network.NetworkManager.ConnectedClientsIds.Count;
+                int expectedPlayers = configuration?.PlayerRoster?.Length ?? 0;
+                if (installer != null && installer.IsPlayerSpawnDeferred &&
+                    expectedPlayers > 0 && connected >= expectedPlayers)
+                    installer.ReleasePlayerSpawnBarrier();
                 if (!shutdownRequested && idlePolicy != null &&
                     idlePolicy.ShouldRecycle(now, connected))
                     RequestShutdown("idle-timeout");
@@ -271,13 +287,23 @@ namespace FPS.Networking.Netcode
                     out CoopConnectionTicketCodec ticketCodec,
                     out error))
                 return false;
+            var matchRoster = new Dictionary<string, int>(
+                StringComparer.Ordinal);
+            for (int index = 0;
+                 index < configuration.PlayerRoster.Length; index++)
+            {
+                DedicatedPlayerRosterEntry player =
+                    configuration.PlayerRoster[index];
+                matchRoster[player.AccountId] = player.PlayerId;
+            }
             network.ConfigureServerAdmission(
                 new CoopConnectionAdmissionService(ticketCodec,
                     new CoopBuildCompatibility(configuration.Version,
                         configuration.ProtocolVersion,
                         configuration.ContentVersion),
                     configuration.MaximumPlayers,
-                    matchId: configuration.MatchId));
+                    matchId: configuration.MatchId,
+                    matchRoster: matchRoster));
             installer = network.gameObject.AddComponent<
                 CoopNetworkRuntimeInstaller>();
 
@@ -298,11 +324,29 @@ namespace FPS.Networking.Netcode
             }
 
             installer.ConfigurePrefabs(authorityPrefab, replicaPrefab);
-            CoopTargetSpawnDefinition[] targets =
-                BuildTargets(configuration.Seed);
-            installer.ConfigureScenario(BuildPlayers(configuration.MaximumPlayers),
-                targets, targets.Length);
+            if (!CoopScenarioRegistry.TryCreateCityNew(
+                    configuration.Seed,
+                    configuration.MaximumPlayers,
+                    out CoopScenarioConfiguration scenario,
+                    out error))
+                return false;
+            installer.ConfigureScenario(
+                scenario.Players,
+                scenario.Targets,
+                scenario.RequiredKills,
+                scenario.Mission,
+                scenario.Waves);
             installer.ConfigureMaximumPlayers(configuration.MaximumPlayers);
+            for (int index = 0;
+                 index < configuration.PlayerRoster.Length; index++)
+            {
+                DedicatedPlayerRosterEntry player =
+                    configuration.PlayerRoster[index];
+                installer.ConfigurePlayerAppearance(
+                    player.PlayerId, player.AppearanceId);
+            }
+            installer.ConfigurePlayerSpawnBarrier(
+                configuration.PlayerRoster.Length > 0);
             if (!installer.RegisterConfiguredPrefabs())
             {
                 error = installer.LastFailure;
@@ -310,63 +354,6 @@ namespace FPS.Networking.Netcode
             }
             error = string.Empty;
             return true;
-        }
-
-        private static CoopPlayerSpawnDefinition[] BuildPlayers(int count)
-        {
-            var result = new CoopPlayerSpawnDefinition[count];
-            float center = (count - 1) * 0.5f;
-            Vector3 cityNewOrigin = new(49.761f, 0.16f, 59.719f);
-            for (int index = 0; index < count; index++)
-            {
-                result[index] = new CoopPlayerSpawnDefinition
-                {
-                    PlayerId = index + 1,
-                    Position = cityNewOrigin +
-                        Vector3.right * ((index - center) * 2.5f),
-                    Health = 100f
-                };
-            }
-            return result;
-        }
-
-        private static CoopTargetSpawnDefinition[] BuildTargets(int seed)
-        {
-            var random = new System.Random(seed);
-            var result = new CoopTargetSpawnDefinition[6];
-            Vector3 cityNewWaveCenter = new(49.761f, 0.16f, 74.719f);
-            for (int index = 0; index < result.Length; index++)
-            {
-                double angle = random.NextDouble() * Math.PI * 2d;
-                float radius = 12f + (float)random.NextDouble() * 6f;
-                result[index] = new CoopTargetSpawnDefinition
-                {
-                    TargetId = index + 1,
-                    Position = cityNewWaveCenter + new Vector3(
-                        Mathf.Sin((float)angle) * radius,
-                        0f,
-                        Mathf.Cos((float)angle) * radius),
-                    Radius = index == 5 ? 1.45f : 1.1f,
-                    Health = index == 5 ? 135f : 68f,
-                    HeadOffset = new Vector3(0f,
-                        index == 5 ? 1.05f : 0.85f, 0f),
-                    HeadRadius = index == 5 ? 0.38f : 0.32f,
-                    DropDefinitionId = index % 3 == 0
-                        ? "medkit"
-                        : string.Empty,
-                    Role = index == 5
-                        ? AuthoritativeEnemyRole.Elite
-                        : (AuthoritativeEnemyRole)(index % 4),
-                    SpawnTick = index * 45L,
-                    MoveSpeed = index % 2 == 0 ? 2.4f : 2.9f,
-                    AttackRange = 1.8f,
-                    AttackDamage = index == 5 ? 9f : 6f,
-                    AttackIntervalTicks = index == 5 ? 64 : 60,
-                    RewardExperience = index == 5 ? 150 : 100,
-                    DropQuantity = 1
-                };
-            }
-            return result;
         }
 
         public void RequestShutdown(string reason, int requestedExitCode = 0)

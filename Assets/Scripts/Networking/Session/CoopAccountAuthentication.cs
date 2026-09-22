@@ -86,13 +86,11 @@ namespace FPS.Networking.Session
                 return false;
             }
 
-            bool upper = password.Any(char.IsUpper);
-            bool lower = password.Any(char.IsLower);
+            bool letter = password.Any(char.IsLetter);
             bool digit = password.Any(char.IsDigit);
-            bool special = password.Any(character => !char.IsLetterOrDigit(character));
-            if (!upper || !lower || !digit || !special)
+            if (!letter || !digit)
             {
-                error = "密码必须同时包含大写字母、小写字母、数字和特殊字符。";
+                error = "密码必须至少包含一个字母和一个数字。";
                 return false;
             }
 

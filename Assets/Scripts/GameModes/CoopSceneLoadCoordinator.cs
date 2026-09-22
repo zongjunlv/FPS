@@ -66,9 +66,9 @@ public sealed class CoopSceneLoadCoordinator : MonoBehaviour
     {
         LastFailure = string.Empty;
         if (!GameModeContext.IsActive(GameModeId.Coop,
-                GameModeStage.CoopLobby))
+                GameModeStage.CoopBattle))
             GameModeContext.BeginTransition(GameModeId.Coop,
-                GameModeStage.CoopLobby);
+                GameModeStage.CoopBattle);
 
         if (SceneManager.GetActiveScene().path !=
             DedicatedServerConfiguration.CityNewScenePath)
@@ -88,14 +88,31 @@ public sealed class CoopSceneLoadCoordinator : MonoBehaviour
         yield return null;
 
         if (!GameModeContext.IsActive(GameModeId.Coop,
-                GameModeStage.CoopLobby) &&
+                GameModeStage.CoopBattle) &&
             !GameModeContext.TryActivate(GameModeId.Coop,
-                GameModeStage.CoopLobby, out string error))
+                GameModeStage.CoopBattle, out string error))
         {
             LastFailure = error;
             _ = session.CancelSceneLoadAsync(error);
             loadRoutine = null;
             yield break;
+        }
+
+        NetworkManager manager = NetworkManager.Singleton;
+        if (manager != null && manager.IsServer)
+        {
+            CoopEnvironmentReadinessRegistry.EnsureCityNewEnvironment();
+            float environmentDeadline = Time.realtimeSinceStartup + 30f;
+            while (!CoopEnvironmentReadinessRegistry.IsCityNewReady &&
+                   Time.realtimeSinceStartup < environmentDeadline)
+                yield return null;
+            if (!CoopEnvironmentReadinessRegistry.IsCityNewReady)
+            {
+                LastFailure = "CityNew 导航环境准备超时，已阻止不完整战局启动。";
+                _ = session.CancelSceneLoadAsync(LastFailure);
+                loadRoutine = null;
+                yield break;
+            }
         }
 
         Task<bool> report = session.ReportSceneReadyAsync(epoch);

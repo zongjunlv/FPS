@@ -21,7 +21,6 @@ namespace FPS.Networking.Session
         InvalidAppearance = 5,
         AppearanceRequired = 6,
         HostOnly = 7,
-        WaitingForSecondPlayer = 8,
         PlayersNotReady = 9,
         RoomAlreadyStarting = 10
     }
@@ -59,8 +58,7 @@ namespace FPS.Networking.Session
                 CoopLobbyFailure.InvalidAppearance => "角色 ID 无效，已拒绝选择。",
                 CoopLobbyFailure.AppearanceRequired => "请先确认角色再准备。",
                 CoopLobbyFailure.HostOnly => "只有房主可以开始战局。",
-                CoopLobbyFailure.WaitingForSecondPlayer => "需要两名玩家才能开始。",
-                CoopLobbyFailure.PlayersNotReady => "双方确认角色并准备后才能开始。",
+                CoopLobbyFailure.PlayersNotReady => "所有已加入玩家确认角色并准备后才能开始。",
                 CoopLobbyFailure.RoomAlreadyStarting => "战局已经开始加载。",
                 _ => string.Empty
             };
@@ -239,11 +237,6 @@ namespace FPS.Networking.Session
             if (!requester.IsHost)
             {
                 failure = CoopLobbyFailure.HostOnly;
-                return false;
-            }
-            if (members.Count != maximumPlayers)
-            {
-                failure = CoopLobbyFailure.WaitingForSecondPlayer;
                 return false;
             }
             if (members.Values.Any(value => !value.IsReady ||

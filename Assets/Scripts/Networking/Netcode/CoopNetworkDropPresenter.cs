@@ -9,8 +9,19 @@ namespace FPS.Networking.Netcode
     {
         private readonly Dictionary<int, GameObject> views = new();
         private NetworkCoopSessionAuthority authority;
+        private Camera presentationCamera;
+        private Sprite healthIcon;
+        private Sprite armorIcon;
+        private Sprite ammoIcon;
 
         public int ViewCount => views.Count;
+
+        private void Awake()
+        {
+            healthIcon = Resources.Load<Sprite>("UI/Icons/health");
+            armorIcon = Resources.Load<Sprite>("UI/Icons/armor");
+            ammoIcon = Resources.Load<Sprite>("UI/Icons/ammo");
+        }
 
         private void Update()
         {
@@ -39,10 +50,15 @@ namespace FPS.Networking.Netcode
                 }
                 view.SetActive(state.Available);
                 if (!state.Available) continue;
-                view.transform.position = state.Position + Vector3.up * 0.3f;
-                view.transform.Rotate(Vector3.up, 45f * Time.deltaTime,
-                    Space.World);
-                ApplyColor(view, state.ItemId.ToString());
+                float bob = Mathf.Sin(Time.unscaledTime * 2.5f +
+                                      state.DropId) * 0.07f;
+                view.transform.position = state.Position +
+                    Vector3.up * (0.48f + bob);
+                presentationCamera ??= Camera.main;
+                if (presentationCamera != null)
+                    view.transform.rotation =
+                        presentationCamera.transform.rotation;
+                ApplyIcon(view, state.ItemId.ToString());
             }
 
             foreach (KeyValuePair<int, GameObject> pair in views)
@@ -52,20 +68,27 @@ namespace FPS.Networking.Netcode
 
         private GameObject CreateView(int dropId)
         {
-            GameObject view = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            var view = new GameObject($"Network Drop {dropId}");
             view.name = $"Network Drop {dropId}";
             view.transform.SetParent(transform, false);
-            view.transform.localScale = new Vector3(0.28f, 0.28f, 0.28f);
-            Collider collider = view.GetComponent<Collider>();
-            if (collider != null) Destroy(collider);
+            view.transform.localScale = Vector3.one * 0.52f;
+            SpriteRenderer renderer = view.AddComponent<SpriteRenderer>();
+            renderer.sortingOrder = 32;
             return view;
         }
 
-        private static void ApplyColor(GameObject view, string itemId)
+        private void ApplyIcon(GameObject view, string itemId)
         {
-            Renderer renderer = view.GetComponent<Renderer>();
+            SpriteRenderer renderer = view.GetComponent<SpriteRenderer>();
             if (renderer == null) return;
-            Color color = itemId switch
+            renderer.sprite = itemId switch
+            {
+                "medical_kit" or "medkit" => healthIcon,
+                "armor_pack" or "armor_plate" => armorIcon,
+                "rifle_ammo" or "handgun_ammo" => ammoIcon,
+                _ => ammoIcon
+            };
+            renderer.color = itemId switch
             {
                 "medical_kit" or "medkit" => new Color(0.95f, 0.2f, 0.2f),
                 "armor_pack" or "armor_plate" => new Color(0.15f, 0.65f, 1f),
@@ -73,7 +96,6 @@ namespace FPS.Networking.Netcode
                 "handgun_ammo" => new Color(0.75f, 0.75f, 0.75f),
                 _ => new Color(0.2f, 1f, 0.7f)
             };
-            renderer.material.color = color;
         }
 
         private void OnDestroy()

@@ -33,6 +33,10 @@ public sealed class Issue84CoopAccountContentTests
         string bootstrap = File.ReadAllText(
             "Assets/Scripts/GameModes/GameModeSceneBootstrap.cs");
         Assert.That(bootstrap, Does.Contain("CoopAccountView.Create"));
+        Assert.That(bootstrap,
+            Does.Contain("CoopAccountView.CreateAuthenticationGate"));
+        Assert.That(bootstrap,
+            Does.Contain("SetAuthenticationUnlocked(false)"));
         Assert.That(bootstrap, Does.Contain("UnityAuthenticationGateway"));
         Assert.That(bootstrap, Does.Contain("GameModeStage.CoopLogin"));
     }

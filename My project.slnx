@@ -1,11 +1,15 @@
 ﻿<Solution>
   <Project Path="FPS.Composition.csproj" />
+  <Project Path="Assembly-CSharp-Editor.csproj" />
   <Project Path="FPS.Simulation.csproj" />
   <Project Path="FPS.PlayModeTests.csproj" />
   <Project Path="FPS.Inventory.csproj" />
   <Project Path="FPS.ArchitectureTests.csproj" />
+  <Project Path="FPS.Networking.Netcode.csproj" />
   <Project Path="FPS.Networking.Session.csproj" />
   <Project Path="FPS.AI.csproj" />
+  <Project Path="FPS.ContentValidation.Tests.csproj" />
+  <Project Path="FPS.Issue69GameModes.Tests.csproj" />
   <Project Path="FPS.AI.Hybrid.Shared.csproj" />
   <Project Path="FPS.Combat.csproj" />
   <Project Path="FPS.SaveGame.csproj" />
@@ -13,15 +17,13 @@
   <Project Path="FPS.Core.csproj" />
   <Project Path="FPS.Determinism.csproj" />
   <Project Path="FPS.ContentValidation.Editor.csproj" />
+  <Project Path="FPS.Issue65Netcode.Tests.csproj" />
   <Project Path="FPS.GameplayEffects.csproj" />
-  <Project Path="Assembly-CSharp-Editor.csproj" />
+  <Project Path="FPS.Networking.Acceptance.csproj" />
   <Project Path="FPS.Networking.Diagnostics.csproj" />
-  <Project Path="FPS.Networking.Netcode.csproj" />
-  <Project Path="FPS.UI.csproj" />
   <Project Path="FPS.Networking.Domain.csproj" />
+  <Project Path="FPS.UI.csproj" />
   <Project Path="FPS.AI.HybridEcs.csproj" />
   <Project Path="Assembly-CSharp.csproj" />
-  <Project Path="FPS.Issue65Netcode.Tests.csproj" />
   <Project Path="FPS.Issue64Ecs.Tests.csproj" />
-  <Project Path="FPS.ContentValidation.Tests.csproj" />
 </Solution>

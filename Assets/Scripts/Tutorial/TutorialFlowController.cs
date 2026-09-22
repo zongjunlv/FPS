@@ -12,6 +12,7 @@ public sealed class TutorialFlowController : MonoBehaviour
     public TutorialTrainingEnvironment Environment => environment;
     public TutorialProgressionStateMachine Progression { get; private set; }
     public TutorialTopHud Hud { get; private set; }
+    public TutorialPauseView PauseView { get; private set; }
     public TutorialCompletionView CompletionView { get; private set; }
     public bool IsInitialized { get; private set; }
     public bool IsLeavingTutorial { get; private set; }
@@ -61,6 +62,22 @@ public sealed class TutorialFlowController : MonoBehaviour
         return TryLeaveTutorial(flow => flow.TryReturnToEntry());
     }
 
+    public bool ResumeTutorial()
+    {
+        PlayerController player = environment != null
+            ? environment.PlayerRig?.Player
+            : null;
+        if (!IsInitialized || IsLeavingTutorial ||
+            player == null || !player.IsPaused)
+        {
+            return false;
+        }
+
+        player.SetPaused(false);
+        PauseView?.SetVisible(false);
+        return true;
+    }
+
     private void Start()
     {
         if (!GameModeContext.IsActive(
@@ -99,8 +116,33 @@ public sealed class TutorialFlowController : MonoBehaviour
         Hud = TutorialTopHud.Create(transform);
         Hud.Bind(Progression);
         Progression.SequenceCompleted += HandleSequenceCompleted;
+        PauseView = TutorialPauseView.Create(transform, this);
         CompletionView = TutorialCompletionView.Create(transform, this);
         IsInitialized = true;
+    }
+
+    private void LateUpdate()
+    {
+        if (!IsInitialized || IsLeavingTutorial || PauseView == null)
+        {
+            return;
+        }
+
+        PlayerController player = environment != null
+            ? environment.PlayerRig?.Player
+            : null;
+        bool completionVisible = CompletionView != null &&
+                                 CompletionView.IsVisible;
+        if (completionVisible)
+        {
+            PauseView.SetVisible(false);
+            Cursor.lockState = CursorLockMode.None;
+            Cursor.visible = true;
+            return;
+        }
+
+        PauseView.SetVisible(
+            player != null && player.IsPaused);
     }
 
     private void OnDestroy()
@@ -112,6 +154,11 @@ public sealed class TutorialFlowController : MonoBehaviour
             Destroy(Hud.gameObject);
         }
 
+        if (PauseView != null)
+        {
+            Destroy(PauseView.gameObject);
+        }
+
         if (CompletionView != null)
         {
             Destroy(CompletionView.gameObject);
@@ -120,6 +167,7 @@ public sealed class TutorialFlowController : MonoBehaviour
 
     private void HandleSequenceCompleted(TutorialProgressSnapshot snapshot)
     {
+        PauseView?.SetVisible(false);
         SetPlayerInputEnabled(false);
         CompletionView?.SetVisible(true);
     }
@@ -141,12 +189,20 @@ public sealed class TutorialFlowController : MonoBehaviour
         }
 
         IsLeavingTutorial = true;
+        PlayerController player = environment != null
+            ? environment.PlayerRig?.Player
+            : null;
+        if (player != null && player.IsPaused)
+        {
+            player.SetPaused(false);
+        }
         SetPlayerInputEnabled(false);
         ReleaseRuntimeBindings();
         if (Hud != null)
         {
             Hud.gameObject.SetActive(false);
         }
+        PauseView?.SetInteractionEnabled(false);
         CompletionView?.SetInteractionEnabled(false);
         return true;
     }

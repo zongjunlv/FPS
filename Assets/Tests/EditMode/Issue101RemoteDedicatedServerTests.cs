@@ -1,6 +1,8 @@
+using System.Collections.Generic;
 using System.Text;
 using FPS.Networking.Domain;
 using FPS.Networking.Netcode;
+using FPS.Networking.Session;
 using NUnit.Framework;
 
 namespace FPS.Tests.Architecture
@@ -143,6 +145,50 @@ namespace FPS.Tests.Architecture
             Assert.That(snapshot.Player(2).Health, Is.EqualTo(100d));
             Assert.That(snapshot.Mission.Phase,
                 Is.EqualTo(AuthoritativeMissionPhase.ClearEnemies));
+        }
+
+        [Test]
+        public void DedicatedRosterRejectsOutsiderAndPreservesConfiguredSlots()
+        {
+            var codec = new CoopConnectionTicketCodec(Key);
+            var roster = new Dictionary<string, int>
+            {
+                ["player-a"] = 2,
+                ["player-b"] = 1
+            };
+            var service = new CoopConnectionAdmissionService(codec,
+                new CoopBuildCompatibility("1.0.0", "1", "citynew-v1"),
+                2, () => 2_000_000_000, matchId: "match-101",
+                matchRoster: roster);
+
+            CoopAdmissionDecision outsider = service.Approve(10,
+                Encoding.UTF8.GetBytes(codec.Issue("player-x",
+                    new CoopBuildCompatibility("1.0.0", "1", "citynew-v1"),
+                    2_000_000_000, 120, "outsider", "match-101")));
+            CoopAdmissionDecision playerA = service.Approve(11,
+                Encoding.UTF8.GetBytes(codec.Issue("player-a",
+                    new CoopBuildCompatibility("1.0.0", "1", "citynew-v1"),
+                    2_000_000_000, 120, "player-a", "match-101")));
+
+            Assert.That(outsider.Failure,
+                Is.EqualTo(CoopAdmissionFailure.NotInMatchRoster));
+            Assert.That(playerA.Approved, Is.True);
+            Assert.That(playerA.Identity.SimulationPlayerId, Is.EqualTo(2));
+        }
+
+        [Test]
+        public void ClientLoadsPinnedTencentBrokerConfiguration()
+        {
+            Assert.That(CoopDedicatedServerSettings.TryLoad(
+                out CoopDedicatedServerSettings settings,
+                out string error), Is.True, error);
+            Assert.That(settings.brokerUrl,
+                Is.EqualTo("https://43.128.141.28:80"));
+            Assert.That(settings.pinnedCertificateSha256,
+                Has.Length.EqualTo(64));
+            Assert.That(settings.Compatibility,
+                Is.EqualTo(new CoopBuildCompatibility(
+                    "0.1.0", "1", "citynew-v1")));
         }
     }
 }

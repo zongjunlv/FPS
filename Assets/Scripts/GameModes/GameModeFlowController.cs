@@ -273,7 +273,8 @@ public sealed class GameModeFlowController : MonoBehaviour
     private static void ApplyCursorPolicy(GameModeStage stage)
     {
         bool gameplayStage = stage == GameModeStage.Tutorial ||
-                             stage == GameModeStage.Battle;
+                             stage == GameModeStage.Battle ||
+                             stage == GameModeStage.CoopBattle;
         Cursor.visible = !gameplayStage;
         Cursor.lockState = gameplayStage
             ? CursorLockMode.Locked

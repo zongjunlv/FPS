@@ -19,7 +19,8 @@ namespace FPS.Networking.Netcode
         SessionMismatch = 8,
         ReconnectWindowExpired = 9,
         ProtocolMismatch = 10,
-        ContentMismatch = 11
+        ContentMismatch = 11,
+        NotInMatchRoster = 12
     }
 
     public readonly struct CoopConnectionClaims
@@ -134,6 +135,8 @@ namespace FPS.Networking.Netcode
                     "连接凭证不属于当前战局，请重新进入房间。",
                 CoopAdmissionFailure.ReconnectWindowExpired =>
                     "重连时间已结束，请返回房间等待下一局。",
+                CoopAdmissionFailure.NotInMatchRoster =>
+                    "当前账号不属于这场合作战局，请返回房间重新加入。",
                 _ => "连接审批失败，请稍后重试。"
             };
         }
@@ -337,6 +340,7 @@ namespace FPS.Networking.Netcode
         private readonly Func<long> utcNowSeconds;
         private readonly int reconnectGraceSeconds;
         private readonly string expectedMatchId;
+        private readonly Dictionary<string, int> playerSlotByAccount;
         private readonly Dictionary<ulong, CoopApprovedIdentity> byClient = new();
         private readonly Dictionary<string, ulong> clientByAccount = new(
             StringComparer.Ordinal);
@@ -353,7 +357,8 @@ namespace FPS.Networking.Netcode
 
         public CoopConnectionAdmissionService(CoopConnectionTicketCodec ticketCodec,
             string serverVersion, int playerLimit, Func<long> clock = null,
-            int reconnectWindowSeconds = 30, string matchId = "")
+            int reconnectWindowSeconds = 30, string matchId = "",
+            IReadOnlyDictionary<string, int> matchRoster = null)
         {
             codec = ticketCodec ?? throw new ArgumentNullException(
                 nameof(ticketCodec));
@@ -370,15 +375,17 @@ namespace FPS.Networking.Netcode
                     nameof(reconnectWindowSeconds));
             reconnectGraceSeconds = reconnectWindowSeconds;
             expectedMatchId = matchId?.Trim() ?? string.Empty;
+            playerSlotByAccount = CopyMatchRoster(matchRoster, playerLimit);
         }
 
         public CoopConnectionAdmissionService(
             CoopConnectionTicketCodec ticketCodec,
             CoopBuildCompatibility compatibility,
             int playerLimit, Func<long> clock = null,
-            int reconnectWindowSeconds = 30, string matchId = "") : this(
+            int reconnectWindowSeconds = 30, string matchId = "",
+            IReadOnlyDictionary<string, int> matchRoster = null) : this(
             ticketCodec, compatibility.ToTicketValue(), playerLimit, clock,
-            reconnectWindowSeconds, matchId)
+            reconnectWindowSeconds, matchId, matchRoster)
         {
             expectedCompatibility = compatibility;
         }
@@ -429,6 +436,10 @@ namespace FPS.Networking.Netcode
                     StringComparison.Ordinal))
                 return CoopAdmissionDecision.Reject(
                     CoopAdmissionFailure.SessionMismatch);
+            if (playerSlotByAccount.Count > 0 &&
+                !playerSlotByAccount.ContainsKey(claims.AccountPlayerId))
+                return CoopAdmissionDecision.Reject(
+                    CoopAdmissionFailure.NotInMatchRoster);
             if (usedNonces.ContainsKey(claims.Nonce))
                 return CoopAdmissionDecision.Reject(
                     CoopAdmissionFailure.CredentialReplayed);
@@ -447,7 +458,7 @@ namespace FPS.Networking.Netcode
 
             int playerId = reconnecting
                 ? reserved.SimulationPlayerId
-                : ResolveAvailablePlayerId();
+                : ResolveAvailablePlayerId(claims.AccountPlayerId);
             if (playerId <= 0)
                 return CoopAdmissionDecision.Reject(CoopAdmissionFailure.ServerFull);
             int generation = generationByAccount.TryGetValue(
@@ -534,31 +545,52 @@ namespace FPS.Networking.Netcode
             return false;
         }
 
-        private int ResolveAvailablePlayerId()
+        private int ResolveAvailablePlayerId(string accountPlayerId)
         {
+            if (playerSlotByAccount.TryGetValue(accountPlayerId,
+                    out int configuredSlot))
+                return IsPlayerSlotAvailable(configuredSlot)
+                    ? configuredSlot
+                    : -1;
             for (int candidate = 1; candidate <= maximumPlayers; candidate++)
             {
-                bool used = false;
-                foreach (CoopApprovedIdentity identity in byClient.Values)
-                {
-                    if (identity.SimulationPlayerId != candidate) continue;
-                    used = true;
-                    break;
-                }
-                if (!used)
-                {
-                    foreach (CoopReconnectReservation reservation in
-                             reservations.Values)
-                    {
-                        if (reservation.SimulationPlayerId != candidate)
-                            continue;
-                        used = true;
-                        break;
-                    }
-                }
-                if (!used) return candidate;
+                if (IsPlayerSlotAvailable(candidate)) return candidate;
             }
             return -1;
+        }
+
+        private bool IsPlayerSlotAvailable(int candidate)
+        {
+            foreach (CoopApprovedIdentity identity in byClient.Values)
+            {
+                if (identity.SimulationPlayerId == candidate) return false;
+            }
+            foreach (CoopReconnectReservation reservation in
+                     reservations.Values)
+            {
+                if (reservation.SimulationPlayerId == candidate) return false;
+            }
+            return true;
+        }
+
+        private static Dictionary<string, int> CopyMatchRoster(
+            IReadOnlyDictionary<string, int> source, int playerLimit)
+        {
+            var result = new Dictionary<string, int>(StringComparer.Ordinal);
+            if (source == null) return result;
+            var usedSlots = new HashSet<int>();
+            foreach (KeyValuePair<string, int> pair in source)
+            {
+                string account = pair.Key?.Trim() ?? string.Empty;
+                if (string.IsNullOrWhiteSpace(account) ||
+                    pair.Value < 1 || pair.Value > playerLimit ||
+                    !usedSlots.Add(pair.Value))
+                    throw new ArgumentException(
+                        "Match roster must contain unique accounts and player slots.",
+                        nameof(source));
+                result.Add(account, pair.Value);
+            }
+            return result;
         }
 
         private void PruneExpiredNonces(long now)

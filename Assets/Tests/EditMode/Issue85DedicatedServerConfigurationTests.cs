@@ -64,6 +64,25 @@ namespace FPS.Tests.Architecture
                 Is.EqualTo("/tmp/issue85.json"));
         }
 
+        [Test]
+        public void ParsesOrderedTwoPlayerRoster()
+        {
+            bool parsed = DedicatedServerConfiguration.TryParse(new[]
+            {
+                "game", "-fps-server", "-server-roster",
+                "player-a=operative-alpha,player-b=operative-bravo"
+            }, "1.0.0", "/tmp/fps-server", out var configuration,
+                out string error);
+
+            Assert.That(parsed, Is.True, error);
+            Assert.That(configuration.PlayerRoster, Has.Length.EqualTo(2));
+            Assert.That(configuration.PlayerRoster[0].AccountId,
+                Is.EqualTo("player-a"));
+            Assert.That(configuration.PlayerRoster[0].PlayerId, Is.EqualTo(1));
+            Assert.That(configuration.PlayerRoster[1].AppearanceId,
+                Is.EqualTo("operative-bravo"));
+        }
+
         [TestCase("-server-port", "0", "端口")]
         [TestCase("-server-max-players", "17", "最大人数")]
         [TestCase("-server-tick-rate", "9", "Tick Rate")]

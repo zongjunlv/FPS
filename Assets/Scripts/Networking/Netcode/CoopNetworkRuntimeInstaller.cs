@@ -44,6 +44,10 @@ namespace FPS.Networking.Netcode
         [Min(1)] public int AttackIntervalTicks;
         [Min(0)] public int RewardExperience;
         [Min(1)] public int DropQuantity;
+        public string ArchetypeId;
+        public string PresentationAddress;
+        [Min(1)] public int WaveIndex;
+        [Min(0)] public int SpawnOrder;
 
         public CoopTargetSpawn ToDomain()
         {
@@ -62,7 +66,11 @@ namespace FPS.Networking.Netcode
                 Mathf.Max(0f, AttackDamage),
                 Mathf.Max(1, AttackIntervalTicks),
                 Mathf.Max(0, RewardExperience),
-                Mathf.Max(1, DropQuantity));
+                Mathf.Max(1, DropQuantity),
+                ArchetypeId,
+                PresentationAddress,
+                Mathf.Max(1, WaveIndex),
+                Mathf.Max(0, SpawnOrder));
         }
     }
 
@@ -111,6 +119,8 @@ namespace FPS.Networking.Netcode
             }
         };
         [SerializeField] private int requiredKills = 1;
+        [SerializeField] private CoopWaveDefinition[] waves =
+            Array.Empty<CoopWaveDefinition>();
         [SerializeField] private int maximumPlayers = 2;
         private AuthoritativeMissionDefinition missionDefinition =
             AuthoritativeMissionDefinition.Default;
@@ -188,7 +198,8 @@ namespace FPS.Networking.Netcode
             CoopPlayerSpawnDefinition[] playerDefinitions,
             CoopTargetSpawnDefinition[] targetDefinitions,
             int killsRequired,
-            AuthoritativeMissionDefinition configuredMission = null)
+            AuthoritativeMissionDefinition configuredMission = null,
+            CoopWaveDefinition[] configuredWaves = null)
         {
             if (bootstrap != null && bootstrap.IsListening)
             {
@@ -203,6 +214,7 @@ namespace FPS.Networking.Netcode
             requiredKills = killsRequired;
             missionDefinition = configuredMission ??
                 AuthoritativeMissionDefinition.Default;
+            waves = configuredWaves ?? Array.Empty<CoopWaveDefinition>();
             maximumPlayers = Mathf.Clamp(players.Length, 1, 16);
         }
 
@@ -258,6 +270,8 @@ namespace FPS.Networking.Netcode
                 throw new InvalidOperationException(
                     "Only the server can release the player spawn barrier.");
             playerSpawnBarrierReleased = true;
+            if (sessionAuthority != null)
+                sessionAuthority.AutoSimulate = true;
             ulong[] clients = new ulong[waitingClients.Count];
             waitingClients.CopyTo(clients);
             waitingClients.Clear();
@@ -272,6 +286,8 @@ namespace FPS.Networking.Netcode
                 return;
             deferPlayerSpawns = true;
             playerSpawnBarrierReleased = false;
+            if (sessionAuthority != null)
+                sessionAuthority.AutoSimulate = false;
             DespawnAll();
         }
 
@@ -366,7 +382,9 @@ namespace FPS.Networking.Netcode
                     ConvertPlayers(players),
                     ConvertTargets(targets),
                     requiredKills,
-                    missionDefinition);
+                    missionDefinition,
+                    ConvertWaves(waves));
+                sessionAuthority.AutoSimulate = !IsPlayerSpawnDeferred;
                 if (bootstrap.AdmissionService != null &&
                     !bootstrap.NetworkManager.IsHost)
                     sessionAuthority.InitializePlayerConnections(
@@ -618,6 +636,13 @@ namespace FPS.Networking.Netcode
             {
                 yield return definitions[index].ToDomain();
             }
+        }
+
+        private static IEnumerable<AuthoritativeWaveDefinition> ConvertWaves(
+            IReadOnlyList<CoopWaveDefinition> definitions)
+        {
+            for (int index = 0; index < definitions.Count; index++)
+                yield return definitions[index].ToDomain();
         }
     }
 }

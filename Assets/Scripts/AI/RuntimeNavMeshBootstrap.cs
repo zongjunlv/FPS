@@ -1,5 +1,6 @@
 using System.Collections;
 using FPS.Core.GameModes;
+using FPS.Networking.Netcode;
 using Unity.AI.Navigation;
 using UnityEngine;
 using UnityEngine.AI;
@@ -15,10 +16,14 @@ public sealed class RuntimeNavMeshBootstrap : MonoBehaviour
 
     public static void EnsureForActiveScene()
     {
-        if (instance != null ||
-            !GameModeContext.IsActive(
-                GameModeId.SoloBattle,
-                GameModeStage.Battle))
+        bool supportedBattle = GameModeContext.IsActive(
+                                   GameModeId.SoloBattle,
+                                   GameModeStage.Battle) ||
+                               GameModeContext.IsActive(
+                                   GameModeId.Coop,
+                                   GameModeStage.CoopBattle) ||
+                               DedicatedServerRuntime.IsActive;
+        if (instance != null || !supportedBattle)
         {
             return;
         }

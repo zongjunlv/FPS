@@ -1,0 +1,42 @@
+[Unit]
+Description=FPS HTTPS Match Broker
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=fps
+Group=fps
+WorkingDirectory=/srv/fps/current
+EnvironmentFile=/etc/fps/server.env
+EnvironmentFile=/etc/fps/broker.conf
+ExecStart=/usr/bin/python3 /srv/fps/current/tools/fps_match_broker.py \
+  --listen 0.0.0.0 \
+  --port ${FPS_BROKER_PORT} \
+  --cert /srv/fps/data/tls/broker-cert.pem \
+  --key /srv/fps/data/tls/broker-key.pem \
+  --project-id ${FPS_UNITY_PROJECT_ID} \
+  --public-host ${FPS_PUBLIC_HOST} \
+  --game-port ${FPS_SERVER_PORT} \
+  --binary /srv/fps/current/FPSDedicatedServer.x86_64 \
+  --manager /srv/fps/current/tools/issue101_server_manager.py \
+  --state-root /srv/fps/data/broker \
+  --application-version ${FPS_APPLICATION_VERSION} \
+  --protocol-version ${FPS_PROTOCOL_VERSION} \
+  --content-version ${FPS_CONTENT_VERSION} \
+  --idle-timeout ${FPS_IDLE_TIMEOUT}
+Restart=on-failure
+RestartSec=3
+UMask=0077
+NoNewPrivileges=true
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/srv/fps/data /srv/fps/logs
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+LimitNOFILE=4096
+
+[Install]
+WantedBy=multi-user.target

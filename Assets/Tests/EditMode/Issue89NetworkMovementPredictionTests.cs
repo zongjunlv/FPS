@@ -108,6 +108,34 @@ namespace FPS.Tests.Architecture
         }
 
         [Test]
+        public void ServerCollisionResolverOwnsTheAcceptedPlayerPosition()
+        {
+            CoopServerRules rules = Rules();
+            AuthoritativeCoopSimulation simulation = Simulation(rules);
+            simulation.SetPlayerMovementResolver((_, current, desired) =>
+                new PlayerMovementState(
+                    current.Position,
+                    default,
+                    desired.AimYawDegrees,
+                    desired.AimPitchDegrees,
+                    desired.Stance,
+                    desired.Grounded,
+                    desired.LastJumpTick,
+                    desired.GroundHeight));
+
+            PlayerInputCommand intoWall = Command(
+                1,
+                default,
+                moveZ: 1d);
+            CommandResolution resolution = simulation.Step(
+                new[] { intoWall }).Commands.Single();
+
+            Assert.That(resolution.Accepted, Is.True);
+            Assert.That(simulation.CaptureSnapshot().Player(1).Position,
+                Is.EqualTo(default(NetVector3)));
+        }
+
+        [Test]
         public void RemoteInterpolationIncludesFacingStanceAndGroundState()
         {
             var interpolation = new RemoteSnapshotInterpolator(

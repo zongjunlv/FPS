@@ -237,7 +237,11 @@ namespace FPS.Networking.Session
             world.MissionPhase switch
             {
                 AuthoritativeMissionPhase.ClearEnemies =>
-                    $"任务 1/3 · 清除怪物  {world.KilledTargets}/{world.RequiredKills}",
+                    world.WaveStatus == AuthoritativeWaveStatus.Intermission
+                        ? $"任务 1/3 · 第 {world.CurrentWave}/{world.TotalWaves} 波完成 · 下一波即将开始"
+                        : $"任务 1/3 · 第 {world.CurrentWave}/{world.TotalWaves} 波 · " +
+                          $"场上 {world.ActiveEnemyCount}/{world.WaveMaximumAlive} · " +
+                          $"总击杀 {world.KilledTargets}/{world.RequiredKills}",
                 AuthoritativeMissionPhase.ActivateTerminal =>
                     "任务 2/3 · 前往并接入控制终端",
                 AuthoritativeMissionPhase.Extraction =>

@@ -24,6 +24,32 @@ namespace FPS.Networking.Session
         Failed
     }
 
+    public readonly struct CoopPublicRoomSnapshot
+    {
+        public CoopPublicRoomSnapshot(string sessionId, string displayName,
+            string mapId, int playerCount, int maximumPlayers,
+            DateTime lastUpdated)
+        {
+            SessionId = sessionId ?? string.Empty;
+            DisplayName = string.IsNullOrWhiteSpace(displayName)
+                ? "未命名小队"
+                : displayName.Trim();
+            MapId = string.IsNullOrWhiteSpace(mapId)
+                ? CoopSessionController.DefaultMapId
+                : mapId.Trim();
+            PlayerCount = Math.Max(0, playerCount);
+            MaximumPlayers = Math.Max(1, maximumPlayers);
+            LastUpdated = lastUpdated;
+        }
+
+        public string SessionId { get; }
+        public string DisplayName { get; }
+        public string MapId { get; }
+        public int PlayerCount { get; }
+        public int MaximumPlayers { get; }
+        public DateTime LastUpdated { get; }
+    }
+
     /// <summary>
     /// Explicit, opt-in two-player session entry point. The object can exist in
     /// a single-player run without starting services or a transport.
@@ -47,6 +73,7 @@ namespace FPS.Networking.Session
         public const string LoadEpochProperty = "load_epoch";
         public const string ReadyEpochProperty = "ready_epoch";
         public const string LoadFailureProperty = "load_failure";
+        public const string ServerAllocationProperty = "server_allocation";
 
         private ISession activeSession;
         private OptionalNetworkBootstrap networkBootstrap;
@@ -71,10 +98,20 @@ namespace FPS.Networking.Session
         private bool sceneCancellationEventRaised;
         private bool returnToLobbyInProgress;
         private string lastObservedPhase = PhaseLobby;
+        private readonly List<CoopPublicRoomSnapshot> publicRooms = new();
+        private bool publicRoomQueryInProgress;
+        private int pendingScenarioSeed = 18018;
+        private CoopDedicatedServerGateway dedicatedServerGateway;
+        private RemoteMatchConnectionInfo activeRemoteConnection;
+        private string activeRemoteTicket = string.Empty;
+        private bool dedicatedTransportOperationInProgress;
+        private bool dedicatedTransportConnected;
+        private bool suppressDedicatedReconnect;
 
         public event Action<CoopSessionState> StateChanged;
         public event Action LobbyChanged;
         public event Action LobbyStartRequested;
+        public event Action PublicRoomsChanged;
         public event Action BattleSceneReady;
         public event Action<string> SceneLoadCancelled;
         public event Action ReturnedToLobby;
@@ -116,6 +153,10 @@ namespace FPS.Networking.Session
         public bool CanHostStart => activeSession != null && IsHost &&
             lobbyRoster.CanStart(LocalPlayerId, out _);
         public string LobbyFailureMessage { get; private set; } = string.Empty;
+        public IReadOnlyList<CoopPublicRoomSnapshot> PublicRooms => publicRooms;
+        public bool IsPublicRoomQueryInProgress => publicRoomQueryInProgress;
+        public string PublicRoomBrowserFailure { get; private set; } =
+            string.Empty;
         public string SceneLoadEpoch => activeSession == null
             ? string.Empty
             : Property(activeSession.Properties, LoadEpochProperty, string.Empty);
@@ -221,7 +262,8 @@ namespace FPS.Networking.Session
         public bool ReconnectWithCredential(string credential)
         {
             if (operationInProgress || networkBootstrap == null ||
-                networkBootstrap.IsListening || IsHost ||
+                networkBootstrap.IsListening ||
+                networkBootstrap.NetworkManager.IsHost ||
                 activeSession == null && !directSession)
             {
                 LastFailure = "当前会话不能执行重连。";
@@ -261,6 +303,7 @@ namespace FPS.Networking.Session
             UnbindSession();
             activeSession = null;
             directSession = false;
+            suppressDedicatedReconnect = true;
             if (networkBootstrap != null)
             {
                 networkBootstrap.ClientConnected -=
@@ -271,7 +314,8 @@ namespace FPS.Networking.Session
             networkBootstrap?.Shutdown();
         }
 
-        public async Task<bool> HostAsync(string profile = null)
+        public async Task<bool> HostAsync(string profile = null,
+            string roomName = null)
         {
             if (!CanBegin()) return false;
             modeExitRequested = false;
@@ -281,23 +325,30 @@ namespace FPS.Networking.Session
 
             try
             {
+                pendingScenarioSeed = CreateRunSeed();
                 EnsureNetworkPrerequisite(deferPlayerSpawn: true);
                 await EnsureServicesAsync(profile);
                 if (!IsCurrentOperation(generation)) return false;
                 SetState(CoopSessionState.Hosting);
                 SessionOptions options = new SessionOptions
                 {
-                    Name = "FPS 双人合作切片",
+                    Name = NormalizeRoomName(roomName),
                     MaxPlayers = MaximumPlayers,
-                    IsPrivate = true,
+                    IsPrivate = false,
                     PlayerProperties = BuildPlayerProperties(
                         pendingAppearanceId, false),
                     SessionProperties = new Dictionary<string, SessionProperty>
                     {
-                        [MapProperty] = new SessionProperty(lobbyMapId),
-                        [PhaseProperty] = new SessionProperty(PhaseLobby)
+                        [MapProperty] = new SessionProperty(lobbyMapId,
+                            VisibilityPropertyOptions.Public,
+                            PropertyIndex.String1),
+                        [PhaseProperty] = new SessionProperty(PhaseLobby,
+                            VisibilityPropertyOptions.Public,
+                            PropertyIndex.String2),
+                        [SeedProperty] = new SessionProperty(
+                            pendingScenarioSeed.ToString())
                     }
-                }.WithRelayNetwork();
+                };
                 ISession created = await MultiplayerService.Instance
                     .CreateSessionAsync(options);
                 if (!IsCurrentOperation(generation))
@@ -386,14 +437,156 @@ namespace FPS.Networking.Session
             }
         }
 
+        public async Task<bool> JoinPublicRoomAsync(string sessionId,
+            string profile = null)
+        {
+            if (!CanBegin()) return false;
+            string normalized = sessionId?.Trim() ?? string.Empty;
+            if (string.IsNullOrEmpty(normalized))
+            {
+                LastFailure = "请先选择一个仍可加入的公开房间。";
+                SetState(CoopSessionState.Failed);
+                return false;
+            }
+
+            operationInProgress = true;
+            modeExitRequested = false;
+            int generation = ++operationGeneration;
+            SetState(CoopSessionState.Initializing);
+            try
+            {
+                EnsureNetworkPrerequisite(deferPlayerSpawn: true);
+                await EnsureServicesAsync(profile);
+                if (!IsCurrentOperation(generation)) return false;
+                SetState(CoopSessionState.Joining);
+                var joinOptions = new JoinSessionOptions
+                {
+                    PlayerProperties = BuildPlayerProperties(
+                        pendingAppearanceId, false)
+                };
+                ISession joined = await MultiplayerService.Instance
+                    .JoinSessionByIdAsync(normalized, joinOptions);
+                if (!IsCurrentOperation(generation))
+                {
+                    await LeaveStaleSessionAsync(joined);
+                    return false;
+                }
+
+                BindSession(joined);
+                LastFailure = string.Empty;
+                PublicRoomBrowserFailure = string.Empty;
+                SetState(CoopSessionState.Connected);
+                return true;
+            }
+            catch (Exception exception)
+            {
+                if (IsCurrentOperation(generation)) Fail(exception);
+                return false;
+            }
+            finally
+            {
+                if (generation == operationGeneration)
+                    operationInProgress = false;
+            }
+        }
+
+        public async Task<bool> RefreshPublicRoomsAsync(string profile = null)
+        {
+            if (publicRoomQueryInProgress || activeSession != null ||
+                directSession || operationInProgress)
+                return false;
+
+            publicRoomQueryInProgress = true;
+            PublicRoomBrowserFailure = string.Empty;
+            NotifyPublicRoomsChanged();
+            try
+            {
+                await EnsureServicesAsync(profile);
+                QuerySessionsResults result = await MultiplayerService.Instance
+                    .QuerySessionsAsync(CreatePublicRoomQueryOptions());
+                publicRooms.Clear();
+                if (result?.Sessions != null)
+                {
+                    foreach (ISessionInfo info in result.Sessions)
+                    {
+                        if (!TryCreatePublicRoomSnapshot(info,
+                                out CoopPublicRoomSnapshot snapshot))
+                            continue;
+                        publicRooms.Add(snapshot);
+                    }
+                }
+                return true;
+            }
+            catch (Exception exception)
+            {
+                publicRooms.Clear();
+                PublicRoomBrowserFailure = string.IsNullOrWhiteSpace(
+                    exception.Message)
+                    ? "公开房间列表刷新失败，请检查网络后重试。"
+                    : exception.Message;
+                return false;
+            }
+            finally
+            {
+                publicRoomQueryInProgress = false;
+                NotifyPublicRoomsChanged();
+            }
+        }
+
+        public static QuerySessionsOptions CreatePublicRoomQueryOptions()
+        {
+            return new QuerySessionsOptions
+            {
+                Count = 20,
+                FilterOptions = new List<FilterOption>
+                {
+                    new(FilterField.AvailableSlots, "0",
+                        FilterOperation.Greater),
+                    new(FilterField.IsLocked, "false",
+                        FilterOperation.Equal),
+                    new(FilterField.StringIndex1, DefaultMapId,
+                        FilterOperation.Equal),
+                    new(FilterField.StringIndex2, PhaseLobby,
+                        FilterOperation.Equal)
+                },
+                SortOptions = new List<SortOption>
+                {
+                    new(SortOrder.Descending, SortField.LastUpdated)
+                }
+            };
+        }
+
+        public static bool TryCreatePublicRoomSnapshot(ISessionInfo info,
+            out CoopPublicRoomSnapshot snapshot)
+        {
+            snapshot = default;
+            if (info == null || string.IsNullOrWhiteSpace(info.Id) ||
+                info.IsLocked || info.AvailableSlots <= 0 ||
+                !string.Equals(Property(info.Properties, MapProperty,
+                    string.Empty), DefaultMapId, StringComparison.Ordinal) ||
+                !string.Equals(Property(info.Properties, PhaseProperty,
+                    string.Empty), PhaseLobby, StringComparison.Ordinal))
+                return false;
+
+            int players = Math.Max(0, info.MaxPlayers - info.AvailableSlots);
+            snapshot = new CoopPublicRoomSnapshot(info.Id, info.Name,
+                Property(info.Properties, MapProperty, DefaultMapId),
+                players, info.MaxPlayers, info.LastUpdated);
+            return true;
+        }
+
         public async Task ShutdownForModeExitAsync()
         {
             modeExitRequested = true;
             operationGeneration++;
             operationInProgress = false;
             directSession = false;
+            suppressDedicatedReconnect = true;
 
             ISession leaving = activeSession;
+            RemoteMatchConnectionInfo remoteConnection =
+                ResolveRemoteConnectionFromSession();
+            await ReleaseOwnedDedicatedServerAsync(leaving, remoteConnection);
             UnbindSession();
             activeSession = null;
 
@@ -411,7 +604,7 @@ namespace FPS.Networking.Session
                 }
             }
 
-            networkBootstrap?.Shutdown();
+            ShutdownDedicatedBattleTransport();
             LastFailure = string.Empty;
             ResetLobbyState();
             SetState(CoopSessionState.Offline);
@@ -423,6 +616,7 @@ namespace FPS.Networking.Session
                 (activeSession == null && !directSession)) return;
             operationInProgress = true;
             SetState(CoopSessionState.Leaving);
+            suppressDedicatedReconnect = true;
 
             if (directSession)
             {
@@ -436,13 +630,15 @@ namespace FPS.Networking.Session
             }
 
             ISession leaving = activeSession;
+            RemoteMatchConnectionInfo remoteConnection =
+                ResolveRemoteConnectionFromSession();
+            await ReleaseOwnedDedicatedServerAsync(leaving, remoteConnection);
             UnbindSession();
             activeSession = null;
 
             try
             {
-                // The session SDK owns transport shutdown. Calling NGO.Shutdown
-                // independently here can race its cleanup path.
+                ShutdownDedicatedBattleTransport();
                 await leaving.LeaveAsync();
                 LastFailure = string.Empty;
                 SetState(CoopSessionState.Offline);
@@ -467,18 +663,28 @@ namespace FPS.Networking.Session
                 ReturnedToLobby?.Invoke();
                 return true;
             }
-            if (activeSession == null || !IsConnected || !IsHost)
+            // The host must also be able to tear down a match after a transport
+            // or allocation failure. The UGS room is still valid even when the
+            // gameplay connection has moved this controller into Failed.
+            if (activeSession == null || !IsHost)
                 return false;
             returnToLobbyInProgress = true;
             try
             {
+                RemoteMatchConnectionInfo finishedConnection =
+                    ResolveRemoteConnectionFromSession();
+                ShutdownDedicatedBattleTransport();
+                await ReleaseOwnedDedicatedServerAsync(
+                    activeSession, finishedConnection);
                 IHostSession host = activeSession.AsHost();
                 host.IsLocked = false;
                 host.SetProperty(PhaseProperty,
-                    new SessionProperty(PhaseLobby));
+                    IndexedPhaseProperty(PhaseLobby));
                 host.SetProperty(LoadEpochProperty,
                     new SessionProperty(string.Empty));
                 host.SetProperty(LoadFailureProperty,
+                    new SessionProperty(string.Empty));
+                host.SetProperty(ServerAllocationProperty,
                     new SessionProperty(string.Empty));
                 activeSession.CurrentPlayer.SetProperty(ReadyProperty,
                     new PlayerProperty("0"));
@@ -491,6 +697,8 @@ namespace FPS.Networking.Session
                 battleReadyEventRaised = false;
                 sceneCancellationEventRaised = false;
                 observedLoadEpoch = string.Empty;
+                LastFailure = string.Empty;
+                SetState(CoopSessionState.Connected);
                 RefreshLobbyFromSession();
                 ReturnedToLobby?.Invoke();
                 return true;
@@ -617,21 +825,32 @@ namespace FPS.Networking.Session
             lobbyOperationInProgress = true;
             try
             {
+                string epoch = Guid.NewGuid().ToString("N");
+                int seed = SceneSeed > 0
+                    ? SceneSeed
+                    : pendingScenarioSeed;
+                CoopDedicatedServerGateway gateway =
+                    EnsureDedicatedServerGateway();
+                CoopDedicatedServerAllocation allocation =
+                    await gateway.AllocateAsync(activeSession.Id, seed,
+                        lobbyRoster.Members);
+                activeRemoteConnection = allocation.connection;
+                activeRemoteTicket = allocation.connectionTicket;
                 IHostSession host = activeSession.AsHost();
                 host.IsLocked = true;
-                string epoch = Guid.NewGuid().ToString("N");
-                int seed = BitConverter.ToInt32(Guid.NewGuid().ToByteArray(), 0) &
-                           int.MaxValue;
                 host.SetProperty(MapProperty,
-                    new SessionProperty(DefaultMapId));
+                    IndexedMapProperty(DefaultMapId));
                 host.SetProperty(SeedProperty,
                     new SessionProperty(seed.ToString()));
                 host.SetProperty(LoadEpochProperty,
                     new SessionProperty(epoch));
                 host.SetProperty(LoadFailureProperty,
                     new SessionProperty(string.Empty));
+                host.SetProperty(ServerAllocationProperty,
+                    new SessionProperty(JsonUtility.ToJson(
+                        activeRemoteConnection)));
                 host.SetProperty(PhaseProperty,
-                    new SessionProperty(PhaseLoading));
+                    IndexedPhaseProperty(PhaseLoading));
                 observedLoadEpoch = epoch;
                 sceneLoadFailure = string.Empty;
                 battleReadyEventRaised = false;
@@ -696,9 +915,12 @@ namespace FPS.Networking.Session
                 host.IsLocked = false;
                 host.SetProperty(LoadFailureProperty,
                     new SessionProperty(sceneLoadFailure));
+                host.SetProperty(ServerAllocationProperty,
+                    new SessionProperty(string.Empty));
                 host.SetProperty(PhaseProperty,
-                    new SessionProperty(PhaseCancelled));
+                    IndexedPhaseProperty(PhaseCancelled));
                 await host.SavePropertiesAsync();
+                await ReleaseCancelledDedicatedServerAsync();
                 RaiseSceneLoadCancelledOnce();
                 NotifyLobbyChanged();
                 return true;
@@ -808,27 +1030,35 @@ namespace FPS.Networking.Session
                     CoopNetworkRuntimeInstaller>();
             networkInstaller = installer;
             installer.ConfigurePrefabs(authorityPrefab, replicaPrefab);
-            CoopTargetSpawnDefinition[] targetDefinitions = deferPlayerSpawn
-                ? BuildCityNewTargetSpawns()
-                : BuildTargetSpawns();
-            installer.ConfigureScenario(
-                deferPlayerSpawn
-                    ? BuildCityNewPlayerSpawns()
-                    : BuildPlayerSpawns(),
-                targetDefinitions,
-                deferPlayerSpawn ? targetDefinitions.Length : 1,
-                deferPlayerSpawn
-                    ? new AuthoritativeMissionDefinition(
-                        new NetVector3(51.059917d, 0.766349d, 72.16028d),
-                        new NetVector3(48.414d, 0.05d, 41.41d),
-                        terminalRadius: 3d,
-                        extractionRadius: 5d,
-                        reviveRadius: 2.5d,
-                        terminalHoldTicks: 150,
-                        extractionHoldTicks: 120,
-                        reviveHoldTicks: 180,
-                        revivedHealth: 40d)
-                    : AuthoritativeMissionDefinition.Default);
+            if (deferPlayerSpawn)
+            {
+                if (!CoopScenarioRegistry.TryCreateCityNew(
+                        seed: pendingScenarioSeed,
+                        maximumPlayers: MaximumPlayers,
+                        out CoopScenarioConfiguration scenario,
+                        out string scenarioError))
+                {
+                    Destroy(networkBootstrap.gameObject);
+                    networkBootstrap = null;
+                    throw new InvalidOperationException(scenarioError);
+                }
+                installer.ConfigureScenario(
+                    scenario.Players,
+                    scenario.Targets,
+                    scenario.RequiredKills,
+                    scenario.Mission,
+                    scenario.Waves);
+            }
+            else
+            {
+                CoopTargetSpawnDefinition[] targetDefinitions =
+                    BuildTargetSpawns();
+                installer.ConfigureScenario(
+                    BuildPlayerSpawns(),
+                    targetDefinitions,
+                    1,
+                    AuthoritativeMissionDefinition.Default);
+            }
             installer.ConfigurePlayerSpawnBarrier(deferPlayerSpawn);
             networkBootstrap.gameObject.AddComponent<
                 CoopNetworkWorldPresenter>();
@@ -843,6 +1073,214 @@ namespace FPS.Networking.Session
             }
         }
 
+        private CoopDedicatedServerGateway EnsureDedicatedServerGateway()
+        {
+            if (dedicatedServerGateway != null) return dedicatedServerGateway;
+            if (!CoopDedicatedServerSettings.TryLoad(
+                    out CoopDedicatedServerSettings settings,
+                    out string error))
+                throw new InvalidOperationException(error);
+            dedicatedServerGateway = new CoopDedicatedServerGateway(settings);
+            return dedicatedServerGateway;
+        }
+
+        private async Task EnsureDedicatedBattleTransportAsync()
+        {
+            if (dedicatedTransportConnected)
+            {
+                RaiseBattleReadyOnce();
+                return;
+            }
+            if (dedicatedTransportOperationInProgress || activeSession == null ||
+                !string.Equals(LobbyPhase, PhaseBattle,
+                    StringComparison.Ordinal)) return;
+            dedicatedTransportOperationInProgress = true;
+            try
+            {
+                EnsureNetworkPrerequisite(deferPlayerSpawn: true);
+                RemoteMatchConnectionInfo connection =
+                    ResolveRemoteConnectionFromSession();
+                if (connection == null)
+                    throw new InvalidOperationException(
+                        "房间没有收到专用服务器连接信息。 ");
+                CoopDedicatedServerGateway gateway =
+                    EnsureDedicatedServerGateway();
+                string ticket = activeRemoteTicket;
+                if (activeRemoteConnection == null ||
+                    !string.Equals(activeRemoteConnection.matchId,
+                        connection.matchId, StringComparison.Ordinal) ||
+                    string.IsNullOrWhiteSpace(ticket))
+                {
+                    CoopDedicatedServerAllocation allocation =
+                        await gateway.JoinAsync(activeSession.Id, connection);
+                    connection = allocation.connection;
+                    ticket = allocation.connectionTicket;
+                }
+                CoopCompatibilityDecision decision =
+                    RemoteMatchCompatibilityValidator.Validate(
+                        gateway.Compatibility, connection);
+                if (!decision.Compatible)
+                    throw new InvalidOperationException(decision.Message);
+
+                activeRemoteConnection = connection;
+                activeRemoteTicket = ticket;
+                pendingConnectionCredential = ticket;
+                var endpoint = NetworkEndpointSettings.Localhost;
+                endpoint.Address = connection.host.Trim();
+                endpoint.Port = connection.port;
+                suppressDedicatedReconnect = false;
+                networkBootstrap.Configure(endpoint);
+                networkBootstrap.ConfigureClientCredential(ticket);
+                if (!networkBootstrap.StartClient())
+                    throw new InvalidOperationException(
+                        networkBootstrap.LastFailure);
+
+                float deadline = Time.realtimeSinceStartup + 15f;
+                while (networkBootstrap.NetworkManager != null &&
+                       !networkBootstrap.NetworkManager.IsConnectedClient &&
+                       networkBootstrap.IsListening &&
+                       Time.realtimeSinceStartup < deadline)
+                    await Task.Yield();
+                if (networkBootstrap.NetworkManager == null ||
+                    !networkBootstrap.NetworkManager.IsConnectedClient)
+                    throw new TimeoutException(
+                        "连接专用服务器超时，请检查网络后重试。 ");
+                dedicatedTransportConnected = true;
+                LastFailure = string.Empty;
+                LobbyFailureMessage = string.Empty;
+                SetState(CoopSessionState.Connected);
+                RaiseBattleReadyOnce();
+            }
+            catch (Exception exception)
+            {
+                dedicatedTransportConnected = false;
+                LastFailure = string.IsNullOrWhiteSpace(exception.Message)
+                    ? "连接专用服务器失败。"
+                    : exception.Message;
+                LobbyFailureMessage = LastFailure;
+                SetState(CoopSessionState.Failed);
+                NotifyLobbyChanged();
+            }
+            finally
+            {
+                dedicatedTransportOperationInProgress = false;
+            }
+        }
+
+        private RemoteMatchConnectionInfo ResolveRemoteConnectionFromSession()
+        {
+            if (activeRemoteConnection != null)
+                return activeRemoteConnection;
+            if (activeSession == null) return null;
+            string serialized = Property(activeSession.Properties,
+                ServerAllocationProperty, string.Empty);
+            if (string.IsNullOrWhiteSpace(serialized)) return null;
+            try
+            {
+                return JsonUtility.FromJson<RemoteMatchConnectionInfo>(
+                    serialized);
+            }
+            catch (ArgumentException)
+            {
+                return null;
+            }
+        }
+
+        private async Task AttemptDedicatedReconnectAsync()
+        {
+            if (dedicatedTransportOperationInProgress || activeSession == null ||
+                activeRemoteConnection == null) return;
+            dedicatedTransportOperationInProgress = true;
+            try
+            {
+                float shutdownDeadline = Time.realtimeSinceStartup + 3f;
+                while (networkBootstrap != null &&
+                       networkBootstrap.IsListening &&
+                       Time.realtimeSinceStartup < shutdownDeadline)
+                    await Task.Yield();
+                CoopDedicatedServerAllocation allocation =
+                    await EnsureDedicatedServerGateway().JoinAsync(
+                        activeSession.Id, activeRemoteConnection);
+                activeRemoteConnection = allocation.connection;
+                activeRemoteTicket = allocation.connectionTicket;
+                if (!ReconnectWithCredential(activeRemoteTicket))
+                    throw new InvalidOperationException(LastFailure);
+                float deadline = Time.realtimeSinceStartup + 10f;
+                while (networkBootstrap.NetworkManager != null &&
+                       !networkBootstrap.NetworkManager.IsConnectedClient &&
+                       networkBootstrap.IsListening &&
+                       Time.realtimeSinceStartup < deadline)
+                    await Task.Yield();
+                if (networkBootstrap.NetworkManager == null ||
+                    !networkBootstrap.NetworkManager.IsConnectedClient)
+                    throw new TimeoutException("专用服务器重连超时。 ");
+                dedicatedTransportConnected = true;
+                LastFailure = string.Empty;
+                SetState(CoopSessionState.Connected);
+            }
+            catch (Exception exception)
+            {
+                dedicatedTransportConnected = false;
+                LastFailure = string.IsNullOrWhiteSpace(exception.Message)
+                    ? "专用服务器重连失败。"
+                    : exception.Message;
+                SetState(CoopSessionState.Failed);
+            }
+            finally
+            {
+                dedicatedTransportOperationInProgress = false;
+            }
+        }
+
+        private void ShutdownDedicatedBattleTransport()
+        {
+            suppressDedicatedReconnect = true;
+            dedicatedTransportConnected = false;
+            activeRemoteConnection = null;
+            activeRemoteTicket = string.Empty;
+            pendingConnectionCredential = string.Empty;
+            networkBootstrap?.Shutdown();
+        }
+
+        private async Task ReleaseCancelledDedicatedServerAsync()
+        {
+            if (activeSession == null || !activeSession.IsHost ||
+                activeRemoteConnection == null) return;
+            RemoteMatchConnectionInfo cancelled = activeRemoteConnection;
+            try
+            {
+                await EnsureDedicatedServerGateway().ReleaseAsync(
+                    activeSession.Id, cancelled);
+            }
+            catch (Exception exception)
+            {
+                Debug.LogWarning(
+                    "取消战局后释放专用服务器失败，将由空闲租约回收：" +
+                    exception.Message, this);
+            }
+            finally
+            {
+                ShutdownDedicatedBattleTransport();
+            }
+        }
+
+        private async Task ReleaseOwnedDedicatedServerAsync(ISession session,
+            RemoteMatchConnectionInfo connection)
+        {
+            if (session == null || !session.IsHost || connection == null) return;
+            try
+            {
+                await EnsureDedicatedServerGateway().ReleaseAsync(
+                    session.Id, connection);
+            }
+            catch (Exception exception)
+            {
+                Debug.LogWarning(
+                    "释放专用服务器战局失败，将由空闲租约回收：" +
+                    exception.Message, this);
+            }
+        }
+
         private void HandleReconnectableClientDisconnect(ulong clientId)
         {
             if (modeExitRequested || networkBootstrap?.NetworkManager == null ||
@@ -851,7 +1289,9 @@ namespace FPS.Networking.Session
                 State == CoopSessionState.Leaving ||
                 State == CoopSessionState.Offline)
                 return;
+            if (suppressDedicatedReconnect) return;
             SetState(CoopSessionState.Reconnecting);
+            _ = AttemptDedicatedReconnectAsync();
         }
 
         private void HandleReconnectableClientConnected(ulong clientId)
@@ -885,26 +1325,6 @@ namespace FPS.Networking.Session
             };
         }
 
-        private static CoopPlayerSpawnDefinition[] BuildCityNewPlayerSpawns()
-        {
-            Vector3 origin = new(49.761f, 0.16f, 59.719f);
-            return new[]
-            {
-                new CoopPlayerSpawnDefinition
-                {
-                    PlayerId = 1,
-                    Position = origin + Vector3.left * 1.25f,
-                    Health = 100f
-                },
-                new CoopPlayerSpawnDefinition
-                {
-                    PlayerId = 2,
-                    Position = origin + Vector3.right * 1.25f,
-                    Health = 100f
-                }
-            };
-        }
-
         private static CoopTargetSpawnDefinition[] BuildTargetSpawns()
         {
             Vector3 origin = ResolveArenaOrigin(out Vector3 forward);
@@ -927,111 +1347,6 @@ namespace FPS.Networking.Session
             };
         }
 
-        private static CoopTargetSpawnDefinition[] BuildCityNewTargetSpawns()
-        {
-            return new[]
-            {
-                new CoopTargetSpawnDefinition
-                {
-                    TargetId = 1,
-                    Position = new Vector3(49.761f, 0.16f, 74.719f),
-                    Radius = 1.25f,
-                    Health = 68f,
-                    DropDefinitionId = "medical_kit",
-                    HeadOffset = new Vector3(0f, 0.85f, 0f),
-                    HeadRadius = 0.32f,
-                    Role = AuthoritativeEnemyRole.Assault,
-                    MoveSpeed = 2.35f,
-                    AttackRange = 1.8f,
-                    AttackDamage = 6f,
-                    AttackIntervalTicks = 60,
-                    RewardExperience = 40
-                },
-                new CoopTargetSpawnDefinition
-                {
-                    TargetId = 2,
-                    Position = new Vector3(57.5f, 0.16f, 76f),
-                    Radius = 1.05f,
-                    Health = 54f,
-                    HeadOffset = new Vector3(0f, 0.8f, 0f),
-                    HeadRadius = 0.3f,
-                    Role = AuthoritativeEnemyRole.Raider,
-                    SpawnTick = 45,
-                    MoveSpeed = 3.1f,
-                    AttackRange = 1.55f,
-                    AttackDamage = 5f,
-                    AttackIntervalTicks = 48,
-                    RewardExperience = 40
-                },
-                new CoopTargetSpawnDefinition
-                {
-                    TargetId = 3,
-                    Position = new Vector3(42.2f, 0.16f, 76f),
-                    Radius = 1.15f,
-                    Health = 82f,
-                    DropDefinitionId = "armor_pack",
-                    HeadOffset = new Vector3(0f, 0.9f, 0f),
-                    HeadRadius = 0.34f,
-                    Role = AuthoritativeEnemyRole.Support,
-                    SpawnTick = 90,
-                    MoveSpeed = 1.9f,
-                    AttackRange = 2.1f,
-                    AttackDamage = 5f,
-                    AttackIntervalTicks = 72,
-                    RewardExperience = 50
-                },
-                new CoopTargetSpawnDefinition
-                {
-                    TargetId = 4,
-                    Position = new Vector3(61f, 0.16f, 82f),
-                    Radius = 1.2f,
-                    Health = 76f,
-                    HeadOffset = new Vector3(0f, 0.9f, 0f),
-                    HeadRadius = 0.34f,
-                    Role = AuthoritativeEnemyRole.Suppressor,
-                    SpawnTick = 135,
-                    MoveSpeed = 1.75f,
-                    AttackRange = 2.6f,
-                    AttackDamage = 7f,
-                    AttackIntervalTicks = 70,
-                    RewardExperience = 55
-                },
-                new CoopTargetSpawnDefinition
-                {
-                    TargetId = 5,
-                    Position = new Vector3(38.5f, 0.16f, 82f),
-                    Radius = 1.1f,
-                    Health = 64f,
-                    HeadOffset = new Vector3(0f, 0.85f, 0f),
-                    HeadRadius = 0.32f,
-                    Role = AuthoritativeEnemyRole.Raider,
-                    SpawnTick = 180,
-                    MoveSpeed = 3.2f,
-                    AttackRange = 1.55f,
-                    AttackDamage = 5f,
-                    AttackIntervalTicks = 48,
-                    RewardExperience = 40
-                },
-                new CoopTargetSpawnDefinition
-                {
-                    TargetId = 6,
-                    Position = new Vector3(49.761f, 0.16f, 88f),
-                    Radius = 1.45f,
-                    Health = 135f,
-                    DropDefinitionId = "medical_kit",
-                    HeadOffset = new Vector3(0f, 1.05f, 0f),
-                    HeadRadius = 0.38f,
-                    Role = AuthoritativeEnemyRole.Elite,
-                    SpawnTick = 225,
-                    MoveSpeed = 2.55f,
-                    AttackRange = 2f,
-                    AttackDamage = 9f,
-                    AttackIntervalTicks = 64,
-                    RewardExperience = 80
-                }
-            };
-        }
-
         private static Vector3 ResolveArenaOrigin(out Vector3 forward)
         {
             Camera camera = Camera.main;
@@ -1046,6 +1361,13 @@ namespace FPS.Networking.Session
                 Vector3.up).normalized;
             if (forward.sqrMagnitude < 0.5f) forward = Vector3.forward;
             return camera.transform.position;
+        }
+
+        private static int CreateRunSeed()
+        {
+            int value = BitConverter.ToInt32(Guid.NewGuid().ToByteArray(), 0) &
+                        int.MaxValue;
+            return value == 0 ? 18018 : value;
         }
 
         private static async Task EnsureServicesAsync(string profile)
@@ -1113,7 +1435,7 @@ namespace FPS.Networking.Session
             _ = EvaluateHostSceneLoadBarrierAsync();
             if (string.Equals(LobbyPhase, PhaseBattle,
                     StringComparison.Ordinal))
-                RaiseBattleReadyOnce();
+                _ = EnsureDedicatedBattleTransportAsync();
             if (string.Equals(LobbyPhase, PhaseCancelled,
                     StringComparison.Ordinal))
                 RaiseSceneLoadCancelledOnce();
@@ -1122,7 +1444,10 @@ namespace FPS.Networking.Session
                 !string.Equals(previousPhase, PhaseLobby,
                     StringComparison.Ordinal))
             {
+                ShutdownDedicatedBattleTransport();
                 _ = ClearLocalReadyAfterMatchAsync();
+                LastFailure = string.Empty;
+                SetState(CoopSessionState.Connected);
                 ReturnedToLobby?.Invoke();
             }
             StateChanged?.Invoke(State);
@@ -1301,7 +1626,7 @@ namespace FPS.Networking.Session
             {
                 EnsureHostSceneLoadBarrier();
                 if (activeSession == null ||
-                    activeSession.PlayerCount != MaximumPlayers)
+                    activeSession.PlayerCount != sceneLoadBarrier.ExpectedCount)
                 {
                     await CancelSceneLoadAsync(
                         "成员在加载期间离开，服务器已取消本次战局。");
@@ -1322,9 +1647,9 @@ namespace FPS.Networking.Session
                         StringComparison.Ordinal)) return;
                 IHostSession host = activeSession.AsHost();
                 host.SetProperty(PhaseProperty,
-                    new SessionProperty(PhaseBattle));
+                    IndexedPhaseProperty(PhaseBattle));
                 await host.SavePropertiesAsync();
-                RaiseBattleReadyOnce();
+                _ = EnsureDedicatedBattleTransportAsync();
                 NotifyLobbyChanged();
             }
             catch (Exception exception)
@@ -1373,6 +1698,11 @@ namespace FPS.Networking.Session
             sceneCancellationInProgress = false;
             battleReadyEventRaised = false;
             sceneCancellationEventRaised = false;
+            activeRemoteConnection = null;
+            activeRemoteTicket = string.Empty;
+            dedicatedTransportOperationInProgress = false;
+            dedicatedTransportConnected = false;
+            suppressDedicatedReconnect = false;
             NotifyLobbyChanged();
         }
 
@@ -1401,6 +1731,29 @@ namespace FPS.Networking.Session
         {
             LobbyChanged?.Invoke();
         }
+
+        private void NotifyPublicRoomsChanged()
+        {
+            PublicRoomsChanged?.Invoke();
+        }
+
+        private static string NormalizeRoomName(string value)
+        {
+            string normalized = value?.Trim() ?? string.Empty;
+            if (string.IsNullOrEmpty(normalized))
+                return "公开合作小队";
+            return normalized.Length <= 48
+                ? normalized
+                : normalized.Substring(0, 48);
+        }
+
+        private static SessionProperty IndexedMapProperty(string value) =>
+            new(value, VisibilityPropertyOptions.Public,
+                PropertyIndex.String1);
+
+        private static SessionProperty IndexedPhaseProperty(string value) =>
+            new(value, VisibilityPropertyOptions.Public,
+                PropertyIndex.String2);
 
         private static Dictionary<string, PlayerProperty> BuildPlayerProperties(
             string appearanceId, bool ready)

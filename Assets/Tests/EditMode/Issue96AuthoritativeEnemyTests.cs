@@ -185,6 +185,7 @@ namespace FPS.Tests.Architecture
                 Position = new UnityEngine.Vector3(1f, 2f, 3f),
                 Radius = 1.2f,
                 Health = 42f,
+                MaximumHealth = 80f,
                 DropDefinitionId = "armor_plate",
                 HeadOffset = UnityEngine.Vector3.up,
                 HeadRadius = 0.3f,
@@ -202,6 +203,7 @@ namespace FPS.Tests.Architecture
 
             Assert.That(copy, Is.EqualTo(source));
             Assert.That(copy.IsAlive, Is.True);
+            Assert.That(copy.MaximumHealth, Is.EqualTo(80f));
         }
 
         [Test]

@@ -57,6 +57,28 @@ class Issue101ServerManagerTests(unittest.TestCase):
         self.assertNotIn(MODULE.SECRET_ENV, rendered)
         self.assertNotIn("secret", rendered.lower())
 
+    def test_server_command_passes_ordered_match_roster(self):
+        args = argparse.Namespace(
+            port=18801, match_id="match-101", maximum_players=2,
+            seed=18018, application_version="1.2.3",
+            protocol_version="net-7", content_version="citynew-9",
+            tick_rate=60, idle_timeout=120,
+            resolved_players=[
+                {"accountId": "player-a",
+                 "appearanceId": "operative-alpha"},
+                {"accountId": "player-b",
+                 "appearanceId": "operative-bravo"},
+            ],
+        )
+        command = MODULE.server_command(args, pathlib.Path("/game/server"),
+                                        pathlib.Path("/state/diag.json"))
+
+        self.assertIn("-server-roster", command)
+        roster_index = command.index("-server-roster") + 1
+        self.assertEqual(
+            command[roster_index],
+            "player-a=operative-alpha,player-b=operative-bravo")
+
     def test_identifiers_reject_shell_and_path_characters(self):
         for value in ("bad value", "bad/path", "bad;value", ""):
             with self.assertRaises(ValueError):

@@ -8,7 +8,7 @@ namespace FPS.Tests.Architecture
     public sealed class Issue84CoopAuthenticationTests
     {
         private const string ValidUsername = "Player_01";
-        private const string ValidPassword = "StrongPass1!";
+        private const string ValidPassword = "simple123";
 
         [TestCase("ab", false)]
         [TestCase("player name", false)]
@@ -21,16 +21,33 @@ namespace FPS.Tests.Architecture
                 out _), Is.EqualTo(expected));
         }
 
-        [TestCase("short1!A", true)]
-        [TestCase("nouppercase1!", false)]
-        [TestCase("NOLOWERCASE1!", false)]
-        [TestCase("NoNumber!", false)]
-        [TestCase("NoSpecial1", false)]
-        public void PasswordRulesRequireEveryCredentialClass(string value,
+        [TestCase("letters123", true)]
+        [TestCase("LETTERS123", true)]
+        [TestCase("Letters12!", true)]
+        [TestCase("onlyletters", false)]
+        [TestCase("12345678", false)]
+        [TestCase("ab12", false)]
+        public void PasswordRulesRequireLetterAndNumber(string value,
             bool expected)
         {
             Assert.That(CoopCredentialValidator.TryValidatePassword(value,
                 out _), Is.EqualTo(expected));
+        }
+
+        [Test]
+        public void RelaxedPasswordIsAdaptedForUnityWithoutBreakingOldAccounts()
+        {
+            const string relaxed = "simple123";
+            string first = UnityAuthenticationGateway.PrepareServicePassword(
+                relaxed);
+            string second = UnityAuthenticationGateway.PrepareServicePassword(
+                relaxed);
+
+            Assert.That(first, Is.EqualTo(second));
+            Assert.That(first, Has.Length.EqualTo(30));
+            Assert.That(first, Is.Not.EqualTo(relaxed));
+            Assert.That(UnityAuthenticationGateway.PrepareServicePassword(
+                "StrongPass1!"), Is.EqualTo("StrongPass1!"));
         }
 
         [Test]

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
+using FPS.Networking;
 using FPS.Networking.Diagnostics;
 using FPS.Networking.Netcode;
 using NUnit.Framework;
@@ -108,20 +109,21 @@ namespace FPS.Tests.Architecture
         }
 
         [Test]
-        public void DedicatedServerTargetsProvideProgressionAndHeadHitboxes()
+        public void DedicatedServerConsumesCompleteCityNewScenario()
         {
-            MethodInfo buildTargets = typeof(DedicatedServerRuntime)
-                .GetMethod("BuildTargets", BindingFlags.Static |
-                    BindingFlags.NonPublic);
+            CoopScenarioConfiguration scenario =
+                CityNewAuthoritativeScenarioAdapter.Build(18018, 2);
 
-            Assert.That(buildTargets, Is.Not.Null);
-            var targets = (CoopTargetSpawnDefinition[])buildTargets.Invoke(
-                null, new object[] { 18018 });
-
-            Assert.That(targets, Has.Length.EqualTo(6));
-            Assert.That(targets, Has.All.Matches<CoopTargetSpawnDefinition>(
-                target => target.RewardExperience >= 100 &&
-                    target.HeadRadius > 0f && target.HeadOffset.y > 0f));
+            Assert.That(scenario.Players, Has.Length.EqualTo(2));
+            Assert.That(scenario.Waves.Length, Is.GreaterThan(1));
+            Assert.That(scenario.Targets.Length, Is.GreaterThan(6));
+            Assert.That(scenario.Targets,
+                Has.All.Matches<CoopTargetSpawnDefinition>(
+                target => target.RewardExperience > 0 &&
+                    target.HeadRadius > 0f && target.HeadOffset.y > 0f &&
+                    !string.IsNullOrWhiteSpace(target.ArchetypeId) &&
+                    !string.IsNullOrWhiteSpace(
+                        target.PresentationAddress)));
         }
 
         [Test]

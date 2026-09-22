@@ -5,6 +5,14 @@ using System.IO;
 namespace FPS.Networking.Netcode
 {
     [Serializable]
+    public sealed class DedicatedPlayerRosterEntry
+    {
+        public string AccountId = string.Empty;
+        public string AppearanceId = "operative-alpha";
+        public int PlayerId;
+    }
+
+    [Serializable]
     public sealed class DedicatedServerConfiguration
     {
         public const string CityNewScenePath =
@@ -26,6 +34,8 @@ namespace FPS.Networking.Netcode
         public uint TickRate = DefaultTickRate;
         public int IdleTimeoutSeconds = DefaultIdleTimeoutSeconds;
         public string DiagnosticsPath = string.Empty;
+        public DedicatedPlayerRosterEntry[] PlayerRoster =
+            Array.Empty<DedicatedPlayerRosterEntry>();
 
         public static bool IsRequested(IReadOnlyList<string> arguments)
         {
@@ -85,6 +95,11 @@ namespace FPS.Networking.Netcode
                 error = "最大人数必须是 1—16 的整数。";
                 return false;
             }
+
+            if (!TryParseRoster(Value(options, "-server-roster", string.Empty),
+                    configuration.MaximumPlayers,
+                    out configuration.PlayerRoster, out error))
+                return false;
 
             if (!TryInt(options, "-server-seed", DefaultSeed,
                     out configuration.Seed))
@@ -209,6 +224,49 @@ namespace FPS.Networking.Netcode
                     character != '-' && character != '_')
                     return false;
             }
+            return true;
+        }
+
+        private static bool TryParseRoster(string value, int maximumPlayers,
+            out DedicatedPlayerRosterEntry[] roster, out string error)
+        {
+            roster = Array.Empty<DedicatedPlayerRosterEntry>();
+            error = string.Empty;
+            if (string.IsNullOrWhiteSpace(value)) return true;
+            string[] entries = value.Split(',');
+            if (entries.Length > maximumPlayers)
+            {
+                error = "服务器战局名单不能超过最大玩家数。";
+                return false;
+            }
+            var result = new List<DedicatedPlayerRosterEntry>(entries.Length);
+            var accounts = new HashSet<string>(StringComparer.Ordinal);
+            for (int index = 0; index < entries.Length; index++)
+            {
+                string[] parts = entries[index].Split('=');
+                string account = parts.Length > 0
+                    ? parts[0].Trim()
+                    : string.Empty;
+                string appearance = parts.Length == 2
+                    ? parts[1].Trim()
+                    : string.Empty;
+                if (parts.Length != 2 ||
+                    !IsIdentifier(account, 1, 64) ||
+                    !IsIdentifier(appearance, 1, 64) ||
+                    !accounts.Add(account))
+                {
+                    error = "服务器战局名单格式无效，应为 account=appearance 并使用唯一账号。";
+                    roster = Array.Empty<DedicatedPlayerRosterEntry>();
+                    return false;
+                }
+                result.Add(new DedicatedPlayerRosterEntry
+                {
+                    AccountId = account,
+                    AppearanceId = appearance,
+                    PlayerId = index + 1
+                });
+            }
+            roster = result.ToArray();
             return true;
         }
 

@@ -11,6 +11,8 @@ public static class Issue85DedicatedServerBuild
 {
     private const string CityNewScene =
         "Assets/ImportPackages/CSAssets2026/Scenes/CityNew.unity";
+    private static BuildTarget? forcedTarget;
+    private static string forcedOutput;
 
     [Serializable]
     private sealed class BuildManifest
@@ -30,8 +32,9 @@ public static class Issue85DedicatedServerBuild
 
     public static void Build()
     {
-        BuildTarget target = ResolveTarget(Option("-serverBuildTarget"));
-        string output = Option("-buildOutput");
+        BuildTarget target = forcedTarget ??
+            ResolveTarget(Option("-serverBuildTarget"));
+        string output = forcedOutput ?? Option("-buildOutput");
         if (string.IsNullOrWhiteSpace(output))
             output = DefaultOutput(target);
         output = Path.GetFullPath(output);
@@ -98,6 +101,23 @@ public static class Issue85DedicatedServerBuild
             if (EditorUserBuildSettings.activeBuildTarget != previousTarget)
                 EditorUserBuildSettings.SwitchActiveBuildTarget(
                     BuildTargetGroup.Standalone, previousTarget);
+        }
+    }
+
+    public static void BuildLinuxDeployment()
+    {
+        string root = Path.GetDirectoryName(Application.dataPath);
+        forcedTarget = BuildTarget.StandaloneLinux64;
+        forcedOutput = Path.Combine(root, "Builds", "CoopAuthoritative",
+            "Linux", "FPSDedicatedServer.x86_64");
+        try
+        {
+            Build();
+        }
+        finally
+        {
+            forcedTarget = null;
+            forcedOutput = null;
         }
     }
 

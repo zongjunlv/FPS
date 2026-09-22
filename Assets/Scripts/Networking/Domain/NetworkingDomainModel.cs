@@ -275,7 +275,11 @@ namespace FPS.Networking.Domain
             double attackDamage = 0d,
             int attackIntervalTicks = 60,
             int rewardExperience = 0,
-            int dropQuantity = 1)
+            int dropQuantity = 1,
+            string archetypeId = "",
+            string presentationAddress = "",
+            int waveIndex = 1,
+            int spawnOrder = 0)
         {
             if (targetId <= 0) throw new ArgumentOutOfRangeException(nameof(targetId));
             if (!position.IsFinite) throw new ArgumentOutOfRangeException(nameof(position));
@@ -304,6 +308,10 @@ namespace FPS.Networking.Domain
                     nameof(rewardExperience));
             if (dropQuantity < 1)
                 throw new ArgumentOutOfRangeException(nameof(dropQuantity));
+            if (waveIndex < 1)
+                throw new ArgumentOutOfRangeException(nameof(waveIndex));
+            if (spawnOrder < 0)
+                throw new ArgumentOutOfRangeException(nameof(spawnOrder));
             TargetId = targetId;
             Position = position;
             Radius = radius;
@@ -319,6 +327,10 @@ namespace FPS.Networking.Domain
             AttackIntervalTicks = attackIntervalTicks;
             RewardExperience = rewardExperience;
             DropQuantity = dropQuantity;
+            ArchetypeId = archetypeId?.Trim() ?? string.Empty;
+            PresentationAddress = presentationAddress?.Trim() ?? string.Empty;
+            WaveIndex = waveIndex;
+            SpawnOrder = spawnOrder;
         }
 
         public int TargetId { get; }
@@ -336,6 +348,10 @@ namespace FPS.Networking.Domain
         public int AttackIntervalTicks { get; }
         public int RewardExperience { get; }
         public int DropQuantity { get; }
+        public string ArchetypeId { get; }
+        public string PresentationAddress { get; }
+        public int WaveIndex { get; }
+        public int SpawnOrder { get; }
 
         private static bool PositiveFinite(double value) =>
             value > 0d && !double.IsNaN(value) && !double.IsInfinity(value);
@@ -772,12 +788,17 @@ namespace FPS.Networking.Domain
             AuthoritativeEnemyBehavior behavior =
                 AuthoritativeEnemyBehavior.Patrol,
             int targetPlayerId = 0,
-            int spawnGeneration = 1)
+            int spawnGeneration = 1,
+            string archetypeId = "",
+            string presentationAddress = "",
+            int waveIndex = 1,
+            double maximumHealth = 0d)
         {
             TargetId = targetId;
             Position = position;
             Radius = radius;
             Health = health;
+            MaximumHealth = Math.Max(health, maximumHealth);
             DropDefinitionId = dropDefinitionId ?? string.Empty;
             HeadOffset = headOffset;
             HeadRadius = headRadius;
@@ -787,12 +808,16 @@ namespace FPS.Networking.Domain
             Behavior = behavior;
             TargetPlayerId = targetPlayerId;
             SpawnGeneration = Math.Max(0, spawnGeneration);
+            ArchetypeId = archetypeId?.Trim() ?? string.Empty;
+            PresentationAddress = presentationAddress?.Trim() ?? string.Empty;
+            WaveIndex = Math.Max(1, waveIndex);
         }
 
         public int TargetId { get; }
         public NetVector3 Position { get; }
         public double Radius { get; }
         public double Health { get; }
+        public double MaximumHealth { get; }
         public string DropDefinitionId { get; }
         public NetVector3 HeadOffset { get; }
         public double HeadRadius { get; }
@@ -802,6 +827,9 @@ namespace FPS.Networking.Domain
         public AuthoritativeEnemyBehavior Behavior { get; }
         public int TargetPlayerId { get; }
         public int SpawnGeneration { get; }
+        public string ArchetypeId { get; }
+        public string PresentationAddress { get; }
+        public int WaveIndex { get; }
         public bool IsAlive => Active && Health > 0d;
     }
 
@@ -810,7 +838,8 @@ namespace FPS.Networking.Domain
         Fighting = 0,
         Completed = 1,
         Failed = 2,
-        Spawning = 3
+        Spawning = 3,
+        Intermission = 4
     }
 
     public sealed class AuthoritativeWorldSnapshot
@@ -826,7 +855,13 @@ namespace FPS.Networking.Domain
             int killedTargets,
             int requiredKills = 0,
             AuthoritativeEconomySnapshot economy = null,
-            AuthoritativeMissionState mission = null)
+            AuthoritativeMissionState mission = null,
+            int currentWave = 1,
+            int totalWaves = 1,
+            int waveSpawned = 0,
+            int waveTotal = 0,
+            int waveMaximumAlive = 0,
+            int intermissionRemainingTicks = 0)
         {
             Tick = tick;
             this.players = (players ?? throw new ArgumentNullException(nameof(players)))
@@ -838,6 +873,15 @@ namespace FPS.Networking.Domain
             RequiredKills = requiredKills <= 0
                 ? this.targets.Length
                 : Math.Min(requiredKills, this.targets.Length);
+            CurrentWave = Math.Max(1, currentWave);
+            TotalWaves = Math.Max(CurrentWave, totalWaves);
+            WaveSpawned = Math.Max(0, waveSpawned);
+            WaveTotal = waveTotal <= 0 ? this.targets.Length : waveTotal;
+            WaveMaximumAlive = waveMaximumAlive <= 0
+                ? WaveTotal
+                : waveMaximumAlive;
+            IntermissionRemainingTicks = Math.Max(0,
+                intermissionRemainingTicks);
             Economy = economy ?? new AuthoritativeEconomySnapshot(
                 Array.Empty<AuthoritativeInventorySlotState>(),
                 Array.Empty<AuthoritativeWorldDropState>(),
@@ -863,6 +907,12 @@ namespace FPS.Networking.Domain
         public AuthoritativeWaveStatus WaveStatus { get; }
         public int KilledTargets { get; }
         public int RequiredKills { get; }
+        public int CurrentWave { get; }
+        public int TotalWaves { get; }
+        public int WaveSpawned { get; }
+        public int WaveTotal { get; }
+        public int WaveMaximumAlive { get; }
+        public int IntermissionRemainingTicks { get; }
         public AuthoritativeEconomySnapshot Economy { get; }
         public AuthoritativeMissionState Mission { get; }
         public int EnemyPoolCapacity => targets.Length;

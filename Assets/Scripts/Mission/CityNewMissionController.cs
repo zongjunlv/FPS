@@ -326,7 +326,37 @@ public sealed class CityNewMissionController : MonoBehaviour
 
     public void RequestQuit()
     {
+        if (QuitRequested)
+        {
+            return;
+        }
+
         QuitRequested = true;
+        EndRunSystems();
+        waveDirector?.StopRun(WaveStopReason.Reconfigured);
+        outcomeView?.Hide();
+        hud?.SetOutcomePresentation(false);
+        outcomeLock?.Dispose();
+        outcomeLock = null;
+        gameplayLocks?.ResetForSceneTransition();
+        Time.timeScale = 1f;
+
+        GameModeFlowController modeFlow = GameModeFlowController.Instance;
+        GameModeCatalog modeCatalog = GameModeCatalog.LoadDefault();
+        if (modeFlow == null && modeCatalog != null)
+        {
+            modeFlow = GameModeFlowController.Ensure(modeCatalog);
+        }
+
+        if (modeFlow != null && modeFlow.TryReturnToEntry())
+        {
+            return;
+        }
+
+        string failure = modeFlow != null
+            ? modeFlow.FailureMessage
+            : "模式流程未初始化。";
+        Debug.LogError($"退出战斗后无法返回模式选择：{failure}", this);
 
         if (!Application.isEditor)
         {
@@ -824,18 +854,31 @@ public sealed class CityNewMissionController : MonoBehaviour
 
         if (GUI.Button(
                 new Rect(buttonX, buttonY + buttonStep * 4f, 260f, 46f),
-                "退出游戏",
+                "退出战斗并返回大厅",
                 buttonStyle))
         {
             RequestQuit();
         }
+
+        float musicVolume = BattleMusicController.MusicVolume;
+        GUI.Label(
+            new Rect(panel.x + 70f, panel.y + 394f,
+                panel.width - 140f, 24f),
+            $"背景音乐  {Mathf.RoundToInt(musicVolume * 100f)}%",
+            headerStyle);
+        float changedVolume = GUI.HorizontalSlider(
+            new Rect(panel.x + 70f, panel.y + 421f,
+                panel.width - 140f, 20f),
+            musicVolume, 0f, 1f);
+        if (!Mathf.Approximately(changedVolume, musicVolume))
+            BattleMusicController.SetMusicVolume(changedVolume);
 
         snapshotMenu ??= GetComponent<RunSnapshotMenu>();
         string status = snapshotMenu != null
             ? snapshotMenu.StatusMessage
             : "存档系统尚未就绪。";
         GUI.Label(
-            new Rect(panel.x + 35f, panel.y + 416f, panel.width - 70f, 76f),
+            new Rect(panel.x + 35f, panel.y + 451f, panel.width - 70f, 54f),
             status,
             objectiveStyle);
         GUI.Label(

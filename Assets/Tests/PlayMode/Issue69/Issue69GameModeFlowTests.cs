@@ -267,6 +267,70 @@ namespace FPS.Tests.PlayMode.Issue69
                 Is.Not.Null);
         }
 
+        [UnityTest]
+        public IEnumerator CooperativeCityNewUsesNetworkStageAndServerNavigation()
+        {
+            GameModeContext.BeginTransition(
+                GameModeId.Coop,
+                GameModeStage.CoopBattle);
+            yield return SceneManager.LoadSceneAsync(
+                GameModeScenePaths.CityNew,
+                LoadSceneMode.Single);
+            yield return null;
+
+            Assert.That(GameModeContext.IsActive(
+                GameModeId.Coop,
+                GameModeStage.CoopBattle), Is.True);
+            Assert.That(FPS.Networking.Netcode.CoopEnvironmentReadinessRegistry
+                .HasCityNewEnvironment, Is.True);
+            FPS.Networking.Netcode.CoopEnvironmentReadinessRegistry
+                .EnsureCityNewEnvironment();
+            float deadline = Time.realtimeSinceStartup + 30f;
+            while (!RuntimeNavMeshBootstrap.IsSceneReady &&
+                   Time.realtimeSinceStartup < deadline)
+                yield return null;
+
+            Assert.That(RuntimeNavMeshBootstrap.IsSceneReady, Is.True,
+                "联机权威 AI 启动前必须完成 CityNew 服务器导航构建。");
+            CityNewPlayerModeInstaller soloInstaller =
+                Object.FindFirstObjectByType<CityNewPlayerModeInstaller>();
+            Assert.That(soloInstaller, Is.Not.Null);
+            Assert.That(soloInstaller.IsInitialized, Is.False,
+                "联机战斗不能同时启动单机玩家组合根。 ");
+            Assert.That(Object.FindFirstObjectByType<WaveDirector>(), Is.Null,
+                "联机战斗必须由网络权威波次驱动，不能重复启动单机波次。");
+        }
+
+        [UnityTest]
+        public IEnumerator BattlePauseExitReturnsToModeEntry()
+        {
+            yield return LoadAndSettle(GameModeScenePaths.CityNew, 4);
+
+            CityNewMissionController mission =
+                Object.FindFirstObjectByType<CityNewMissionController>();
+            PlayerController player =
+                Object.FindFirstObjectByType<PlayerController>();
+            Assert.That(mission, Is.Not.Null);
+            Assert.That(player, Is.Not.Null);
+
+            player.SetPaused(true);
+            Assert.That(Time.timeScale, Is.EqualTo(0f));
+
+            mission.RequestQuit();
+            Assert.That(mission.QuitRequested, Is.True);
+            yield return WaitForScene(GameModeScenePaths.Entry);
+
+            Assert.That(Time.timeScale, Is.EqualTo(1f));
+            Assert.That(GameModeContext.IsActive(
+                GameModeId.None, GameModeStage.Entry), Is.True);
+            Assert.That(Object.FindFirstObjectByType<ModeEntryView>(),
+                Is.Not.Null);
+            Assert.That(Object.FindFirstObjectByType<PlayerController>(),
+                Is.Null);
+            Assert.That(Object.FindFirstObjectByType<UnifiedGameHud>(),
+                Is.Null);
+        }
+
         private static GameModeDefinition Definition(
             GameModeId mode,
             string path,

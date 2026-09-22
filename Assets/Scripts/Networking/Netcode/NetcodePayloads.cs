@@ -972,6 +972,7 @@ namespace FPS.Networking.Netcode
         public Vector3 Position;
         public float Radius;
         public float Health;
+        public float MaximumHealth;
         public FixedString64Bytes DropDefinitionId;
         public Vector3 HeadOffset;
         public float HeadRadius;
@@ -981,6 +982,9 @@ namespace FPS.Networking.Netcode
         public AuthoritativeEnemyBehavior Behavior;
         public int TargetPlayerId;
         public int SpawnGeneration;
+        public FixedString64Bytes ArchetypeId;
+        public FixedString64Bytes PresentationAddress;
+        public int WaveIndex;
 
         public bool IsAlive => Active && Health > 0f;
 
@@ -993,6 +997,7 @@ namespace FPS.Networking.Netcode
                 Position = NetcodeConversions.ToUnity(value.Position),
                 Radius = (float)value.Radius,
                 Health = (float)value.Health,
+                MaximumHealth = (float)value.MaximumHealth,
                 DropDefinitionId = value.DropDefinitionId,
                 HeadOffset = NetcodeConversions.ToUnity(value.HeadOffset),
                 HeadRadius = (float)value.HeadRadius,
@@ -1001,7 +1006,10 @@ namespace FPS.Networking.Netcode
                 Role = value.Role,
                 Behavior = value.Behavior,
                 TargetPlayerId = value.TargetPlayerId,
-                SpawnGeneration = value.SpawnGeneration
+                SpawnGeneration = value.SpawnGeneration,
+                ArchetypeId = value.ArchetypeId,
+                PresentationAddress = value.PresentationAddress,
+                WaveIndex = value.WaveIndex
             };
         }
 
@@ -1012,6 +1020,7 @@ namespace FPS.Networking.Netcode
             serializer.SerializeValue(ref Position);
             serializer.SerializeValue(ref Radius);
             serializer.SerializeValue(ref Health);
+            serializer.SerializeValue(ref MaximumHealth);
             serializer.SerializeValue(ref DropDefinitionId);
             serializer.SerializeValue(ref HeadOffset);
             serializer.SerializeValue(ref HeadRadius);
@@ -1021,6 +1030,9 @@ namespace FPS.Networking.Netcode
             serializer.SerializeValue(ref Behavior);
             serializer.SerializeValue(ref TargetPlayerId);
             serializer.SerializeValue(ref SpawnGeneration);
+            serializer.SerializeValue(ref ArchetypeId);
+            serializer.SerializeValue(ref PresentationAddress);
+            serializer.SerializeValue(ref WaveIndex);
         }
 
         public bool Equals(NetcodeTargetState other)
@@ -1028,6 +1040,7 @@ namespace FPS.Networking.Netcode
             return TargetId == other.TargetId &&
                 Position.Equals(other.Position) && Radius.Equals(other.Radius) &&
                 Health.Equals(other.Health) &&
+                MaximumHealth.Equals(other.MaximumHealth) &&
                 DropDefinitionId.Equals(other.DropDefinitionId) &&
                 HeadOffset.Equals(other.HeadOffset) &&
                 HeadRadius.Equals(other.HeadRadius) &&
@@ -1036,7 +1049,10 @@ namespace FPS.Networking.Netcode
                 Role == other.Role &&
                 Behavior == other.Behavior &&
                 TargetPlayerId == other.TargetPlayerId &&
-                SpawnGeneration == other.SpawnGeneration;
+                SpawnGeneration == other.SpawnGeneration &&
+                ArchetypeId.Equals(other.ArchetypeId) &&
+                PresentationAddress.Equals(other.PresentationAddress) &&
+                WaveIndex == other.WaveIndex;
         }
     }
 
@@ -1051,6 +1067,12 @@ namespace FPS.Networking.Netcode
         public int ActiveEnemyCount;
         public int PendingEnemyCount;
         public int RemainingEnemyCount;
+        public int CurrentWave;
+        public int TotalWaves;
+        public int WaveSpawnedCount;
+        public int WaveTotalCount;
+        public int WaveMaximumAlive;
+        public int IntermissionRemainingTicks;
         public long LastEventSequence;
         public int EconomyRevision;
         public int RunGeneration;
@@ -1089,6 +1111,12 @@ namespace FPS.Networking.Netcode
             serializer.SerializeValue(ref ActiveEnemyCount);
             serializer.SerializeValue(ref PendingEnemyCount);
             serializer.SerializeValue(ref RemainingEnemyCount);
+            serializer.SerializeValue(ref CurrentWave);
+            serializer.SerializeValue(ref TotalWaves);
+            serializer.SerializeValue(ref WaveSpawnedCount);
+            serializer.SerializeValue(ref WaveTotalCount);
+            serializer.SerializeValue(ref WaveMaximumAlive);
+            serializer.SerializeValue(ref IntermissionRemainingTicks);
             serializer.SerializeValue(ref LastEventSequence);
             serializer.SerializeValue(ref EconomyRevision);
             serializer.SerializeValue(ref RunGeneration);
@@ -1127,6 +1155,13 @@ namespace FPS.Networking.Netcode
                 ActiveEnemyCount == other.ActiveEnemyCount &&
                 PendingEnemyCount == other.PendingEnemyCount &&
                 RemainingEnemyCount == other.RemainingEnemyCount &&
+                CurrentWave == other.CurrentWave &&
+                TotalWaves == other.TotalWaves &&
+                WaveSpawnedCount == other.WaveSpawnedCount &&
+                WaveTotalCount == other.WaveTotalCount &&
+                WaveMaximumAlive == other.WaveMaximumAlive &&
+                IntermissionRemainingTicks ==
+                    other.IntermissionRemainingTicks &&
                 LastEventSequence == other.LastEventSequence &&
                 EconomyRevision == other.EconomyRevision &&
                 RunGeneration == other.RunGeneration &&

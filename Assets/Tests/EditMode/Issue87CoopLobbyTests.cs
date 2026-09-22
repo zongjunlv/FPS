@@ -1,5 +1,7 @@
+using System.Linq;
 using FPS.Networking.Session;
 using NUnit.Framework;
+using Unity.Services.Multiplayer;
 
 namespace FPS.Tests.Architecture
 {
@@ -37,16 +39,15 @@ namespace FPS.Tests.Architecture
         }
 
         [Test]
-        public void RoomRequiresExactlyTwoConnectedReadyPlayers()
+        public void SoloHostCanStartButJoinedGuestMustBeReady()
         {
             var room = new CoopLobbyRoster(Appearances);
             room.TryJoin("host", true, Appearances[0], out _);
             room.TrySetReady("host", true, out _);
 
             Assert.That(room.CanStart("host", out CoopLobbyFailure solo),
-                Is.False);
-            Assert.That(solo,
-                Is.EqualTo(CoopLobbyFailure.WaitingForSecondPlayer));
+                Is.True);
+            Assert.That(solo, Is.EqualTo(CoopLobbyFailure.None));
 
             room.TryJoin("guest", false, Appearances[1], out _);
             Assert.That(room.CanStart("host", out CoopLobbyFailure unready),
@@ -111,6 +112,83 @@ namespace FPS.Tests.Architecture
             Assert.That(room.CanStart("host", out CoopLobbyFailure failure),
                 Is.False);
             Assert.That(failure, Is.EqualTo(CoopLobbyFailure.PlayersNotReady));
+        }
+
+        [Test]
+        public void PublicRoomBrowserOnlyQueriesJoinableCityNewLobbies()
+        {
+            QuerySessionsOptions options =
+                CoopSessionController.CreatePublicRoomQueryOptions();
+
+            Assert.That(options.Count, Is.EqualTo(20));
+            Assert.That(options.FilterOptions.Any(value =>
+                value.Field == FilterField.AvailableSlots &&
+                value.Operation == FilterOperation.Greater &&
+                value.Value == "0"), Is.True);
+            Assert.That(options.FilterOptions.Any(value =>
+                value.Field == FilterField.IsLocked &&
+                value.Operation == FilterOperation.Equal &&
+                value.Value == "false"), Is.True);
+            Assert.That(options.FilterOptions.Any(value =>
+                value.Field == FilterField.StringIndex1 &&
+                value.Value == CoopSessionController.DefaultMapId), Is.True);
+            Assert.That(options.FilterOptions.Any(value =>
+                value.Field == FilterField.StringIndex2 &&
+                value.Value == CoopSessionController.PhaseLobby), Is.True);
+            Assert.That(options.SortOptions.Single().Field,
+                Is.EqualTo(SortField.LastUpdated));
+            Assert.That(options.SortOptions.Single().Order,
+                Is.EqualTo(SortOrder.Descending));
+        }
+
+        [Test]
+        public void ReconnectGateIgnoresDeferredLobbyButBlocksGameplayRestore()
+        {
+            Assert.That(CoopReconnectPresentationGate.ShouldBlockForState(
+                CoopSessionState.Connected,
+                true,
+                CoopSessionController.PhaseLobby,
+                true,
+                true,
+                false,
+                false), Is.False,
+                "大厅会延迟生成角色，零副本不能被当成重连。");
+            Assert.That(CoopReconnectPresentationGate.ShouldBlockForState(
+                CoopSessionState.Connected,
+                true,
+                CoopSessionController.PhaseLoading,
+                true,
+                true,
+                false,
+                false), Is.True,
+                "进入战斗加载后应等待本地权威副本。");
+            Assert.That(CoopReconnectPresentationGate.ShouldBlockForState(
+                CoopSessionState.Connected,
+                true,
+                CoopSessionController.PhaseBattle,
+                true,
+                true,
+                true,
+                false), Is.True,
+                "战斗副本消费首份服务端状态前应继续遮挡。");
+            Assert.That(CoopReconnectPresentationGate.ShouldBlockForState(
+                CoopSessionState.Connected,
+                true,
+                CoopSessionController.PhaseBattle,
+                true,
+                true,
+                true,
+                true), Is.False,
+                "权威状态恢复完成后必须解除遮罩。");
+            Assert.That(CoopReconnectPresentationGate.ShouldBlockForState(
+                CoopSessionState.Reconnecting,
+                true,
+                CoopSessionController.PhaseBattle,
+                false,
+                false,
+                false,
+                false), Is.True,
+                "真正重连期间仍应保持遮罩。");
         }
 
         private static CoopLobbyRoster ReadyRoom()

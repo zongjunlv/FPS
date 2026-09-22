@@ -105,7 +105,8 @@ namespace FPS.Networking.Session
 
             NetcodeWorldState world = authority.WorldState;
             GUILayout.Label(
-                $"权威 Tick：{world.ServerTick}  波次：{world.WaveStatus}");
+                $"权威 Tick：{world.ServerTick}  波次：" +
+                $"{world.CurrentWave}/{world.TotalWaves} {world.WaveStatus}");
             for (int index = 0;
                  index < authority.ReplicatedTargetCount;
                  index++)

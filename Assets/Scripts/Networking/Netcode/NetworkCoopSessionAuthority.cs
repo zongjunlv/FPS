@@ -90,11 +90,16 @@ namespace FPS.Networking.Netcode
         private CoopServerRules configuredRules;
         private CoopPlayerSpawn[] configuredPlayers = Array.Empty<CoopPlayerSpawn>();
         private CoopTargetSpawn[] configuredTargets = Array.Empty<CoopTargetSpawn>();
+        private AuthoritativeWaveDefinition[] configuredWaves =
+            Array.Empty<AuthoritativeWaveDefinition>();
         private AuthoritativeMissionDefinition configuredMission;
         private int configuredRequiredKills;
         private int runGeneration = 1;
         private readonly Collider[] standingOverlaps = new Collider[16];
         private readonly RaycastHit[] shotObstructionHits = new RaycastHit[32];
+        private readonly RaycastHit[] playerMovementHits = new RaycastHit[24];
+        private NavMeshPath enemyPath;
+        private readonly Vector3[] enemyPathCorners = new Vector3[32];
 
         public event Action<AuthoritativeTickResult> ServerTickCompleted;
         public event Action<ulong, int> UnauthorizedCommandRejected;
@@ -185,7 +190,8 @@ namespace FPS.Networking.Netcode
             IEnumerable<CoopPlayerSpawn> players,
             IEnumerable<CoopTargetSpawn> targets,
             int requiredKills = 0,
-            AuthoritativeMissionDefinition mission = null)
+            AuthoritativeMissionDefinition mission = null,
+            IEnumerable<AuthoritativeWaveDefinition> waves = null)
         {
             RequireServerWrite();
             configuredRules = rules ?? throw new ArgumentNullException(
@@ -194,6 +200,8 @@ namespace FPS.Networking.Netcode
                 nameof(players))).ToArray();
             configuredTargets = (targets ?? throw new ArgumentNullException(
                 nameof(targets))).ToArray();
+            configuredWaves = (waves ??
+                Array.Empty<AuthoritativeWaveDefinition>()).ToArray();
             configuredRequiredKills = requiredKills;
             configuredMission = mission ?? AuthoritativeMissionDefinition.Default;
             simulation = new AuthoritativeCoopSimulation(
@@ -201,9 +209,11 @@ namespace FPS.Networking.Netcode
                 configuredPlayers,
                 configuredTargets,
                 configuredRequiredKills,
-                configuredMission: configuredMission);
+                configuredMission: configuredMission,
+                configuredWaves: configuredWaves);
             simulation.SetStandingClearanceValidator(HasStandingClearance);
             simulation.SetShotObstructionResolver(ResolveShotObstruction);
+            simulation.SetPlayerMovementResolver(ResolvePlayerMovement);
             simulation.SetEnemyMovementResolver(ResolveEnemyMovement);
             NetcodeRulesState replicatedRules =
                 NetcodeRulesState.FromDomain(rules);
@@ -596,11 +606,13 @@ namespace FPS.Networking.Netcode
                 configuredPlayers,
                 configuredTargets,
                 configuredRequiredKills,
-                configuredMission: configuredMission);
+                configuredMission: configuredMission,
+                configuredWaves: configuredWaves);
             simulation.InitializePlayerConnections(
                 playerByClient.Values.Distinct());
             simulation.SetStandingClearanceValidator(HasStandingClearance);
             simulation.SetShotObstructionResolver(ResolveShotObstruction);
+            simulation.SetPlayerMovementResolver(ResolvePlayerMovement);
             simulation.SetEnemyMovementResolver(ResolveEnemyMovement);
             pendingCommands.Clear();
             pendingEconomyCommands.Clear();
@@ -710,29 +722,131 @@ namespace FPS.Networking.Netcode
             return true;
         }
 
-        private static NetVector3 ResolveEnemyMovement(
+        private PlayerMovementState ResolvePlayerMovement(
             int _,
-            NetVector3 current,
-            NetVector3 desired)
+            PlayerMovementState current,
+            PlayerMovementState desired)
         {
-            Vector3 start = NetcodeConversions.ToUnity(current);
-            Vector3 end = NetcodeConversions.ToUnity(desired);
-            if (!NavMesh.SamplePosition(start, out NavMeshHit startHit,
-                    1.5f, NavMesh.AllAreas) ||
-                !NavMesh.SamplePosition(end, out NavMeshHit endHit,
-                    1.5f, NavMesh.AllAreas))
+            Vector3 from = NetcodeConversions.ToUnity(current.Position);
+            Vector3 to = NetcodeConversions.ToUnity(desired.Position);
+            Vector3 horizontal = new(to.x - from.x, 0f, to.z - from.z);
+            float distance = horizontal.magnitude;
+            if (distance <= 0.0001f)
                 return desired;
 
-            if (!NavMesh.Raycast(startHit.position, endHit.position,
-                    out NavMeshHit obstruction, NavMesh.AllAreas))
-                return NetcodeConversions.ToDomain(endHit.position);
+            const float radius = 0.28f;
+            const float height = 1.8f;
+            const float skin = 0.03f;
+            Vector3 direction = horizontal / distance;
+            Vector3 bottom = from + Vector3.up * (radius + skin);
+            Vector3 top = from + Vector3.up * (height - radius - skin);
+            int count = Physics.CapsuleCastNonAlloc(
+                bottom,
+                top,
+                radius,
+                direction,
+                playerMovementHits,
+                distance + skin,
+                Physics.DefaultRaycastLayers,
+                QueryTriggerInteraction.Ignore);
+            RaycastHit? nearest = null;
+            for (int index = 0; index < count; index++)
+            {
+                RaycastHit hit = playerMovementHits[index];
+                if (!IsWorldMovementObstacle(hit.collider)) continue;
+                if (nearest == null || hit.distance < nearest.Value.distance)
+                    nearest = hit;
+            }
+            if (nearest != null)
+            {
+                float allowed = Mathf.Max(0f,
+                    nearest.Value.distance - skin);
+                horizontal = direction * Mathf.Min(distance, allowed);
+            }
 
-            Vector3 step = endHit.position - startHit.position;
-            Vector3 slide = Vector3.ProjectOnPlane(step, obstruction.normal);
-            Vector3 candidate = startHit.position + slide;
-            return NavMesh.SamplePosition(candidate, out NavMeshHit slideHit,
+            Vector3 resolvedPosition = from + horizontal;
+            resolvedPosition.y = to.y;
+            return new PlayerMovementState(
+                NetcodeConversions.ToDomain(resolvedPosition),
+                desired.Velocity,
+                desired.AimYawDegrees,
+                desired.AimPitchDegrees,
+                desired.Stance,
+                desired.Grounded,
+                desired.LastJumpTick,
+                desired.GroundHeight);
+        }
+
+        private static bool IsWorldMovementObstacle(Collider candidate)
+        {
+            if (candidate == null) return false;
+            if (candidate.GetComponentInParent<NetworkPlayerReplica>() != null)
+                return false;
+            if (candidate.GetComponentInParent<CharacterController>() != null)
+                return false;
+            return true;
+        }
+
+        private NetVector3 ResolveEnemyMovement(
+            int _,
+            NetVector3 current,
+            NetVector3 destination,
+            double maximumTravel)
+        {
+            enemyPath ??= new NavMeshPath();
+            Vector3 start = NetcodeConversions.ToUnity(current);
+            Vector3 end = NetcodeConversions.ToUnity(destination);
+            if (!NavMesh.SamplePosition(start, out NavMeshHit startHit,
+                    2f, NavMesh.AllAreas) ||
+                !NavMesh.SamplePosition(end, out NavMeshHit endHit,
+                    4f, NavMesh.AllAreas))
+                return AdvanceEnemyFallback(current, destination,
+                    maximumTravel);
+
+            if (!NavMesh.CalculatePath(
+                    startHit.position,
+                    endHit.position,
+                    NavMesh.AllAreas,
+                    enemyPath))
+                return current;
+            int cornerCount = enemyPath.GetCornersNonAlloc(enemyPathCorners);
+            if (cornerCount < 2)
+                return current;
+
+            float remaining = Mathf.Max(0f, (float)maximumTravel);
+            Vector3 cursor = startHit.position;
+            for (int index = 1;
+                 index < cornerCount && remaining > 0.0001f;
+                 index++)
+            {
+                Vector3 delta = enemyPathCorners[index] - cursor;
+                float segment = delta.magnitude;
+                if (segment <= remaining)
+                {
+                    cursor = enemyPathCorners[index];
+                    remaining -= segment;
+                    continue;
+                }
+                cursor += delta / segment * remaining;
+                remaining = 0f;
+            }
+
+            return NavMesh.SamplePosition(cursor, out NavMeshHit resolved,
                     0.75f, NavMesh.AllAreas)
-                ? NetcodeConversions.ToDomain(slideHit.position)
+                ? NetcodeConversions.ToDomain(resolved.position)
+                : current;
+        }
+
+        private static NetVector3 AdvanceEnemyFallback(
+            NetVector3 current,
+            NetVector3 destination,
+            double maximumTravel)
+        {
+            NetVector3 delta = destination - current;
+            double travel = Math.Max(0d,
+                Math.Min(maximumTravel, delta.Magnitude));
+            return delta.SqrMagnitude > 0.0000001d
+                ? current + delta.Normalized * travel
                 : current;
         }
 
@@ -1154,6 +1268,13 @@ namespace FPS.Networking.Netcode
                 ActiveEnemyCount = snapshot.ActiveTargets,
                 PendingEnemyCount = snapshot.PendingTargets,
                 RemainingEnemyCount = snapshot.RemainingTargets,
+                CurrentWave = snapshot.CurrentWave,
+                TotalWaves = snapshot.TotalWaves,
+                WaveSpawnedCount = snapshot.WaveSpawned,
+                WaveTotalCount = snapshot.WaveTotal,
+                WaveMaximumAlive = snapshot.WaveMaximumAlive,
+                IntermissionRemainingTicks =
+                    snapshot.IntermissionRemainingTicks,
                 LastEventSequence = lastEventSequence,
                 EconomyRevision = economyRevision,
                 RunGeneration = runGeneration,

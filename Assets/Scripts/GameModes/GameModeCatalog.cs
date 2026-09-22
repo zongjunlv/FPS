@@ -180,7 +180,8 @@ public sealed class GameModeCatalog : ScriptableObject
         {
             GameModeId.Tutorial => stage == GameModeStage.Tutorial,
             GameModeId.SoloBattle => stage == GameModeStage.Battle,
-            GameModeId.Coop => stage == GameModeStage.CoopLobby,
+            GameModeId.Coop => stage == GameModeStage.CoopLobby ||
+                               stage == GameModeStage.CoopBattle,
             _ => false
         };
     }

@@ -8,7 +8,9 @@
     "FPS.Composition",
     "Unity.Netcode.Runtime",
     "Unity.Networking.Transport",
-    "Unity.Collections"
+    "Unity.Collections",
+    "Unity.Addressables",
+    "Unity.ResourceManager"
   ],
   "includePlatforms": [],
   "excludePlatforms": [],

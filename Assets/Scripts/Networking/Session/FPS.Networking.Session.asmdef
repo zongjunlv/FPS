@@ -9,7 +9,9 @@
     "Unity.InputSystem",
     "Unity.Services.Core",
     "Unity.Services.Authentication",
-    "Unity.Services.Multiplayer"
+    "Unity.Services.Multiplayer",
+    "Unity.Addressables",
+    "Unity.ResourceManager"
   ],
   "includePlatforms": [],
   "excludePlatforms": [],

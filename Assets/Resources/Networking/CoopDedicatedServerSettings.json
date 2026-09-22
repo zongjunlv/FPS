@@ -1,0 +1,8 @@
+{
+  "brokerUrl": "https://43.128.141.28:80",
+  "pinnedCertificateSha256": "b11abf20dc1b2651951b2ec09804325af8bfadc4b7558b50039a5aa8e612f17f",
+  "applicationVersion": "0.1.0",
+  "protocolVersion": "1",
+  "contentVersion": "citynew-v1",
+  "requestTimeoutSeconds": 100
+}

@@ -166,6 +166,8 @@ namespace FPS.Networking.Domain
         private readonly CoopServerRules rules;
         private readonly Dictionary<int, MutablePlayer> players;
         private readonly Dictionary<int, MutableTarget> targets;
+        private readonly AuthoritativeWaveDefinition[] waveDefinitions;
+        private readonly bool usesWaveSequence;
         private readonly Dictionary<string, AuthoritativeWeaponDefinition>
             weaponDefinitions;
         private readonly AuthoritativeCoopEconomy economy;
@@ -176,13 +178,20 @@ namespace FPS.Networking.Domain
         private long currentTick;
         private long nextEventSequence;
         private int killedTargets;
+        private int currentWave = 1;
+        private long nextWaveSpawnTick;
+        private long intermissionEndTick = -1;
         private Func<int, NetVector3, bool> standingClearanceValidator =
             (_, _) => true;
         private Func<int, NetVector3, NetVector3,
             AuthoritativeShotObstruction> shotObstructionResolver =
             (_, _, _) => AuthoritativeShotObstruction.Clear;
-        private Func<int, NetVector3, NetVector3, NetVector3>
-            enemyMovementResolver = (_, _, desired) => desired;
+        private Func<int, PlayerMovementState, PlayerMovementState,
+            PlayerMovementState> playerMovementResolver =
+            (_, _, desired) => desired;
+        private Func<int, NetVector3, NetVector3, double, NetVector3>
+            enemyMovementResolver = (_, current, destination, travel) =>
+                AdvanceTowards(current, destination, travel);
         private AuthoritativeWaveStatus waveStatus =
             AuthoritativeWaveStatus.Fighting;
         private AuthoritativeMissionPhase missionPhase =
@@ -209,7 +218,8 @@ namespace FPS.Networking.Domain
             IEnumerable<AuthoritativeUpgradeDefinition> configuredUpgrades = null,
             int runSeed = 18018,
             int inventoryCapacity = 12,
-            AuthoritativeMissionDefinition configuredMission = null)
+            AuthoritativeMissionDefinition configuredMission = null,
+            IEnumerable<AuthoritativeWaveDefinition> configuredWaves = null)
         {
             this.rules = rules ?? throw new ArgumentNullException(nameof(rules));
             weaponDefinitions = (configuredWeapons ??
@@ -225,9 +235,15 @@ namespace FPS.Networking.Domain
                     nameof(configuredPlayers)))
                 .Select(value => new MutablePlayer(value, weaponDefinitions))
                 .ToDictionary(value => value.Id);
+            waveDefinitions = (configuredWaves ??
+                    Array.Empty<AuthoritativeWaveDefinition>())
+                .OrderBy(value => value.WaveIndex)
+                .ToArray();
+            usesWaveSequence = waveDefinitions.Length > 0;
+            ValidateWaveDefinitions(waveDefinitions);
             targets = (configuredTargets ?? throw new ArgumentNullException(
                     nameof(configuredTargets)))
-                .Select(value => new MutableTarget(value))
+                .Select(value => new MutableTarget(value, usesWaveSequence))
                 .ToDictionary(value => value.Id);
             if (players.Count < 1 || players.Count > 2)
                 throw new ArgumentException(
@@ -253,6 +269,11 @@ namespace FPS.Networking.Domain
             this.requiredKills = requiredKills == 0
                 ? targets.Count
                 : requiredKills;
+            if (usesWaveSequence && targets.Values.Any(value =>
+                    value.WaveIndex > waveDefinitions.Length))
+                throw new ArgumentException(
+                    "Target wave index exceeds the configured wave sequence.",
+                    nameof(configuredTargets));
             waveStatus = targets.Values.Any(value => value.IsPending)
                 ? AuthoritativeWaveStatus.Spawning
                 : AuthoritativeWaveStatus.Fighting;
@@ -270,6 +291,10 @@ namespace FPS.Networking.Domain
             targets.Values.Count(value => value.IsPending);
         public int AvailableEnemySlots =>
             targets.Count - ActiveEnemyCount;
+        public int CurrentWave => currentWave;
+        public int TotalWaves => usesWaveSequence
+            ? waveDefinitions.Length
+            : 1;
         private bool IsMissionOutcome =>
             missionPhase == AuthoritativeMissionPhase.Victory ||
             missionPhase == AuthoritativeMissionPhase.Defeat;
@@ -303,9 +328,18 @@ namespace FPS.Networking.Domain
         }
 
         public void SetEnemyMovementResolver(
-            Func<int, NetVector3, NetVector3, NetVector3> resolver)
+            Func<int, NetVector3, NetVector3, double, NetVector3> resolver)
         {
             enemyMovementResolver = resolver ??
+                ((_, current, destination, travel) =>
+                    AdvanceTowards(current, destination, travel));
+        }
+
+        public void SetPlayerMovementResolver(
+            Func<int, PlayerMovementState, PlayerMovementState,
+                PlayerMovementState> resolver)
+        {
+            playerMovementResolver = resolver ??
                 ((_, _, desired) => desired);
         }
 
@@ -544,7 +578,13 @@ namespace FPS.Networking.Domain
                 killedTargets,
                 requiredKills,
                 economy.Snapshot(),
-                CaptureMissionState());
+                CaptureMissionState(),
+                currentWave,
+                TotalWaves,
+                CurrentWaveTargets().Count(value => value.Spawned),
+                CurrentWaveTargets().Count(),
+                CurrentWaveDefinition().MaximumAlive,
+                IntermissionRemainingTicks());
         }
 
         public IReadOnlyList<AuthoritativeEvent> SetPlayerConnected(
@@ -982,6 +1022,13 @@ namespace FPS.Networking.Domain
             if (waveStatus == AuthoritativeWaveStatus.Completed ||
                 waveStatus == AuthoritativeWaveStatus.Failed)
                 return;
+
+            if (usesWaveSequence)
+            {
+                AdvanceSequencedEnemySpawns(events);
+                return;
+            }
+
             bool spawnedAny = false;
             foreach (MutableTarget target in targets.Values
                          .Where(value => value.IsPending &&
@@ -1000,6 +1047,49 @@ namespace FPS.Networking.Domain
             }
             if (spawnedAny || targets.Values.Any(value => value.IsAlive))
                 waveStatus = AuthoritativeWaveStatus.Fighting;
+        }
+
+        private void AdvanceSequencedEnemySpawns(
+            ICollection<AuthoritativeEvent> events)
+        {
+            if (waveStatus == AuthoritativeWaveStatus.Intermission)
+            {
+                if (currentTick < intermissionEndTick) return;
+                currentWave = Math.Min(TotalWaves, currentWave + 1);
+                waveStatus = AuthoritativeWaveStatus.Spawning;
+                nextWaveSpawnTick = currentTick;
+                intermissionEndTick = -1;
+            }
+
+            AuthoritativeWaveDefinition definition = CurrentWaveDefinition();
+            MutableTarget[] waveTargets = CurrentWaveTargets();
+            int active = waveTargets.Count(value => value.IsAlive);
+            MutableTarget next = waveTargets
+                .Where(value => value.IsPending)
+                .OrderBy(value => value.SpawnOrder)
+                .ThenBy(value => value.Id)
+                .FirstOrDefault();
+            if (next != null && active < definition.MaximumAlive &&
+                currentTick >= nextWaveSpawnTick)
+            {
+                next.Spawn();
+                events.Add(Emit(
+                    AuthoritativeEventKind.TargetSpawned,
+                    next.Id,
+                    currentWave,
+                    next.SpawnGeneration,
+                    next.ArchetypeId));
+                nextWaveSpawnTick = currentTick +
+                    definition.SpawnIntervalTicks;
+            }
+
+            bool pending = waveTargets.Any(value => value.IsPending);
+            bool living = waveTargets.Any(value => value.IsAlive);
+            waveStatus = pending
+                ? AuthoritativeWaveStatus.Spawning
+                : living
+                    ? AuthoritativeWaveStatus.Fighting
+                    : waveStatus;
         }
 
         private void AdvanceEnemyLifecycle(
@@ -1089,14 +1179,19 @@ namespace FPS.Networking.Domain
                     double speed = target.MoveSpeed *
                         AuthoritativeEnemyUtility.MoveSpeedMultiplier(
                             target.Role);
+                    NetVector3 movementDelta = ResolveApproachDelta(
+                        target,
+                        selected,
+                        planarDelta);
                     double travel = Math.Min(
                         speed * rules.FixedDeltaSeconds,
-                        Math.Max(0d,
-                            selectedDistance - target.AttackRange * 0.9d));
-                    NetVector3 desired = target.Position +
-                        planarDelta.Normalized * travel;
+                        movementDelta.Magnitude);
+                    NetVector3 destination = target.Position + movementDelta;
                     NetVector3 resolved = enemyMovementResolver(
-                        target.Id, target.Position, desired);
+                        target.Id,
+                        target.Position,
+                        destination,
+                        travel);
                     if (resolved.IsFinite) target.Position = resolved;
                 }
 
@@ -1109,6 +1204,7 @@ namespace FPS.Networking.Domain
                     target.AttackIntervalTicks;
                 double damage = target.AttackDamage *
                     AuthoritativeEnemyUtility.DamageMultiplier(target.Role);
+                if (HasSupportAura(target)) damage *= 1.2d;
                 events.Add(Emit(
                     AuthoritativeEventKind.TargetAttacked,
                     target.Id,
@@ -1171,6 +1267,19 @@ namespace FPS.Networking.Domain
             double x = left.X - right.X;
             double z = left.Z - right.Z;
             return Math.Sqrt(x * x + z * z);
+        }
+
+        private static NetVector3 AdvanceTowards(
+            NetVector3 current,
+            NetVector3 destination,
+            double maximumTravel)
+        {
+            NetVector3 delta = destination - current;
+            double travel = Math.Max(0d,
+                Math.Min(maximumTravel, delta.Magnitude));
+            return delta.SqrMagnitude > 0.0000001d
+                ? current + delta.Normalized * travel
+                : current;
         }
 
         private CommandResolution ResolveCommand(
@@ -1300,6 +1409,10 @@ namespace FPS.Networking.Domain
                 elapsedTicks,
                 rules,
                 standingClearance);
+            nextMovement = playerMovementResolver(
+                player.Id,
+                player.Movement,
+                nextMovement);
             double missedTickAllowance = rules.MaximumMoveSpeed *
                 rules.FixedDeltaSeconds * Math.Max(0, elapsedTicks - 1) * 2d;
             double claimedPositionTolerance =
@@ -1464,6 +1577,9 @@ namespace FPS.Networking.Domain
                 (selectedRegion == AuthoritativeHitRegion.Head
                     ? weapon.HeadDamageMultiplier
                     : 1d);
+            if (selected.Role == AuthoritativeEnemyRole.Elite)
+                damage *= 0.75d;
+            if (HasSupportAura(selected)) damage *= 0.8d;
             selected.Health = CoopGameplayRules.ApplyDamage(
                 selected.Health,
                 damage);
@@ -1542,16 +1658,7 @@ namespace FPS.Networking.Domain
                     0,
                     levelsGained));
             }
-            if (killedTargets >= requiredKills &&
-                waveStatus == AuthoritativeWaveStatus.Fighting)
-            {
-                waveStatus = AuthoritativeWaveStatus.Completed;
-                events.Add(Emit(
-                    AuthoritativeEventKind.WaveCompleted,
-                    shooter.Id,
-                    0,
-                    killedTargets));
-            }
+            AdvanceWaveAfterKill(shooter.Id, events);
 
             return new ShotResolution(
                 ShotResolutionKind.Killed,
@@ -1873,9 +1980,126 @@ namespace FPS.Networking.Domain
                 LastFireTick);
         }
 
+        private static NetVector3 ResolveApproachDelta(
+            MutableTarget target,
+            MutablePlayer selected,
+            NetVector3 directDelta)
+        {
+            if (target.Role != AuthoritativeEnemyRole.Raider ||
+                target.FlankCompleted)
+                return directDelta;
+
+            double radians = selected.AimYaw * Math.PI / 180d;
+            var forward = new NetVector3(
+                Math.Sin(radians), 0d, Math.Cos(radians));
+            var right = new NetVector3(forward.Z, 0d, -forward.X);
+            double side = target.Id % 2 == 0 ? 1d : -1d;
+            NetVector3 flankPoint = selected.Position +
+                right * (5.5d * side) - forward * 2.5d;
+            NetVector3 flankDelta = new(
+                flankPoint.X - target.Position.X,
+                0d,
+                flankPoint.Z - target.Position.Z);
+            if (flankDelta.Magnitude <= 1.1d)
+            {
+                target.FlankCompleted = true;
+                return directDelta;
+            }
+
+            return flankDelta;
+        }
+
+        private bool HasSupportAura(MutableTarget target)
+        {
+            return targets.Values.Any(candidate =>
+                candidate.Id != target.Id && candidate.IsAlive &&
+                candidate.Role == AuthoritativeEnemyRole.Support &&
+                PlanarDistance(candidate.Position, target.Position) <= 10d);
+        }
+
+        private void AdvanceWaveAfterKill(
+            int sourcePlayerId,
+            ICollection<AuthoritativeEvent> events)
+        {
+            if (!usesWaveSequence)
+            {
+                if (killedTargets >= requiredKills &&
+                    waveStatus == AuthoritativeWaveStatus.Fighting)
+                {
+                    waveStatus = AuthoritativeWaveStatus.Completed;
+                    events.Add(Emit(
+                        AuthoritativeEventKind.WaveCompleted,
+                        sourcePlayerId,
+                        0,
+                        killedTargets));
+                }
+                return;
+            }
+
+            MutableTarget[] currentTargets = CurrentWaveTargets();
+            if (currentTargets.Any(value => value.IsPending || value.IsAlive))
+                return;
+
+            events.Add(Emit(
+                AuthoritativeEventKind.WaveCompleted,
+                sourcePlayerId,
+                currentWave,
+                killedTargets));
+            if (currentWave >= TotalWaves || killedTargets >= requiredKills)
+            {
+                waveStatus = AuthoritativeWaveStatus.Completed;
+                return;
+            }
+
+            int delay = CurrentWaveDefinition().IntermissionTicks;
+            intermissionEndTick = currentTick + delay;
+            waveStatus = AuthoritativeWaveStatus.Intermission;
+        }
+
+        private MutableTarget[] CurrentWaveTargets()
+        {
+            return targets.Values
+                .Where(value => !usesWaveSequence ||
+                                value.WaveIndex == currentWave)
+                .OrderBy(value => value.SpawnOrder)
+                .ThenBy(value => value.Id)
+                .ToArray();
+        }
+
+        private AuthoritativeWaveDefinition CurrentWaveDefinition()
+        {
+            return usesWaveSequence
+                ? waveDefinitions[Math.Clamp(currentWave - 1, 0,
+                    waveDefinitions.Length - 1)]
+                : new AuthoritativeWaveDefinition(
+                    1,
+                    Math.Max(1, targets.Count),
+                    0,
+                    0);
+        }
+
+        private int IntermissionRemainingTicks()
+        {
+            return waveStatus == AuthoritativeWaveStatus.Intermission
+                ? (int)Math.Max(0L, intermissionEndTick - currentTick)
+                : 0;
+        }
+
+        private static void ValidateWaveDefinitions(
+            IReadOnlyList<AuthoritativeWaveDefinition> definitions)
+        {
+            for (int index = 0; index < definitions.Count; index++)
+            {
+                if (definitions[index].WaveIndex != index + 1)
+                    throw new ArgumentException(
+                        "Authoritative waves must be contiguous and one-based.",
+                        nameof(definitions));
+            }
+        }
+
         private sealed class MutableTarget
         {
-            public MutableTarget(CoopTargetSpawn spawn)
+            public MutableTarget(CoopTargetSpawn spawn, bool forcePending)
             {
                 Id = spawn.TargetId;
                 Position = spawn.Position;
@@ -1893,7 +2117,11 @@ namespace FPS.Networking.Domain
                 AttackIntervalTicks = spawn.AttackIntervalTicks;
                 RewardExperience = spawn.RewardExperience;
                 DropQuantity = spawn.DropQuantity;
-                Spawned = spawn.SpawnTick == 0;
+                ArchetypeId = spawn.ArchetypeId;
+                PresentationAddress = spawn.PresentationAddress;
+                WaveIndex = spawn.WaveIndex;
+                SpawnOrder = spawn.SpawnOrder;
+                Spawned = !forcePending && spawn.SpawnTick == 0;
                 Active = Spawned;
                 SpawnGeneration = Spawned ? 1 : 0;
                 Behavior = Spawned
@@ -1917,6 +2145,10 @@ namespace FPS.Networking.Domain
             public int AttackIntervalTicks;
             public int RewardExperience;
             public int DropQuantity;
+            public string ArchetypeId;
+            public string PresentationAddress;
+            public int WaveIndex;
+            public int SpawnOrder;
             public long NextAttackTick;
             public long RecycleTick;
             public bool Spawned;
@@ -1925,6 +2157,7 @@ namespace FPS.Networking.Domain
             public AuthoritativeEnemyBehavior Behavior;
             public int TargetPlayerId;
             public int SpawnGeneration;
+            public bool FlankCompleted;
             public bool IsAlive => Active && Health > 0d;
             public bool IsPending => !Spawned;
 
@@ -1936,6 +2169,7 @@ namespace FPS.Networking.Domain
                 Health = MaximumHealth;
                 Behavior = AuthoritativeEnemyBehavior.Patrol;
                 TargetPlayerId = 0;
+                FlankCompleted = false;
                 NextAttackTick = 0;
                 RecycleTick = 0;
                 SpawnGeneration++;
@@ -1954,7 +2188,11 @@ namespace FPS.Networking.Domain
                 Role,
                 Behavior,
                 TargetPlayerId,
-                SpawnGeneration);
+                SpawnGeneration,
+                ArchetypeId,
+                PresentationAddress,
+                WaveIndex,
+                MaximumHealth);
         }
 
         private sealed class HistoryFrame

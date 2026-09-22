@@ -62,7 +62,15 @@ public sealed class GameModeSceneBootstrap : MonoBehaviour
 
         if (marker.Stage == GameModeStage.Entry)
         {
-            View = ModeEntryView.Create(Flow, catalog);
+            ModeEntryView entry = ModeEntryView.Create(Flow, catalog);
+            View = entry;
+            if (!Application.isBatchMode)
+            {
+                entry.SetAuthenticationUnlocked(false);
+                CoopAccountView.CreateAuthenticationGate(Flow,
+                    new UnityAuthenticationGateway(),
+                    () => entry.SetAuthenticationUnlocked(true));
+            }
         }
         else if (marker.Stage == GameModeStage.BattlePreparation)
         {

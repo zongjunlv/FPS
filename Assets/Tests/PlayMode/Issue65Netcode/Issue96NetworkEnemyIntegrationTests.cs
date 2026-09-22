@@ -6,6 +6,7 @@ using FPS.Networking.Session;
 using NUnit.Framework;
 using UnityEngine;
 using UnityEngine.TestTools;
+using Unity.Collections;
 
 namespace FPS.Tests.PlayMode.Issue65
 {
@@ -45,6 +46,14 @@ namespace FPS.Tests.PlayMode.Issue65
             Assert.That(left.transform.rotation,
                 Is.EqualTo(right.transform.rotation));
             Assert.That(left.activeSelf, Is.EqualTo(right.activeSelf));
+            Assert.That(first.TryGetTargetStatus(1,
+                out float health,
+                out float maximumHealth,
+                out AuthoritativeEnemyBehavior behavior), Is.True);
+            Assert.That(health, Is.EqualTo(100f));
+            Assert.That(maximumHealth, Is.EqualTo(100f));
+            Assert.That(behavior,
+                Is.EqualTo(AuthoritativeEnemyBehavior.Pursue));
         }
 
         [UnityTest]
@@ -110,6 +119,37 @@ namespace FPS.Tests.PlayMode.Issue65
                 Is.EqualTo(20f).Within(0.0001f));
         }
 
+        [UnityTest]
+        public IEnumerator RuntimeStateLoadsOfficialAddressablePresentation()
+        {
+            CoopNetworkWorldPresenter presenter = Presenter(
+                "Official Addressable Enemy Presenter");
+            NetcodeTargetState state = State(
+                Vector3.forward * 8f,
+                AuthoritativeEnemyRole.Assault,
+                AuthoritativeEnemyBehavior.Pursue);
+            state.ArchetypeId = new FixedString64Bytes(
+                "enemy.archetype.spider_assault");
+            state.PresentationAddress = new FixedString64Bytes(
+                "enemy/trilobite-assault");
+            presenter.PresentForTests(new[] { state }, 1f / 60f);
+            presenter.TryGetTargetView(1, out GameObject view);
+
+            float timeout = Time.realtimeSinceStartup + 10f;
+            while (view != null &&
+                   view.GetComponentInChildren<Renderer>(true) == null &&
+                   Time.realtimeSinceStartup < timeout)
+                yield return null;
+
+            Assert.That(view, Is.Not.Null);
+            Assert.That(view.GetComponentInChildren<Renderer>(true),
+                Is.Not.Null,
+                "正式敌人 Addressable 应在联机表现根节点下完成加载。");
+            Assert.That(view.name, Does.Contain("Coop Enemy View"));
+            Assert.That(view.GetComponentsInChildren<Collider>(true),
+                Has.All.Matches<Collider>(collider => !collider.enabled));
+        }
+
         [Test]
         public void DeadAndMissingEnemiesRemainInBoundedPresentationPool()
         {
@@ -159,6 +199,7 @@ namespace FPS.Tests.PlayMode.Issue65
                 Position = position,
                 Radius = 1f,
                 Health = 100f,
+                MaximumHealth = 100f,
                 Active = true,
                 YawDegrees = 35f,
                 Role = role,

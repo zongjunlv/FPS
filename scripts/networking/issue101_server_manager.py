@@ -134,7 +134,7 @@ def state_has_live_process(state: dict[str, Any]) -> bool:
 
 def server_command(args: argparse.Namespace, binary: pathlib.Path,
                    diagnostics: pathlib.Path) -> list[str]:
-    return [
+    command = [
         str(binary), "-batchmode", "-nographics", "-disable-audio",
         "-fps-server",
         "-server-map", "CityNew",
@@ -149,6 +149,41 @@ def server_command(args: argparse.Namespace, binary: pathlib.Path,
         "-server-idle-timeout", str(args.idle_timeout),
         "-server-diagnostics", str(diagnostics),
     ]
+    resolved_players = getattr(args, "resolved_players", [])
+    if resolved_players:
+        roster = ",".join(
+            f"{player['accountId']}={player['appearanceId']}"
+            for player in resolved_players)
+        command.extend(("-server-roster", roster))
+    return command
+
+
+def resolve_players(args: argparse.Namespace) -> list[dict[str, str]]:
+    players: list[dict[str, str]] = []
+    if args.player:
+        for raw in args.player:
+            account, separator, appearance = raw.partition("=")
+            if not separator:
+                raise ValueError(
+                    "--player 必须使用 account=appearance 格式")
+            players.append({
+                "accountId": validate_identifier(account, "账号 ID"),
+                "appearanceId": validate_identifier(
+                    appearance, "角色外观 ID"),
+            })
+    else:
+        players.extend({
+            "accountId": validate_identifier(value, "账号 ID"),
+            "appearanceId": "operative-alpha",
+        } for value in args.account)
+    accounts = [player["accountId"] for player in players]
+    if len(set(accounts)) != len(accounts):
+        raise ValueError("账号 ID 不能重复")
+    if not players:
+        raise ValueError("至少需要一个 --player 才能签发连接票据")
+    if len(players) > args.maximum_players:
+        raise ValueError("战局名单不能超过服务器最大人数")
+    return players
 
 
 def monitor(state_path: pathlib.Path) -> int:
@@ -227,12 +262,8 @@ def start(args: argparse.Namespace) -> int:
                                                   "协议版本")
     args.content_version = validate_identifier(args.content_version,
                                                 "内容版本")
-    accounts = [validate_identifier(value, "账号 ID")
-                for value in args.account]
-    if len(set(accounts)) != len(accounts):
-        raise ValueError("账号 ID 不能重复")
-    if not accounts:
-        raise ValueError("至少需要一个 --account 才能签发连接票据")
+    args.resolved_players = resolve_players(args)
+    accounts = [player["accountId"] for player in args.resolved_players]
 
     match_root = args.state_root.resolve() / args.match_id
     state_path = match_root / "server-state.json"
@@ -259,6 +290,7 @@ def start(args: argparse.Namespace) -> int:
         "protocolVersion": args.protocol_version,
         "contentVersion": args.content_version,
         "maximumPlayers": args.maximum_players,
+        "roster": args.resolved_players,
         "diagnosticsPath": str(diagnostics_path),
         "logPath": str(log_path),
         "lifecycleStatus": "launching",
@@ -414,6 +446,9 @@ def add_start_arguments(command: argparse.ArgumentParser) -> None:
     command.add_argument("--match-id", default="remote-" +
                          utc_now().strftime("%Y%m%dT%H%M%SZ"))
     command.add_argument("--account", action="append", default=[])
+    command.add_argument(
+        "--player", action="append", default=[],
+        help="本局账号与角色外观，格式 account=appearance，可重复两次")
     command.add_argument("--maximum-players", type=int, default=2)
     command.add_argument("--seed", type=int, default=18018)
     command.add_argument("--application-version", default="development")

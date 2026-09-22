@@ -21,6 +21,7 @@
     "FPS.UI",
     "FPS.Composition",
     "Unity.Netcode.Runtime",
+    "Unity.Services.Multiplayer",
     "Unity.Entities",
     "Unity.Collections",
     "Unity.Mathematics"

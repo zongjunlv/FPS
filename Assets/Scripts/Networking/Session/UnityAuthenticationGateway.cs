@@ -1,4 +1,6 @@
 using System;
+using System.Security.Cryptography;
+using System.Text;
 using System.Threading.Tasks;
 using Unity.Services.Authentication;
 using Unity.Services.Core;
@@ -30,13 +32,30 @@ namespace FPS.Networking.Session
         public Task SignUpAsync(string username, string password)
         {
             return Guard(() => AuthenticationService.Instance
-                .SignUpWithUsernamePasswordAsync(username, password));
+                .SignUpWithUsernamePasswordAsync(username,
+                    PrepareServicePassword(password)));
         }
 
         public Task SignInAsync(string username, string password)
         {
             return Guard(() => AuthenticationService.Instance
-                .SignInWithUsernamePasswordAsync(username, password));
+                .SignInWithUsernamePasswordAsync(username,
+                    PrepareServicePassword(password)));
+        }
+
+        public static string PrepareServicePassword(string password)
+        {
+            string value = password ?? string.Empty;
+            if (MeetsUnityPasswordPolicy(value)) return value;
+
+            // Unity Authentication 固定要求大小写、数字和符号。本项目面向玩家
+            // 只要求字母与数字，因此仅在缺少服务端字符类别时生成稳定的内部凭据。
+            // 该值不落盘、不写日志；旧规则下创建的强密码保持原值，继续兼容登录。
+            using SHA256 sha256 = SHA256.Create();
+            byte[] digest = sha256.ComputeHash(
+                Encoding.UTF8.GetBytes("fps-auth-v1:" + value));
+            string encoded = Convert.ToBase64String(digest);
+            return "Aa1!" + encoded.Substring(0, 26);
         }
 
         public Task RestoreCachedSessionAsync()
@@ -79,6 +98,25 @@ namespace FPS.Networking.Session
             {
                 throw Map(exception);
             }
+        }
+
+        private static bool MeetsUnityPasswordPolicy(string password)
+        {
+            bool upper = false;
+            bool lower = false;
+            bool digit = false;
+            bool symbol = false;
+            for (int index = 0; index < password.Length; index++)
+            {
+                char character = password[index];
+                upper |= char.IsUpper(character);
+                lower |= char.IsLower(character);
+                digit |= char.IsDigit(character);
+                symbol |= !char.IsLetterOrDigit(character);
+            }
+
+            return password.Length is >= 8 and <= 30 && upper && lower &&
+                   digit && symbol;
         }
 
         private static CoopAuthenticationException Map(

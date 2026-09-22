@@ -133,7 +133,8 @@ namespace FPS.Tests.PlayMode
             Assert.That(Object.FindAnyObjectByType<TutorialTopHud>(), Is.Null);
             Assert.That(Object.FindAnyObjectByType<TutorialCompletionView>(),
                 Is.Null);
-            Assert.That(Object.FindAnyObjectByType<ModeDestinationView>(),
+            Assert.That(Object.FindAnyObjectByType<
+                    BattleCharacterSelectionView>(),
                 Is.Not.Null);
 
             yield return EnterTutorial();
@@ -164,10 +165,11 @@ namespace FPS.Tests.PlayMode
             flow.CompletionView.EnterBattleButton.onClick.Invoke();
             yield return WaitForScene(GameModeScenePaths.BattlePreparation);
 
-            ModeDestinationView preparation =
-                Object.FindAnyObjectByType<ModeDestinationView>();
-            Assert.That(preparation.PrimaryActionButton, Is.Not.Null);
-            preparation.PrimaryActionButton.onClick.Invoke();
+            BattleCharacterSelectionView preparation =
+                Object.FindAnyObjectByType<BattleCharacterSelectionView>();
+            Assert.That(preparation, Is.Not.Null);
+            Assert.That(preparation.ConfirmButton, Is.Not.Null);
+            preparation.ConfirmButton.onClick.Invoke();
 
             float deadline = Time.realtimeSinceStartup + 35f;
             PlayerGameplayRig rig = null;
@@ -244,6 +246,8 @@ namespace FPS.Tests.PlayMode
                 if (SceneManager.GetActiveScene().path ==
                         GameModeScenePaths.Tutorial &&
                     !GameModeContext.IsTransitioning &&
+                    GameModeFlowController.Instance != null &&
+                    !GameModeFlowController.Instance.IsLoading &&
                     flow != null && flow != previous &&
                     flow.IsInitialized)
                 {

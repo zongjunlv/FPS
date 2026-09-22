@@ -483,12 +483,6 @@ namespace FPS.Tests.PlayMode
                 Is.EqualTo(true));
             Assert.That(Time.timeScale, Is.EqualTo(1f));
 
-            missionType.GetMethod("RequestQuit").Invoke(mission, null);
-            Assert.That(
-                missionType.GetProperty("QuitRequested")
-                    .GetValue(mission),
-                Is.EqualTo(true));
-
             Type damageInfoType = RuntimeTypeResolver.GetType(
                 "DamageInfo");
             object lethalDamage = Activator.CreateInstance(

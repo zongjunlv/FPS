@@ -1,7 +1,9 @@
 using System.Collections;
+using System.Linq;
 using System.Threading.Tasks;
 using FPS.Networking.Session;
 using NUnit.Framework;
+using TMPro;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 using UnityEngine.TestTools;
@@ -36,8 +38,15 @@ namespace FPS.Tests.PlayMode.Issue69
             yield return null;
 
             Assert.That(view.Controller.IsSignedIn, Is.True);
+            Assert.That(view.AuthenticationPanel.activeSelf, Is.False);
+            Assert.That(view.LobbyPanel.activeSelf, Is.True);
             Assert.That(view.CreateRoomButton.gameObject.activeSelf, Is.True);
             Assert.That(view.JoinRoomButton.gameObject.activeSelf, Is.True);
+            Assert.That(view.RefreshRoomsButton.gameObject.activeSelf, Is.True);
+            Assert.That(view.JoinSelectedRoomButton.gameObject.activeSelf,
+                Is.True);
+            Assert.That(view.PublicRoomsContent, Is.Not.Null);
+            Assert.That(view.JoinSelectedRoomButton.interactable, Is.False);
             Assert.That(view.ReadyButton.gameObject.activeSelf, Is.False);
             Assert.That(view.StartRoomButton.gameObject.activeSelf, Is.False);
             Assert.That(view.JoinRoomButton.interactable, Is.False);
@@ -45,6 +54,15 @@ namespace FPS.Tests.PlayMode.Issue69
             view.JoinCodeInput.text = "ABC123";
             yield return null;
             Assert.That(view.JoinRoomButton.interactable, Is.True);
+
+            string[] visibleCopy = view.LobbyPanel
+                .GetComponentsInChildren<TMP_Text>()
+                .Select(value => value.text)
+                .ToArray();
+            Assert.That(visibleCopy, Does.Contain("行动整备大厅"));
+            Assert.That(visibleCopy.Any(value =>
+                value.Contains("玩家席位 1") &&
+                value.Contains("玩家席位 2")), Is.True);
 
             Object.Destroy(view.gameObject);
             Object.Destroy(sessionObject);

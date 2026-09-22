@@ -1,4 +1,5 @@
 using FPS.Core.GameModes;
+using FPS.Networking.Netcode;
 using UnityEngine;
 
 [DefaultExecutionOrder(-32000)]
@@ -21,7 +22,13 @@ public sealed class GameModeSceneMarker : MonoBehaviour
 
     private void Awake()
     {
-        ActivateContext();
+        bool activated = ActivateContext();
+        if (BattleMusicController.ShouldInstallForScene(
+                stage, activated, Application.isBatchMode,
+                DedicatedServerRuntime.IsActive))
+        {
+            gameObject.AddComponent<BattleMusicController>();
+        }
     }
 
     public bool ActivateContext()
@@ -30,11 +37,12 @@ public sealed class GameModeSceneMarker : MonoBehaviour
         GameModeStage effectiveStage = stage;
         if (mode == GameModeId.SoloBattle &&
             stage == GameModeStage.Battle &&
-            GameModeContext.RequestedMode == GameModeId.Coop &&
-            GameModeContext.RequestedStage == GameModeStage.CoopLobby)
+            ((GameModeContext.RequestedMode == GameModeId.Coop &&
+              GameModeContext.RequestedStage == GameModeStage.CoopBattle) ||
+             DedicatedServerRuntime.IsActive))
         {
             effectiveMode = GameModeId.Coop;
-            effectiveStage = GameModeStage.CoopLobby;
+            effectiveStage = GameModeStage.CoopBattle;
         }
         IsActivated = GameModeContext.TryActivate(
             effectiveMode,
