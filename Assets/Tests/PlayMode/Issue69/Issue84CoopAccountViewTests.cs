@@ -1,4 +1,5 @@
 using System.Collections;
+using System.Linq;
 using System.Threading.Tasks;
 using FPS.Core.GameModes;
 using FPS.Networking.Session;
@@ -35,6 +36,10 @@ namespace FPS.Tests.PlayMode.Issue69
                 Is.EqualTo(view.UsernameInput.gameObject));
             Assert.That(view.UsernameInput.customCaretColor, Is.True);
             Assert.That(view.UsernameInput.caretWidth, Is.GreaterThanOrEqualTo(3));
+            Assert.That(view.AuthenticationPanel
+                .GetComponentsInChildren<UnityEngine.UI.Image>(true)
+                .Any(image => image.gameObject.name == "字段图标" &&
+                              image.sprite != null), Is.True);
 
             view.RegisterTabButton.onClick.Invoke();
             Assert.That(view.IsRegisterMode, Is.True);

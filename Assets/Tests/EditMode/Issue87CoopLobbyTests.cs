@@ -165,6 +165,15 @@ namespace FPS.Tests.Architecture
             Assert.That(CoopReconnectPresentationGate.ShouldBlockForState(
                 CoopSessionState.Connected,
                 true,
+                CoopSessionController.PhaseLoading,
+                false,
+                false,
+                false,
+                false), Is.True,
+                "场景已加载但数据通道尚未启动时仍应保持遮罩。");
+            Assert.That(CoopReconnectPresentationGate.ShouldBlockForState(
+                CoopSessionState.Connected,
+                true,
                 CoopSessionController.PhaseBattle,
                 true,
                 true,
@@ -189,6 +198,24 @@ namespace FPS.Tests.Architecture
                 false,
                 false), Is.True,
                 "真正重连期间仍应保持遮罩。");
+            Assert.That(CoopReconnectPresentationGate.ShouldBlockForState(
+                CoopSessionState.Connected,
+                true,
+                CoopSessionController.PhaseBattle,
+                false,
+                false,
+                false,
+                false), Is.True,
+                "大厅已连接但专用服务器尚未握手时，不能暴露本地占位玩法。");
+            Assert.That(CoopReconnectPresentationGate.ShouldBlockForState(
+                CoopSessionState.Failed,
+                true,
+                CoopSessionController.PhaseBattle,
+                false,
+                false,
+                false,
+                false), Is.True,
+                "专用服务器连接失败后必须保持遮罩并引导玩家退出，不能回退单机。");
         }
 
         private static CoopLobbyRoster ReadyRoom()

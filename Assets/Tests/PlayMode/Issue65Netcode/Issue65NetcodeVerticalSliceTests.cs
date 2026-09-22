@@ -88,6 +88,13 @@ namespace FPS.Tests.PlayMode.Issue65
             Assert.That(driver.TryAcquireExclusiveInput(owner), Is.True);
             Assert.That(driver.SetExclusiveInputFrame(owner, Vector2.zero,
                 0f, 0f, false, false, false, true, false), Is.True);
+            Assert.That(driver.SetExclusivePredictedCombatFrame(
+                new object(), NetworkPresentationIds.RifleGameplay),
+                Is.False,
+                "非持有者不得覆盖独占验收使用的枪口上下文。");
+            Assert.That(driver.SetExclusivePredictedCombatFrame(
+                owner, NetworkPresentationIds.RifleGameplay), Is.True,
+                "独占输入持有者应能写入与权威位置一致的虚拟枪口。");
             driver.SetInputFrame(Vector2.zero, 0f, 0f, false, false,
                 false, false, false);
 
@@ -206,6 +213,51 @@ namespace FPS.Tests.PlayMode.Issue65
                     new CoopServerRules(),
                     PlayerSpawns(),
                     TargetSpawns()));
+        }
+
+        [Test]
+        public void AuthorityMovement_CapsuleSlidesAlongBlockingWall()
+        {
+            NetworkCoopSessionAuthority authority = CreateAuthority(
+                enableServerHook: false);
+            GameObject wall = Track(GameObject.CreatePrimitive(
+                PrimitiveType.Cube));
+            wall.name = "Issue100 Sliding Wall";
+            wall.transform.position = new Vector3(0.7f, 0.9f, 0f);
+            wall.transform.localScale = new Vector3(0.2f, 1.8f, 4f);
+            Physics.SyncTransforms();
+
+            var current = new PlayerMovementState(
+                default,
+                default,
+                0d,
+                0d,
+                PlayerStance.Standing,
+                true,
+                long.MinValue,
+                0d);
+            var desired = new PlayerMovementState(
+                new NetVector3(1d, 0d, 1d),
+                new NetVector3(1d, 0d, 1d),
+                0d,
+                0d,
+                PlayerStance.Standing,
+                true,
+                long.MinValue,
+                0d);
+            MethodInfo resolver = typeof(NetworkCoopSessionAuthority)
+                .GetMethod("ResolvePlayerMovement",
+                    BindingFlags.Instance | BindingFlags.NonPublic);
+            Assert.That(resolver, Is.Not.Null);
+
+            PlayerMovementState resolved = (PlayerMovementState)
+                resolver.Invoke(authority,
+                    new object[] { 1, current, desired });
+
+            Assert.That(resolved.Position.X, Is.LessThan(0.5d),
+                "胶囊体不能穿过权威墙体。 ");
+            Assert.That(resolved.Position.Z, Is.GreaterThan(0.2d),
+                "斜向碰墙后应保留沿墙切向位移，不能原地粘墙。 ");
         }
 
         [Test]

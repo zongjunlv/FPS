@@ -9,6 +9,7 @@ namespace FPS.Tests.Architecture
     {
         private const string ValidUsername = "Player_01";
         private const string ValidPassword = "simple123";
+        private const int UnityInvalidParametersErrorCode = 10002;
 
         [TestCase("ab", false)]
         [TestCase("player name", false)]
@@ -48,6 +49,42 @@ namespace FPS.Tests.Architecture
             Assert.That(first, Is.Not.EqualTo(relaxed));
             Assert.That(UnityAuthenticationGateway.PrepareServicePassword(
                 "StrongPass1!"), Is.EqualTo("StrongPass1!"));
+        }
+
+        [Test]
+        public async Task DisabledUsernamePasswordProviderShowsActionableFailure()
+        {
+            const string serviceMessage =
+                "usernamepassword external id provider is not available: " +
+                "PERMISSION_DENIED";
+            Assert.That(UnityAuthenticationGateway.ClassifyRequestFailure(
+                    UnityInvalidParametersErrorCode,
+                    serviceMessage),
+                Is.EqualTo(CoopAuthenticationFailure.ProviderUnavailable));
+
+            var gateway = new FakeAuthenticationGateway
+            {
+                SignUpHandler = (_, _) => throw
+                    new CoopAuthenticationException(
+                        CoopAuthenticationFailure.ProviderUnavailable)
+            };
+            var controller = new CoopAccountController(gateway);
+
+            bool result = await controller.RegisterAsync(ValidUsername,
+                ValidPassword, ValidPassword);
+
+            Assert.That(result, Is.False);
+            Assert.That(controller.LastFailure,
+                Does.Contain("未启用用户名密码登录"));
+        }
+
+        [Test]
+        public void OrdinaryInvalidParametersRemainInvalidCredentials()
+        {
+            Assert.That(UnityAuthenticationGateway.ClassifyRequestFailure(
+                    UnityInvalidParametersErrorCode,
+                    "The username or password is invalid."),
+                Is.EqualTo(CoopAuthenticationFailure.InvalidCredentials));
         }
 
         [Test]

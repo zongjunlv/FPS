@@ -16,6 +16,7 @@ namespace FPS.Networking.Session
         private CoopSessionController session;
 
         public bool IsBlocking => ShouldBlock();
+        public bool MenuOverlayVisible { get; set; }
 
         private void OnGUI()
         {
@@ -33,13 +34,33 @@ namespace FPS.Networking.Session
                 normal = { textColor = Color.white }
             };
             GUI.Label(new Rect(0f, 0f, Screen.width, Screen.height),
-                "正在恢复战局…", labelStyle);
+                StatusText(), labelStyle);
             GUI.color = previous;
+        }
+
+        private string StatusText()
+        {
+            if (session == null) return "正在连接专用服务器…";
+            if (session.State == CoopSessionState.Failed)
+            {
+                string reason = string.IsNullOrWhiteSpace(session.LastFailure)
+                    ? "专用服务器连接失败。"
+                    : session.LastFailure;
+                return $"联机战局连接失败\n{reason}\n\n按 ESC 打开菜单并返回模式大厅";
+            }
+            if (string.Equals(session.LobbyPhase,
+                    CoopSessionController.PhaseLoading,
+                    System.StringComparison.Ordinal))
+                return "正在加载 CityNew 并等待队友…";
+            return session.IsBattleTransportConnected
+                ? "正在同步服务器战局…"
+                : "正在连接专用服务器…";
         }
 
         private bool ShouldBlock()
         {
             session ??= GetComponent<CoopSessionController>();
+            if (MenuOverlayVisible) return false;
             NetworkManager manager = NetworkManager.Singleton;
             bool hasLocalReplica = false;
             bool hasConsumedServerState = false;
@@ -76,6 +97,17 @@ namespace FPS.Networking.Session
             bool hasConsumedServerState)
         {
             if (sessionState == CoopSessionState.Reconnecting) return true;
+
+            bool networkGameplayPhase = hasActiveSession &&
+                (string.Equals(sessionPhase,
+                     CoopSessionController.PhaseLoading,
+                     System.StringComparison.Ordinal) ||
+                 string.Equals(sessionPhase,
+                     CoopSessionController.PhaseBattle,
+                     System.StringComparison.Ordinal));
+            if (networkGameplayPhase &&
+                sessionState == CoopSessionState.Failed)
+                return true;
             if (sessionState != CoopSessionState.Connected) return false;
 
             // Session/Relay rooms intentionally defer player spawning while
@@ -90,6 +122,12 @@ namespace FPS.Networking.Session
                     System.StringComparison.Ordinal))
                 return false;
 
+            // During the battle phase a UGS lobby connection alone is not
+            // playable. Keep the scene covered until NGO is connected instead
+            // of exposing CityNew's legacy local Spider and solo controls.
+            if (networkGameplayPhase &&
+                (!isNetworkClient || !isConnectedClient))
+                return true;
             if (!isNetworkClient || !isConnectedClient) return false;
             return !hasLocalReplica || !hasConsumedServerState;
         }

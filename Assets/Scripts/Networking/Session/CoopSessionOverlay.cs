@@ -28,7 +28,12 @@ namespace FPS.Networking.Session
         {
             if (Keyboard.current == null ||
                 !Keyboard.current.f6Key.wasPressedThisFrame) return;
-            visible = !visible;
+            SetVisible(!visible);
+        }
+
+        public void SetVisible(bool value)
+        {
+            visible = value;
             Cursor.visible = visible;
             Cursor.lockState = visible
                 ? CursorLockMode.None

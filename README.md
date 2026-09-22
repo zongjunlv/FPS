@@ -5,7 +5,7 @@
 [![Unity](https://img.shields.io/badge/Unity-6000.5.3f1-000000?logo=unity&logoColor=white)](https://unity.com/)
 [![Release](https://img.shields.io/github/v/release/zongjunlv/FPS?display_name=tag&sort=semver)](https://github.com/zongjunlv/FPS/releases/latest)
 [![Unity Quality Gate](https://github.com/zongjunlv/FPS/actions/workflows/unity-quality-gate.yml/badge.svg)](https://github.com/zongjunlv/FPS/actions/workflows/unity-quality-gate.yml)
-[![Platform](https://img.shields.io/badge/client-macOS%20Universal-blue)](https://github.com/zongjunlv/FPS/releases/latest)
+[![Platform](https://img.shields.io/badge/client-macOS%20Universal%20%7C%20Windows%20x86__64-blue)](https://github.com/zongjunlv/FPS/releases/latest)
 
 ## 项目简介
 
@@ -24,13 +24,14 @@
 
 ## 下载客户端
 
-当前公开版本为 **v0.1.0 macOS Universal**，同时支持 Apple Silicon 与 Intel Mac。
+当前 Windows 客户端版本为 **v0.2.0 Windows x86_64**；macOS 客户端继续提供 **v0.1.0 Universal**，同时支持 Apple Silicon 与 Intel Mac。
 
 - [前往 Releases 页面](https://github.com/zongjunlv/FPS/releases/latest)
+- [直接下载 Windows x86_64 客户端](https://github.com/zongjunlv/FPS/releases/download/v0.2.0/FPS-PVE-Demo-v0.2.0-Windows-x86_64.zip)
 - [直接下载 macOS 客户端](https://github.com/zongjunlv/FPS/releases/download/v0.1.0/FPS-PVE-Demo-v0.1.0-macOS-universal.zip)
-- SHA-256：`4621702e0740dfa21127979f342629b2bdc914c489ce511677163f3907756520`
+- macOS SHA-256：`4621702e0740dfa21127979f342629b2bdc914c489ce511677163f3907756520`
 
-解压后运行 `FPS-PVE-Demo.app`。当前客户端采用 ad-hoc 签名，尚未经过 Apple 公证；如果首次启动被 Gatekeeper 拦截，请在 Finder 中右键应用并选择“打开”。联机模式依赖网络服务，公开服务可能因维护临时不可用。
+Windows 解压后运行 `FPS-PVE-Demo.exe`；请保留 EXE、`FPS-PVE-Demo_Data`、`UnityPlayer.dll` 和 `MonoBleedingEdge` 在同一目录。macOS 解压后运行 `FPS-PVE-Demo.app`；当前 macOS 客户端采用 ad-hoc 签名，尚未经过 Apple 公证，如果首次启动被 Gatekeeper 拦截，请在 Finder 中右键应用并选择“打开”。联机模式依赖网络服务，公开服务可能因维护临时不可用。
 
 ## 完整游戏流程
 
@@ -275,6 +276,7 @@ deploy/dedicated-server/          # Linux 服务端部署模板
 ## 第三方资源
 
 - [Kenney Blocky Characters](https://kenney.nl/)：CC0；
+- [Kenney Game Icons](https://kenney.nl/assets/game-icons)：CC0，用于账号、模式选择与联机大厅图标；
 - [Quaternius Sci-Fi Essentials / Universal Animation Library / Universal Base Characters](https://quaternius.com/)：各资源目录内附授权文件；
 - [Singularity — vitalezzz](https://opengameart.org/content/singularity-0)：CC0，项目内记录见 [音频来源与校验](docs/audio/Singularity.md)；
 - 其他导入资源以其随包授权和说明文件为准。

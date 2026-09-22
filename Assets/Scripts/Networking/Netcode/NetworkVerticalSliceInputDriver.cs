@@ -185,9 +185,23 @@ namespace FPS.Networking.Netcode
 
         public void SetCombatFrame(string gameplayWeaponId, Vector3 shotOrigin)
         {
+            if (exclusiveInputOwner != null) return;
             if (replica == null)
                 replica = GetComponent<NetworkPlayerReplica>();
             replica?.ConfigureLocalCombatContext(gameplayWeaponId, shotOrigin);
+        }
+
+        public bool SetExclusivePredictedCombatFrame(
+            object owner,
+            string gameplayWeaponId)
+        {
+            if (owner == null ||
+                !ReferenceEquals(exclusiveInputOwner, owner))
+                return false;
+            if (replica == null)
+                replica = GetComponent<NetworkPlayerReplica>();
+            replica?.ConfigurePredictedCombatContext(gameplayWeaponId);
+            return replica != null;
         }
 
         public NetcodePlayerCommand SubmitCurrentFrame()

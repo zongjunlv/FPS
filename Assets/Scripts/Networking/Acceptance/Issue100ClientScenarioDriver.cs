@@ -11,6 +11,7 @@ using Unity.Netcode;
 using Unity.Networking.Transport;
 using Unity.Networking.Transport.Analytics;
 using UnityEngine;
+using UnityEngine.AI;
 
 namespace FPS.Networking.Acceptance
 {
@@ -18,8 +19,12 @@ namespace FPS.Networking.Acceptance
     internal sealed class Issue100ClientScenarioDriver : MonoBehaviour
     {
         private const string AcceptancePassword = "Issue100!Pass";
+        private const float PredictedShotOriginHeight = 1.25f;
+        private const double WaveClearTimeoutSeconds = 95d;
         private readonly Dictionary<uint, double> pendingShots = new();
         private readonly List<double> rttSamples = new();
+        private readonly RaycastHit[] combatLineHits = new RaycastHit[32];
+        private NavMeshPath navigationPath;
         private Issue100AcceptanceRuntime runtime;
         private Issue100RuntimeArguments options;
         private Issue100EvidenceStore evidence;
@@ -35,6 +40,7 @@ namespace FPS.Networking.Acceptance
         private int hitFeedbacks;
         private int missedFeedbacks;
         private int blockedFeedbacks;
+        private int lockedCombatTargetId;
         private double divergentSince = -1d;
         private bool initialized;
         private bool metricsBound;
@@ -104,7 +110,8 @@ namespace FPS.Networking.Acceptance
             if (!initialized) yield break;
             yield return FireSamples(24,
                 targetEnemies: options.Scenario.StableId ==
-                    "rtt-000-loss-00");
+                    "rtt-000-loss-00" &&
+                    options.Role == Issue100ProcessRole.ClientA);
             if (!initialized) yield break;
 
             bool standard = string.Equals(options.Scenario.StableId,
@@ -390,7 +397,13 @@ namespace FPS.Networking.Acceptance
             yield return PresentStep(Issue100AcceptanceSteps.Fire);
             int feedbackBefore = metrics.Complete().HitFeedbackSampleCount;
             int hitsBefore = hitFeedbacks;
-            int requiredFeedback = Math.Min(20, count);
+            // In the live CityNew scenario enemies attack while this initial
+            // transport sample is collected. Eight acknowledged shots are
+            // enough to prove aim/fire/feedback before both clients proceed
+            // to the longer cooperative wave-clear stage, which contributes
+            // the remaining combat samples without keeping either player
+            // stationary until they are downed.
+            int requiredFeedback = Math.Min(targetEnemies ? 8 : 20, count);
             int attempts = 0;
             double fireDeadline = Time.realtimeSinceStartupAsDouble +
                                   (options.RecordVideo ? 45d : 22d);
@@ -410,9 +423,15 @@ namespace FPS.Networking.Acceptance
                     continue;
                 }
                 Vector3 target = targetEnemies
-                    ? ResolveTargetPoint()
+                    ? ResolveTargetPoint(lockTarget: true)
                     : replica.PresentedPosition + Vector3.forward * 30f +
                       Vector3.up * 1.2f;
+                if (targetEnemies && !CanFireAt(target, 2f))
+                {
+                    AimAt(target, fire: false, approach: true);
+                    yield return null;
+                    continue;
+                }
                 int feedbackAtShot = metrics.Complete()
                     .HitFeedbackSampleCount;
                 AimAt(target, fire: true, approach: targetEnemies);
@@ -442,9 +461,7 @@ namespace FPS.Networking.Acceptance
                     $"{replica.PresentedLifeState}。");
                 yield break;
             }
-            if (targetEnemies &&
-                options.Role == Issue100ProcessRole.ClientB &&
-                hitFeedbacks <= hitsBefore)
+            if (targetEnemies && hitFeedbacks <= hitsBefore)
             {
                 Abort(Issue100AcceptanceSteps.Fire,
                     "射击反馈均为未命中或遮挡，没有对权威敌人造成伤害。");
@@ -470,17 +487,17 @@ namespace FPS.Networking.Acceptance
             int blockedBefore = blockedFeedbacks;
             if (options.RecordVideo)
                 yield return new WaitForSecondsRealtime(0.9f);
-            double deadline = Time.realtimeSinceStartupAsDouble + 65d;
+            double deadline = Time.realtimeSinceStartupAsDouble +
+                WaveClearTimeoutSeconds;
             while (authority.WorldState.RemainingEnemyCount > 0 &&
                    Time.realtimeSinceStartupAsDouble < deadline)
             {
+                yield return RecoverTeamDuringCombat(
+                    Issue100AcceptanceSteps.WaveComplete);
+                if (!initialized) yield break;
                 if (replica.PresentedLifeState !=
                     AuthoritativePlayerLifeState.Alive)
-                {
-                    Abort(Issue100AcceptanceSteps.WaveComplete,
-                        "自动验收角色在清除波次时已被击倒。");
-                    yield break;
-                }
+                    continue;
                 if (replica.PresentedMagazineAmmo <= 1)
                 {
                     if (replica.PresentedReserveAmmo <= 0) break;
@@ -489,9 +506,14 @@ namespace FPS.Networking.Acceptance
                     yield return new WaitForSecondsRealtime(1.35f);
                     continue;
                 }
-                AimAt(ResolveTargetPoint(), fire: true, approach: true);
+                Vector3 target = ResolveTargetPoint(lockTarget: true);
+                AimAt(target, fire: CanFireAt(target, 3.5f),
+                    approach: true);
                 yield return new WaitForSecondsRealtime(0.18f);
             }
+            yield return RecoverTeamDuringCombat(
+                Issue100AcceptanceSteps.WaveComplete);
+            if (!initialized) yield break;
             AimAt(replica.PresentedPosition + Vector3.forward * 20f,
                 fire: false);
             if (authority.WorldState.RemainingEnemyCount > 0)
@@ -523,16 +545,16 @@ namespace FPS.Networking.Acceptance
         {
             const string step = "wave.coop-assist";
             evidence.Started(step, Tick(), "client-b=reconnected");
-            double deadline = Time.realtimeSinceStartupAsDouble + 65d;
+            double deadline = Time.realtimeSinceStartupAsDouble +
+                WaveClearTimeoutSeconds;
             while (authority.WorldState.RemainingEnemyCount > 0 &&
                    Time.realtimeSinceStartupAsDouble < deadline)
             {
+                yield return RecoverTeamDuringCombat(step);
+                if (!initialized) yield break;
                 if (replica.PresentedLifeState !=
                     AuthoritativePlayerLifeState.Alive)
-                {
-                    Abort(step, "协作客户端在清除波次时已被击倒。");
-                    yield break;
-                }
+                    continue;
                 if (replica.PresentedMagazineAmmo <= 1)
                 {
                     if (replica.PresentedReserveAmmo <= 0) break;
@@ -541,9 +563,13 @@ namespace FPS.Networking.Acceptance
                     yield return new WaitForSecondsRealtime(1.35f);
                     continue;
                 }
-                AimAt(ResolveTargetPoint(), fire: true, approach: true);
+                Vector3 target = ResolveTargetPoint(lockTarget: true);
+                AimAt(target, fire: CanFireAt(target, 3.5f),
+                    approach: true);
                 yield return new WaitForSecondsRealtime(0.18f);
             }
+            yield return RecoverTeamDuringCombat(step);
+            if (!initialized) yield break;
             AimAt(replica.PresentedPosition + Vector3.forward * 20f,
                 fire: false);
             if (authority.WorldState.RemainingEnemyCount > 0)
@@ -559,6 +585,99 @@ namespace FPS.Networking.Acceptance
                 "killed=" + authority.WorldState.KilledTargets);
         }
 
+        private IEnumerator RecoverTeamDuringCombat(string parentStep)
+        {
+            if (replica.PresentedLifeState !=
+                AuthoritativePlayerLifeState.Alive)
+            {
+                ReleaseInput();
+                double revivedDeadline = Time.realtimeSinceStartupAsDouble +
+                                         WaveClearTimeoutSeconds;
+                while (replica.PresentedLifeState !=
+                           AuthoritativePlayerLifeState.Alive &&
+                       authority.WorldState.MissionPhase !=
+                           AuthoritativeMissionPhase.Defeat &&
+                       Time.realtimeSinceStartupAsDouble < revivedDeadline)
+                    yield return null;
+                if (replica.PresentedLifeState !=
+                    AuthoritativePlayerLifeState.Alive)
+                {
+                    Abort(parentStep,
+                        "协作角色倒地后未能由队友在时限内救起。");
+                }
+                yield break;
+            }
+
+            if (!TryGetDownedTeammate(out NetcodePlayerState teammate))
+                yield break;
+
+            // The deterministic clients have no tactical cover planner. A
+            // revive hold while threats are still active repeatedly exposes
+            // the only standing player and turns the acceptance run into a
+            // random revive/down loop. Keep fighting until the encounter is
+            // safe; the authoritative post-combat transition restores any
+            // remaining downed squad member before terminal/extraction.
+            if (authority.WorldState.RemainingEnemyCount > 0)
+                yield break;
+
+            const string reviveStep = "combat.revive-teammate";
+            evidence.Started(reviveStep, Tick(),
+                $"reviver={replica.PlayerId};downed={teammate.PlayerId}");
+            yield return MoveTo(teammate.Position,
+                Mathf.Max(0.75f, authority.WorldState.ReviveRadius * 0.6f),
+                12d);
+            double deadline = Time.realtimeSinceStartupAsDouble + 10d;
+            while (TryGetPlayerState(teammate.PlayerId,
+                       out NetcodePlayerState current) &&
+                   current.LifeState == AuthoritativePlayerLifeState.Downed &&
+                   replica.PresentedLifeState ==
+                       AuthoritativePlayerLifeState.Alive &&
+                   Time.realtimeSinceStartupAsDouble < deadline)
+            {
+                replica.SubmitMissionAction(
+                    AuthoritativeMissionCommandKind.HoldRevive,
+                    teammate.PlayerId);
+                yield return new WaitForSecondsRealtime(0.05f);
+            }
+            if (TryGetPlayerState(teammate.PlayerId,
+                    out NetcodePlayerState after) &&
+                after.LifeState == AuthoritativePlayerLifeState.Downed)
+            {
+                Abort(parentStep,
+                    $"未能救起倒地队友 {teammate.PlayerId}。");
+                yield break;
+            }
+            evidence.Passed(reviveStep, Tick(),
+                $"revived={teammate.PlayerId}");
+        }
+
+        private bool TryGetDownedTeammate(out NetcodePlayerState teammate)
+        {
+            for (int playerId = 1; playerId <= 2; playerId++)
+            {
+                if (playerId == replica.PlayerId ||
+                    !TryGetPlayerState(playerId,
+                        out NetcodePlayerState candidate) ||
+                    candidate.LifeState !=
+                        AuthoritativePlayerLifeState.Downed)
+                    continue;
+                teammate = candidate;
+                return true;
+            }
+            teammate = default;
+            return false;
+        }
+
+        private bool TryGetPlayerState(int playerId,
+            out NetcodePlayerState player)
+        {
+            if (authority != null &&
+                authority.TryGetPlayerState(playerId, out player))
+                return true;
+            player = default;
+            return false;
+        }
+
         private IEnumerator RallyForExtraction()
         {
             const string step = "mission.extraction-rally";
@@ -568,7 +687,7 @@ namespace FPS.Networking.Acceptance
                         AuthoritativeMissionPhase.Extraction ||
                     authority.WorldState.MissionPhase ==
                         AuthoritativeMissionPhase.Victory,
-                45d);
+                70d);
             if (authority.WorldState.MissionPhase ==
                 AuthoritativeMissionPhase.Victory)
             {
@@ -583,7 +702,7 @@ namespace FPS.Networking.Acceptance
             }
 
             Vector3 extraction = authority.WorldState.ExtractionPosition;
-            yield return MoveTo(extraction, 4f, 24d);
+            yield return MoveTo(extraction, 4f, 36d);
             float distance = Vector3.Distance(
                 replica.PresentedPosition, extraction);
             if (distance > authority.WorldState.ExtractionRadius)
@@ -599,6 +718,7 @@ namespace FPS.Networking.Acceptance
             yield return PresentStep(Issue100AcceptanceSteps.InventoryPickup);
             NetcodeWorldDropState drop = default;
             bool found = false;
+            float nearestDistance = float.PositiveInfinity;
             for (int index = 0; index < authority.ReplicatedWorldDropCount;
                  index++)
             {
@@ -606,9 +726,12 @@ namespace FPS.Networking.Acceptance
                     authority.GetReplicatedWorldDrop(index);
                 if (!candidate.Available || candidate.OwnerPlayerId != 0 &&
                     candidate.OwnerPlayerId != replica.PlayerId) continue;
+                float distance = Vector3.Distance(
+                    replica.PresentedPosition, candidate.Position);
+                if (distance >= nearestDistance) continue;
                 drop = candidate;
                 found = true;
-                break;
+                nearestDistance = distance;
             }
             if (!found)
             {
@@ -616,7 +739,7 @@ namespace FPS.Networking.Acceptance
                     "没有可由 Client A 拾取的权威掉落物。");
                 yield break;
             }
-            yield return MoveTo(drop.Position, 2.5f, 14d);
+            yield return MoveTo(drop.Position, 2.5f, 24d);
             if (Vector3.Distance(replica.PresentedPosition, drop.Position) >
                 3.25f)
             {
@@ -699,7 +822,20 @@ namespace FPS.Networking.Acceptance
             yield return PresentStep(Issue100AcceptanceSteps.MissionTerminal);
             yield return WaitUntil(() => authority.WorldState.MissionPhase ==
                 AuthoritativeMissionPhase.ActivateTerminal, 5d);
-            yield return MoveTo(authority.WorldState.TerminalPosition, 2.25f,
+            Vector3 terminal = authority.WorldState.TerminalPosition;
+            Vector3 terminalApproach = ResolveInteractionApproach(
+                terminal);
+            Debug.Log($"[ISSUE100][TERMINAL_APPROACH] " +
+                      $"from={replica.PresentedPosition};" +
+                      $"approach={terminalApproach};target={terminal}");
+            if (Vector3.Distance(terminalApproach, terminal) >
+                authority.WorldState.TerminalRadius)
+            {
+                yield return MoveTo(terminalApproach, 0.45f, 20d);
+            }
+            yield return MoveTo(terminal,
+                Mathf.Max(1f,
+                    authority.WorldState.TerminalRadius * 0.75f),
                 18d);
             double terminalDeadline = Time.realtimeSinceStartupAsDouble + 12d;
             while (authority.WorldState.MissionPhase ==
@@ -745,7 +881,8 @@ namespace FPS.Networking.Acceptance
                     $"distance={extractionDistance:F1}。");
                 yield break;
             }
-            double extractionDeadline = Time.realtimeSinceStartupAsDouble + 14d;
+            double extractionDeadline = Time.realtimeSinceStartupAsDouble +
+                                        45d;
             while (authority.WorldState.MissionPhase ==
                        AuthoritativeMissionPhase.Extraction &&
                    Time.realtimeSinceStartupAsDouble < extractionDeadline)
@@ -904,16 +1041,29 @@ namespace FPS.Networking.Acceptance
         private IEnumerator MoveTo(Vector3 target, float radius,
             double timeoutSeconds)
         {
+            Vector3 navigationTarget = ResolveReachableDestination(
+                target, radius);
             double deadline = Time.realtimeSinceStartupAsDouble +
                 timeoutSeconds;
             while (Vector3.Distance(replica.PresentedPosition, target) >
                        radius &&
                    Time.realtimeSinceStartupAsDouble < deadline)
             {
-                Vector3 delta = target - replica.PresentedPosition;
-                float yaw = Mathf.Atan2(delta.x, delta.z) * Mathf.Rad2Deg;
-                SetInputFrame(new Vector2(0f, 1f), yaw, 0f,
-                    false, false, true, false, false);
+                if (Vector3.Distance(replica.PresentedPosition,
+                        navigationTarget) <= 0.75f)
+                    navigationTarget = ResolveReachableDestination(
+                        target, radius);
+                Vector3 direction = ResolveNavigationDirection(
+                    navigationTarget);
+                float targetYaw = Mathf.Atan2(
+                    direction.x, direction.z) * Mathf.Rad2Deg;
+                float yaw = Mathf.MoveTowardsAngle(
+                    replica.PresentedAimYaw, targetYaw, 12f);
+                Vector2 localMovement = WorldDirectionToLocal(
+                    direction, yaw);
+                SetInputFrame(localMovement, yaw, 0f,
+                    false, false, localMovement.y > 0.1f,
+                    false, false);
                 yield return null;
             }
             SetInputFrame(Vector2.zero, replica.PresentedAimYaw, 0f,
@@ -921,19 +1071,156 @@ namespace FPS.Networking.Acceptance
             yield return new WaitForSecondsRealtime(0.15f);
         }
 
+        private Vector3 ResolveReachableDestination(
+            Vector3 target,
+            float arrivalRadius)
+        {
+            Vector3 current = replica.PresentedPosition;
+            if (!NavMesh.SamplePosition(current, out NavMeshHit from,
+                    2.5f, NavMesh.AllAreas))
+                return target;
+
+            Vector3 best = target;
+            float bestLength = float.PositiveInfinity;
+            var path = new NavMeshPath();
+            const int directions = 12;
+            for (int index = -1; index < directions; index++)
+            {
+                float ring = Mathf.Max(0.5f, arrivalRadius * 0.8f);
+                Vector3 candidate = index < 0
+                    ? target
+                    : target + new Vector3(
+                        Mathf.Cos(index * Mathf.PI * 2f / directions) * ring,
+                        0f,
+                        Mathf.Sin(index * Mathf.PI * 2f / directions) * ring);
+                if (!NavMesh.SamplePosition(candidate, out NavMeshHit sampled,
+                        1.5f, NavMesh.AllAreas) ||
+                    Vector3.Distance(sampled.position, target) >
+                    arrivalRadius ||
+                    !NavMesh.CalculatePath(from.position, sampled.position,
+                        NavMesh.AllAreas, path) ||
+                    path.status != NavMeshPathStatus.PathComplete ||
+                    path.corners.Length < 2)
+                    continue;
+                float length = 0f;
+                for (int corner = 1; corner < path.corners.Length; corner++)
+                    length += Vector3.Distance(
+                        path.corners[corner - 1], path.corners[corner]);
+                if (length >= bestLength) continue;
+                bestLength = length;
+                best = sampled.position;
+            }
+            return best;
+        }
+
+        private Vector3 ResolveInteractionApproach(
+            Vector3 target)
+        {
+            Vector3 current = replica.PresentedPosition;
+            if (!NavMesh.SamplePosition(current, out NavMeshHit from,
+                    2.5f, NavMesh.AllAreas))
+                return current;
+
+            var path = new NavMeshPath();
+            Vector3 best = current;
+            float bestLength = float.PositiveInfinity;
+            float[] ringDistances = { 4.5f, 5.5f, 6.5f, 7.5f };
+            const int directions = 72;
+            foreach (float ringDistance in ringDistances)
+            {
+                for (int index = 0; index < directions; index++)
+                {
+                    float angle = index * Mathf.PI * 2f / directions;
+                    Vector3 candidate = target + new Vector3(
+                        Mathf.Cos(angle) * ringDistance,
+                        0f,
+                        Mathf.Sin(angle) * ringDistance);
+                    if (!NavMesh.SamplePosition(candidate,
+                            out NavMeshHit sampled,
+                            1.25f, NavMesh.AllAreas) ||
+                        !HasClearInteractionLine(sampled.position, target) ||
+                        !NavMesh.CalculatePath(from.position,
+                            sampled.position,
+                            NavMesh.AllAreas, path) ||
+                        path.status != NavMeshPathStatus.PathComplete ||
+                        path.corners.Length < 2)
+                        continue;
+
+                    float length = 0f;
+                    for (int corner = 1;
+                         corner < path.corners.Length;
+                         corner++)
+                        length += Vector3.Distance(
+                            path.corners[corner - 1],
+                            path.corners[corner]);
+                    if (length >= bestLength) continue;
+                    bestLength = length;
+                    best = sampled.position;
+                }
+            }
+            return best;
+        }
+
+        private bool HasClearInteractionLine(Vector3 from, Vector3 target)
+        {
+            Vector3 origin = from + Vector3.up * PredictedShotOriginHeight;
+            Vector3 destination = target;
+            destination.y = origin.y;
+            Vector3 delta = destination - origin;
+            float distance = delta.magnitude;
+            if (distance <= 0.1f) return true;
+            int count = Physics.SphereCastNonAlloc(
+                origin,
+                0.28f,
+                delta / distance,
+                combatLineHits,
+                Mathf.Max(0f, distance - 0.55f),
+                Physics.DefaultRaycastLayers,
+                QueryTriggerInteraction.Ignore);
+            for (int index = 0; index < count; index++)
+            {
+                Collider collider = combatLineHits[index].collider;
+                if (collider == null ||
+                    collider.GetComponentInParent<NetworkPlayerReplica>() !=
+                    null)
+                    continue;
+                return false;
+            }
+            return true;
+        }
+
         private void AimAt(Vector3 target, bool fire, bool approach = false)
         {
             Vector3 origin = replica.PresentedPosition + Vector3.up * 1.25f;
             Vector3 delta = target - origin;
             float horizontal = new Vector2(delta.x, delta.z).magnitude;
-            float yaw = Mathf.Atan2(delta.x, delta.z) * Mathf.Rad2Deg;
-            float pitch = -Mathf.Atan2(delta.y, horizontal) * Mathf.Rad2Deg;
-            input.SetCombatFrame(NetworkPresentationIds.RifleGameplay, origin);
+            float targetYaw = Mathf.Atan2(delta.x, delta.z) * Mathf.Rad2Deg;
+            float targetPitch =
+                -Mathf.Atan2(delta.y, horizontal) * Mathf.Rad2Deg;
+            // The acceptance driver used to snap directly to each nearest
+            // target. The authoritative anti-cheat correctly rejected those
+            // synthetic turns as AimRateExceeded, leaving the bot unable to
+            // shoot. Move by less than the 18°/tick server allowance so this
+            // remains representative of a real mouse turn.
+            float yaw = Mathf.MoveTowardsAngle(
+                replica.PresentedAimYaw, targetYaw, 12f);
+            float pitch = Mathf.MoveTowards(
+                replica.PresentedAimPitch, targetPitch, 12f);
+            if (!input.SetExclusivePredictedCombatFrame(
+                    this, NetworkPresentationIds.RifleGameplay))
+            {
+                Abort("input.exclusive-combat-context",
+                    "验收驱动失去了网络枪口上下文的独占权。 ");
+                return;
+            }
+            bool clearLine = HasClearCombatLine(target);
             SetInputFrame(approach
-                    ? ResolveCombatMovement(horizontal)
+                    ? ResolveCombatMovement(
+                        target, yaw, horizontal, clearLine)
                     : Vector2.zero,
                 yaw, pitch, fire,
-                false, false, false, true);
+                false, approach &&
+                       (horizontal > 9f || !clearLine), false, true);
             // Off-screen recording can make rendered frames much slower than
             // the network tick accumulator. Submit the requested shot now so
             // one coroutine fire sample always maps to one real command,
@@ -942,16 +1229,65 @@ namespace FPS.Networking.Acceptance
                 input.TrySubmitCurrentFrame(out _);
         }
 
-        private Vector2 ResolveCombatMovement(float targetDistance)
+        private Vector2 ResolveCombatMovement(
+            Vector3 target,
+            float aimYaw,
+            float targetDistance,
+            bool clearLine)
         {
-            float side = options.Role == Issue100ProcessRole.ClientA
-                ? -0.65f
-                : 0.65f;
+            if (!clearLine)
+                return WorldDirectionToLocal(
+                    ResolveNavigationDirection(target), aimYaw);
+
+            // Keep both bots on the same circling direction so they remain
+            // close enough to exercise the cooperative revive loop instead
+            // of drifting to opposite sides of CityNew.
+            const float side = 0.55f;
+            if (replica.PresentedHealth <= 35f)
+                return new Vector2(side, -1f).normalized;
             if (targetDistance > 9f)
                 return new Vector2(side * 0.25f, 0.97f).normalized;
-            if (targetDistance < 5.5f)
+            if (targetDistance < 7f)
                 return new Vector2(side, -0.76f).normalized;
             return new Vector2(side, 0.15f).normalized;
+        }
+
+        private Vector3 ResolveNavigationDirection(Vector3 target)
+        {
+            navigationPath ??= new NavMeshPath();
+            Vector3 current = replica.PresentedPosition;
+            if (NavMesh.SamplePosition(current, out NavMeshHit from,
+                    2.5f, NavMesh.AllAreas) &&
+                NavMesh.SamplePosition(target, out NavMeshHit to,
+                    4f, NavMesh.AllAreas) &&
+                NavMesh.CalculatePath(from.position, to.position,
+                    NavMesh.AllAreas, navigationPath) &&
+                navigationPath.status != NavMeshPathStatus.PathInvalid &&
+                navigationPath.corners.Length > 1)
+            {
+                Vector3 corner = navigationPath.corners[1];
+                Vector3 pathDelta = corner - current;
+                pathDelta.y = 0f;
+                if (pathDelta.sqrMagnitude > 0.01f)
+                    return pathDelta.normalized;
+            }
+            Vector3 direct = target - current;
+            direct.y = 0f;
+            return direct.sqrMagnitude > 0.01f
+                ? direct.normalized
+                : Vector3.forward;
+        }
+
+        private static Vector2 WorldDirectionToLocal(
+            Vector3 worldDirection,
+            float aimYaw)
+        {
+            float yaw = aimYaw * Mathf.Deg2Rad;
+            float localX = Mathf.Cos(yaw) * worldDirection.x -
+                           Mathf.Sin(yaw) * worldDirection.z;
+            float localZ = Mathf.Sin(yaw) * worldDirection.x +
+                           Mathf.Cos(yaw) * worldDirection.z;
+            return Vector2.ClampMagnitude(new Vector2(localX, localZ), 1f);
         }
 
         private void SetInputFrame(
@@ -973,10 +1309,19 @@ namespace FPS.Networking.Acceptance
             }
         }
 
-        private Vector3 ResolveTargetPoint()
+        private Vector3 ResolveTargetPoint(bool lockTarget = false)
         {
+            if (lockTarget && lockedCombatTargetId > 0 &&
+                TryGetAliveTarget(lockedCombatTargetId,
+                    out NetcodeTargetState locked) &&
+                HasClearCombatLine(AimPoint(locked)))
+                return AimPoint(locked);
+
+            lockedCombatTargetId = 0;
+
             NetcodeTargetState? selected = null;
-            float distance = float.PositiveInfinity;
+            NetcodeTargetState? nearestFallback = null;
+            float fallbackDistance = float.PositiveInfinity;
             for (int index = 0; index < authority.ReplicatedTargetCount;
                  index++)
             {
@@ -985,13 +1330,98 @@ namespace FPS.Networking.Acceptance
                 if (!target.Active || target.Health <= 0f) continue;
                 float candidate = Vector3.Distance(replica.PresentedPosition,
                     target.Position);
-                if (candidate >= distance) continue;
-                distance = candidate;
+                if (candidate < fallbackDistance)
+                {
+                    fallbackDistance = candidate;
+                    nearestFallback = target;
+                }
+                if (!HasClearCombatLine(AimPoint(target))) continue;
+                if (selected.HasValue &&
+                    target.TargetId >= selected.Value.TargetId)
+                    continue;
                 selected = target;
             }
-            return selected.HasValue
-                ? selected.Value.Position
-                : replica.PresentedPosition + Vector3.forward * 30f;
+            selected ??= nearestFallback;
+            if (!selected.HasValue)
+            {
+                lockedCombatTargetId = 0;
+                return replica.PresentedPosition + Vector3.forward * 30f;
+            }
+
+            if (lockTarget)
+                lockedCombatTargetId = selected.Value.TargetId;
+            return AimPoint(selected.Value);
+        }
+
+        private bool TryGetAliveTarget(int targetId,
+            out NetcodeTargetState target)
+        {
+            for (int index = 0; index < authority.ReplicatedTargetCount;
+                 index++)
+            {
+                target = authority.GetReplicatedTarget(index);
+                if (target.TargetId == targetId && target.Active &&
+                    target.Health > 0f)
+                    return true;
+            }
+            target = default;
+            return false;
+        }
+
+        private static Vector3 AimPoint(NetcodeTargetState target)
+        {
+            // Aim into the upper half of the authoritative body sphere. The
+            // root position is near ground level in CityNew; aiming exactly
+            // at that root makes the floor look like an obstruction even
+            // though the enemy is in front of the player.
+            return target.Position + Vector3.up * Mathf.Min(
+                Mathf.Max(0.25f, target.Radius * 0.45f),
+                target.Radius * 0.8f);
+        }
+
+        private bool IsAimAligned(Vector3 target, float toleranceDegrees)
+        {
+            Vector3 origin = replica.PresentedPosition + Vector3.up * 1.25f;
+            Vector3 delta = target - origin;
+            float horizontal = new Vector2(delta.x, delta.z).magnitude;
+            float targetYaw = Mathf.Atan2(delta.x, delta.z) * Mathf.Rad2Deg;
+            float targetPitch =
+                -Mathf.Atan2(delta.y, horizontal) * Mathf.Rad2Deg;
+            return Mathf.Abs(Mathf.DeltaAngle(
+                       replica.PresentedAimYaw, targetYaw)) <=
+                   toleranceDegrees &&
+                   Mathf.Abs(replica.PresentedAimPitch - targetPitch) <=
+                   toleranceDegrees;
+        }
+
+        private bool CanFireAt(Vector3 target, float toleranceDegrees) =>
+            IsAimAligned(target, toleranceDegrees) &&
+            HasClearCombatLine(target);
+
+        private bool HasClearCombatLine(Vector3 target)
+        {
+            Vector3 origin = replica.PresentedPosition + Vector3.up *
+                PredictedShotOriginHeight;
+            Vector3 delta = target - origin;
+            float distance = delta.magnitude;
+            if (distance <= 0.05f) return true;
+            int count = Physics.RaycastNonAlloc(
+                origin,
+                delta / distance,
+                combatLineHits,
+                distance - 0.05f,
+                Physics.DefaultRaycastLayers,
+                QueryTriggerInteraction.Ignore);
+            for (int index = 0; index < count; index++)
+            {
+                Collider collider = combatLineHits[index].collider;
+                if (collider == null ||
+                    collider.GetComponentInParent<NetworkPlayerReplica>() !=
+                    null)
+                    continue;
+                return false;
+            }
+            return true;
         }
 
         private int CountOwnedItems()

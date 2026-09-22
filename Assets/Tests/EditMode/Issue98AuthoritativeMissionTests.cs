@@ -99,6 +99,31 @@ namespace FPS.Tests.Architecture
         }
 
         [Test]
+        public void ClearingFinalThreatRestoresDownedSquadForMissionPhase()
+        {
+            AuthoritativeCoopSimulation simulation = Simulation(
+                twoPlayers: true);
+            simulation.ApplyServerDamageToPlayer(2, 100d);
+
+            AuthoritativeTickResult result = KillOnlyTarget(
+                simulation,
+                inputSequence: 1,
+                clientTick: simulation.CurrentTick + 1);
+
+            Assert.That(result.Snapshot.Mission.Phase,
+                Is.EqualTo(AuthoritativeMissionPhase.ActivateTerminal));
+            Assert.That(result.Snapshot.Player(2).LifeState,
+                Is.EqualTo(AuthoritativePlayerLifeState.Alive),
+                "战斗结束后不能让倒地队员永久阻塞终端与全员撤离。 ");
+            Assert.That(result.Snapshot.Player(2).Health,
+                Is.EqualTo(40d));
+            Assert.That(result.Events.Any(value =>
+                    value.Kind == AuthoritativeEventKind.PlayerRevived &&
+                    value.TargetId == 2),
+                Is.True);
+        }
+
+        [Test]
         public void SquadWipeProducesOneSharedDefeatOutcome()
         {
             AuthoritativeCoopSimulation simulation = Simulation(

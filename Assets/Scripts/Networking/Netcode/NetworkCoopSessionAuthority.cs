@@ -730,41 +730,12 @@ namespace FPS.Networking.Netcode
             Vector3 from = NetcodeConversions.ToUnity(current.Position);
             Vector3 to = NetcodeConversions.ToUnity(desired.Position);
             Vector3 horizontal = new(to.x - from.x, 0f, to.z - from.z);
-            float distance = horizontal.magnitude;
-            if (distance <= 0.0001f)
+            if (horizontal.sqrMagnitude <= 0.00000001f)
                 return desired;
 
-            const float radius = 0.28f;
-            const float height = 1.8f;
-            const float skin = 0.03f;
-            Vector3 direction = horizontal / distance;
-            Vector3 bottom = from + Vector3.up * (radius + skin);
-            Vector3 top = from + Vector3.up * (height - radius - skin);
-            int count = Physics.CapsuleCastNonAlloc(
-                bottom,
-                top,
-                radius,
-                direction,
-                playerMovementHits,
-                distance + skin,
-                Physics.DefaultRaycastLayers,
-                QueryTriggerInteraction.Ignore);
-            RaycastHit? nearest = null;
-            for (int index = 0; index < count; index++)
-            {
-                RaycastHit hit = playerMovementHits[index];
-                if (!IsWorldMovementObstacle(hit.collider)) continue;
-                if (nearest == null || hit.distance < nearest.Value.distance)
-                    nearest = hit;
-            }
-            if (nearest != null)
-            {
-                float allowed = Mathf.Max(0f,
-                    nearest.Value.distance - skin);
-                horizontal = direction * Mathf.Min(distance, allowed);
-            }
-
-            Vector3 resolvedPosition = from + horizontal;
+            Vector3 resolvedHorizontal = ResolveCapsuleDisplacement(
+                from, horizontal);
+            Vector3 resolvedPosition = from + resolvedHorizontal;
             resolvedPosition.y = to.y;
             return new PlayerMovementState(
                 NetcodeConversions.ToDomain(resolvedPosition),
@@ -775,6 +746,70 @@ namespace FPS.Networking.Netcode
                 desired.Grounded,
                 desired.LastJumpTick,
                 desired.GroundHeight);
+        }
+
+        private Vector3 ResolveCapsuleDisplacement(
+            Vector3 origin,
+            Vector3 requestedDisplacement)
+        {
+            const float radius = 0.28f;
+            const float height = 1.8f;
+            const float skin = 0.03f;
+            Vector3 resolved = Vector3.zero;
+            Vector3 remaining = requestedDisplacement;
+
+            // Resolve the initial impact and one secondary corner impact.
+            // A hard clamp makes a player stick to walls whenever input has
+            // even a small component into the surface; projecting the
+            // remainder onto the contact plane gives standard FPS wall slide.
+            for (int pass = 0; pass < 2; pass++)
+            {
+                float distance = remaining.magnitude;
+                if (distance <= 0.0001f) break;
+                Vector3 direction = remaining / distance;
+                Vector3 cursor = origin + resolved;
+                Vector3 bottom = cursor + Vector3.up * (radius + skin);
+                Vector3 top = cursor +
+                    Vector3.up * (height - radius - skin);
+                int count = Physics.CapsuleCastNonAlloc(
+                    bottom,
+                    top,
+                    radius,
+                    direction,
+                    playerMovementHits,
+                    distance + skin,
+                    Physics.DefaultRaycastLayers,
+                    QueryTriggerInteraction.Ignore);
+                RaycastHit? nearest = null;
+                for (int index = 0; index < count; index++)
+                {
+                    RaycastHit hit = playerMovementHits[index];
+                    if (!IsWorldMovementObstacle(hit.collider)) continue;
+                    if (nearest == null ||
+                        hit.distance < nearest.Value.distance)
+                        nearest = hit;
+                }
+                if (nearest == null)
+                {
+                    resolved += remaining;
+                    break;
+                }
+
+                float allowed = Mathf.Max(0f,
+                    nearest.Value.distance - skin);
+                Vector3 advanced = direction *
+                    Mathf.Min(distance, allowed);
+                resolved += advanced;
+                remaining -= advanced;
+
+                Vector3 surfaceNormal = nearest.Value.normal;
+                surfaceNormal.y = 0f;
+                if (surfaceNormal.sqrMagnitude <= 0.0001f) break;
+                surfaceNormal.Normalize();
+                remaining = Vector3.ProjectOnPlane(
+                    remaining, surfaceNormal);
+            }
+            return resolved;
         }
 
         private static bool IsWorldMovementObstacle(Collider candidate)

@@ -122,28 +122,34 @@ namespace FPS.Networking.Session
         private static CoopAuthenticationException Map(
             RequestFailedException exception)
         {
-            if (exception.ErrorCode == AuthenticationErrorCodes.InvalidSessionToken)
-                return new CoopAuthenticationException(
-                    CoopAuthenticationFailure.SessionExpired);
-            if (exception.ErrorCode == AuthenticationErrorCodes.InvalidParameters)
-                return new CoopAuthenticationException(
-                    CoopAuthenticationFailure.InvalidCredentials);
-            if (exception.ErrorCode == CommonErrorCodes.TransportError)
-                return new CoopAuthenticationException(
-                    CoopAuthenticationFailure.NetworkUnavailable);
-            if (exception.ErrorCode == CommonErrorCodes.TooManyRequests)
-                return new CoopAuthenticationException(
-                    CoopAuthenticationFailure.RateLimited);
+            return new CoopAuthenticationException(ClassifyRequestFailure(
+                exception.ErrorCode, exception.Message));
+        }
 
-            string message = exception.Message?.ToLowerInvariant() ?? string.Empty;
-            if (message.Contains("already") || message.Contains("conflict"))
-                return new CoopAuthenticationException(
-                    CoopAuthenticationFailure.AccountAlreadyExists);
-            if (message.Contains("invalid") || message.Contains("unauthorized"))
-                return new CoopAuthenticationException(
-                    CoopAuthenticationFailure.InvalidCredentials);
-            return new CoopAuthenticationException(
-                CoopAuthenticationFailure.ServiceUnavailable);
+        public static CoopAuthenticationFailure ClassifyRequestFailure(
+            int errorCode, string message)
+        {
+            string normalized = message?.ToLowerInvariant() ?? string.Empty;
+            if (errorCode == AuthenticationErrorCodes.InvalidParameters &&
+                (normalized.Contains("external id provider is not available") ||
+                 normalized.Contains("usernamepassword") &&
+                 normalized.Contains("permission_denied")))
+                return CoopAuthenticationFailure.ProviderUnavailable;
+
+            if (errorCode == AuthenticationErrorCodes.InvalidSessionToken)
+                return CoopAuthenticationFailure.SessionExpired;
+            if (errorCode == AuthenticationErrorCodes.InvalidParameters)
+                return CoopAuthenticationFailure.InvalidCredentials;
+            if (errorCode == CommonErrorCodes.TransportError)
+                return CoopAuthenticationFailure.NetworkUnavailable;
+            if (errorCode == CommonErrorCodes.TooManyRequests)
+                return CoopAuthenticationFailure.RateLimited;
+
+            if (normalized.Contains("already") || normalized.Contains("conflict"))
+                return CoopAuthenticationFailure.AccountAlreadyExists;
+            if (normalized.Contains("invalid") || normalized.Contains("unauthorized"))
+                return CoopAuthenticationFailure.InvalidCredentials;
+            return CoopAuthenticationFailure.ServiceUnavailable;
         }
     }
 }

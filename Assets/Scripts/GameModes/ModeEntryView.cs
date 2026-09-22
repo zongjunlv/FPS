@@ -81,8 +81,9 @@ public sealed class ModeEntryView : MonoBehaviour
         ModeUiFactory.CreateImage(
             "Background",
             canvas,
-            new Color(0.018f, 0.035f, 0.05f, 1f),
+            TacticalUiTheme.Background,
             true);
+        TacticalUiTheme.AddScanLines(canvas, 14);
         CreateAmbientAccent(canvas);
 
         RectTransform panel = ModeUiFactory.CreateRect(
@@ -90,7 +91,7 @@ public sealed class ModeEntryView : MonoBehaviour
             canvas);
         panel.anchorMin = panel.anchorMax = panel.pivot =
             new Vector2(0.5f, 0.5f);
-        panel.sizeDelta = new Vector2(840f, 900f);
+        panel.sizeDelta = new Vector2(1660f, 900f);
         panel.anchoredPosition = Vector2.zero;
 
         TMP_Text eyebrow = ModeUiFactory.CreateText(
@@ -98,49 +99,63 @@ public sealed class ModeEntryView : MonoBehaviour
             panel,
             "TACTICAL SURVIVAL PROTOCOL",
             18f,
-            TextAlignmentOptions.Center,
+            TextAlignmentOptions.MidlineLeft,
             font,
-            new Color(0.28f, 0.86f, 0.82f, 1f));
+            TacticalUiTheme.Cyan);
         ModeUiFactory.SetRect(
             eyebrow.rectTransform,
-            new Vector2(0.5f, 1f),
-            new Vector2(0.5f, 1f),
-            new Vector2(0.5f, 1f),
-            new Vector2(760f, 34f),
-            new Vector2(0f, -24f));
+            new Vector2(0f, 1f),
+            new Vector2(0f, 1f),
+            new Vector2(0f, 1f),
+            new Vector2(900f, 34f),
+            new Vector2(0f, -28f));
 
         TMP_Text title = ModeUiFactory.CreateText(
             "Title",
             panel,
             "FPS 生存行动",
             54f,
-            TextAlignmentOptions.Center,
+            TextAlignmentOptions.MidlineLeft,
             font,
             Color.white);
         title.fontStyle = FontStyles.Bold;
         ModeUiFactory.SetRect(
             title.rectTransform,
-            new Vector2(0.5f, 1f),
-            new Vector2(0.5f, 1f),
-            new Vector2(0.5f, 1f),
-            new Vector2(800f, 80f),
-            new Vector2(0f, -66f));
+            new Vector2(0f, 1f),
+            new Vector2(0f, 1f),
+            new Vector2(0f, 1f),
+            new Vector2(980f, 80f),
+            new Vector2(0f, -68f));
 
         TMP_Text subtitle = ModeUiFactory.CreateText(
             "Subtitle",
             panel,
             "选择行动模式",
             23f,
-            TextAlignmentOptions.Center,
+            TextAlignmentOptions.MidlineLeft,
             font,
-            new Color(0.68f, 0.75f, 0.78f, 1f));
+            TacticalUiTheme.TextSecondary);
         ModeUiFactory.SetRect(
             subtitle.rectTransform,
-            new Vector2(0.5f, 1f),
-            new Vector2(0.5f, 1f),
-            new Vector2(0.5f, 1f),
-            new Vector2(700f, 42f),
-            new Vector2(0f, -146f));
+            new Vector2(0f, 1f),
+            new Vector2(0f, 1f),
+            new Vector2(0f, 1f),
+            new Vector2(980f, 42f),
+            new Vector2(0f, -145f));
+
+        RectTransform verified = TacticalUiTheme.CreatePill(panel,
+            "账号验证状态", new Vector2(330f, 52f),
+            new Vector2(665f, 376f),
+            new Color(0.035f, 0.14f, 0.15f, 0.95f));
+        TacticalUiTheme.CreateIcon("安全图标", verified, "checkmark",
+            TacticalUiTheme.Green, new Vector2(0f, 0.5f),
+            new Vector2(0f, 0.5f), new Vector2(0f, 0.5f),
+            new Vector2(28f, 28f), new Vector2(18f, 0f));
+        TMP_Text verifiedText = ModeUiFactory.CreateText(
+            "安全状态文字", verified, "账号已验证  ·  模式大厅在线", 16f,
+            TextAlignmentOptions.MidlineLeft, font,
+            TacticalUiTheme.TextPrimary);
+        ModeUiFactory.Stretch(verifiedText.rectTransform, 58f, 4f);
 
         RectTransform list = ModeUiFactory.CreateRect(
             "Mode List",
@@ -150,16 +165,16 @@ public sealed class ModeEntryView : MonoBehaviour
             new Vector2(0.5f, 0.5f),
             new Vector2(0.5f, 0.5f),
             new Vector2(0.5f, 0.5f),
-            new Vector2(760f, 456f),
-            new Vector2(0f, 18f));
-        UnityEngine.UI.VerticalLayoutGroup layout =
-            list.gameObject.AddComponent<UnityEngine.UI.VerticalLayoutGroup>();
-        layout.spacing = 18f;
+            new Vector2(1660f, 508f),
+            new Vector2(0f, -2f));
+        UnityEngine.UI.HorizontalLayoutGroup layout =
+            list.gameObject.AddComponent<UnityEngine.UI.HorizontalLayoutGroup>();
+        layout.spacing = 24f;
         layout.padding = new RectOffset(0, 0, 0, 0);
-        layout.childAlignment = TextAnchor.UpperCenter;
+        layout.childAlignment = TextAnchor.MiddleCenter;
         layout.childControlWidth = true;
         layout.childControlHeight = true;
-        layout.childForceExpandWidth = true;
+        layout.childForceExpandWidth = false;
         layout.childForceExpandHeight = false;
 
         for (int index = 0; index < catalog.Modes.Count; index++)
@@ -184,8 +199,8 @@ public sealed class ModeEntryView : MonoBehaviour
             new Vector2(0.5f, 0f),
             new Vector2(0.5f, 0f),
             new Vector2(0.5f, 0f),
-            new Vector2(760f, 40f),
-            new Vector2(0f, 76f));
+            new Vector2(1050f, 40f),
+            new Vector2(0f, 80f));
 
         RectTransform status = ModeUiFactory.CreateRect(
             "Transition Status",
@@ -195,8 +210,8 @@ public sealed class ModeEntryView : MonoBehaviour
             new Vector2(0.5f, 0f),
             new Vector2(0.5f, 0f),
             new Vector2(0.5f, 0f),
-            new Vector2(760f, 54f),
-            new Vector2(0f, 12f));
+            new Vector2(1040f, 54f),
+            new Vector2(0f, 14f));
         statusBackground = status.gameObject.AddComponent<
             UnityEngine.UI.Image>();
         statusBackground.color = new Color(0.04f, 0.12f, 0.15f, 0.92f);
@@ -236,19 +251,30 @@ public sealed class ModeEntryView : MonoBehaviour
         buttonObject.transform.SetParent(parent, false);
         UnityEngine.UI.LayoutElement element =
             buttonObject.GetComponent<UnityEngine.UI.LayoutElement>();
-        element.preferredHeight = 140f;
-        element.minHeight = 140f;
+        element.preferredWidth = 530f;
+        element.minWidth = 500f;
+        element.preferredHeight = 508f;
+        element.minHeight = 508f;
         UnityEngine.UI.Image image =
             buttonObject.GetComponent<UnityEngine.UI.Image>();
-        image.color = new Color(0.045f, 0.085f, 0.11f, 0.98f);
+        Color accentColor = AccentFor(definition.Mode);
+        image.color = TacticalUiTheme.Surface;
         image.raycastTarget = true;
+        TacticalUiTheme.AddSurfaceChrome(
+            (RectTransform)buttonObject.transform, accentColor);
         UnityEngine.UI.Button button =
             buttonObject.GetComponent<UnityEngine.UI.Button>();
         UnityEngine.UI.ColorBlock colors = button.colors;
-        colors.normalColor = new Color(0.045f, 0.085f, 0.11f, 1f);
-        colors.highlightedColor = new Color(0.075f, 0.18f, 0.2f, 1f);
-        colors.selectedColor = new Color(0.075f, 0.24f, 0.25f, 1f);
-        colors.pressedColor = new Color(0.04f, 0.34f, 0.32f, 1f);
+        colors.normalColor = TacticalUiTheme.Surface;
+        colors.highlightedColor = new Color(
+            accentColor.r * 0.18f, accentColor.g * 0.18f,
+            accentColor.b * 0.18f, 1f);
+        colors.selectedColor = new Color(
+            accentColor.r * 0.24f, accentColor.g * 0.24f,
+            accentColor.b * 0.24f, 1f);
+        colors.pressedColor = new Color(
+            accentColor.r * 0.32f, accentColor.g * 0.32f,
+            accentColor.b * 0.32f, 1f);
         colors.disabledColor = new Color(0.035f, 0.05f, 0.06f, 0.8f);
         colors.colorMultiplier = 1f;
         colors.fadeDuration = 0.1f;
@@ -270,14 +296,33 @@ public sealed class ModeEntryView : MonoBehaviour
             Vector2.zero);
         UnityEngine.UI.Image accentImage =
             accent.gameObject.AddComponent<UnityEngine.UI.Image>();
-        accentImage.color = new Color(0.28f, 0.9f, 0.84f, 1f);
+        accentImage.color = accentColor;
         accentImage.raycastTarget = false;
+
+        RectTransform iconPlate = TacticalUiTheme.CreatePill(
+            buttonObject.transform, "模式图标底座", new Vector2(112f, 112f),
+            new Vector2(-177f, 156f),
+            new Color(accentColor.r, accentColor.g, accentColor.b, 0.12f));
+        TacticalUiTheme.CreateIcon("模式图标", iconPlate,
+            IconFor(definition.Mode), accentColor,
+            new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f),
+            new Vector2(0.5f, 0.5f), new Vector2(68f, 68f), Vector2.zero);
+
+        TMP_Text protocol = ModeUiFactory.CreateText(
+            "Mode Protocol", buttonObject.transform,
+            ProtocolFor(definition.Mode), 15f,
+            TextAlignmentOptions.MidlineRight, font, accentColor);
+        protocol.fontStyle = FontStyles.Bold;
+        ModeUiFactory.SetRect(protocol.rectTransform,
+            new Vector2(1f, 1f), new Vector2(1f, 1f),
+            new Vector2(1f, 1f), new Vector2(260f, 32f),
+            new Vector2(-30f, -36f));
 
         TMP_Text name = ModeUiFactory.CreateText(
             "Mode Name",
             buttonObject.transform,
             definition.DisplayName,
-            29f,
+            32f,
             TextAlignmentOptions.Left,
             font,
             Color.white);
@@ -287,41 +332,108 @@ public sealed class ModeEntryView : MonoBehaviour
             new Vector2(0f, 0.5f),
             new Vector2(0f, 0.5f),
             new Vector2(0f, 0.5f),
-            new Vector2(620f, 42f),
-            new Vector2(34f, 23f));
+            new Vector2(440f, 48f),
+            new Vector2(30f, 62f));
 
         TMP_Text description = ModeUiFactory.CreateText(
             "Description",
             buttonObject.transform,
             definition.Description,
-            17f,
-            TextAlignmentOptions.Left,
+            18f,
+            TextAlignmentOptions.TopLeft,
             font,
-            new Color(0.66f, 0.73f, 0.76f, 1f));
+            TacticalUiTheme.TextSecondary);
+        description.enableWordWrapping = true;
+        description.lineSpacing = 5f;
         ModeUiFactory.SetRect(
             description.rectTransform,
             new Vector2(0f, 0.5f),
             new Vector2(0f, 0.5f),
             new Vector2(0f, 0.5f),
-            new Vector2(660f, 44f),
-            new Vector2(34f, -28f));
+            new Vector2(450f, 100f),
+            new Vector2(30f, -12f));
+
+        TMP_Text features = ModeUiFactory.CreateText(
+            "Mode Features", buttonObject.transform,
+            FeaturesFor(definition.Mode), 16f,
+            TextAlignmentOptions.TopLeft, font, TacticalUiTheme.TextPrimary);
+        features.enableWordWrapping = true;
+        features.lineSpacing = 12f;
+        ModeUiFactory.SetRect(features.rectTransform,
+            new Vector2(0f, 0f), new Vector2(0f, 0f),
+            new Vector2(0f, 0f), new Vector2(410f, 92f),
+            new Vector2(30f, 84f));
+
+        TMP_Text actionLabel = ModeUiFactory.CreateText(
+            "Action Label", buttonObject.transform,
+            "进入模式", 17f, TextAlignmentOptions.MidlineLeft,
+            font, accentColor);
+        actionLabel.fontStyle = FontStyles.Bold;
+        ModeUiFactory.SetRect(actionLabel.rectTransform,
+            new Vector2(0f, 0f), new Vector2(0f, 0f),
+            new Vector2(0f, 0f), new Vector2(260f, 44f),
+            new Vector2(30f, 24f));
 
         TMP_Text arrow = ModeUiFactory.CreateText(
             "Arrow",
             buttonObject.transform,
             "›",
-            42f,
+            34f,
             TextAlignmentOptions.Center,
             font,
-            new Color(0.28f, 0.9f, 0.84f, 1f));
+            accentColor);
         ModeUiFactory.SetRect(
             arrow.rectTransform,
-            new Vector2(1f, 0.5f),
-            new Vector2(1f, 0.5f),
-            new Vector2(1f, 0.5f),
-            new Vector2(54f, 70f),
-            new Vector2(-20f, 0f));
+            new Vector2(1f, 0f),
+            new Vector2(1f, 0f),
+            new Vector2(1f, 0f),
+            new Vector2(44f, 44f),
+            new Vector2(-28f, 24f));
         return button;
+    }
+
+    private static string IconFor(GameModeId mode)
+    {
+        return mode switch
+        {
+            GameModeId.Tutorial => "target",
+            GameModeId.SoloBattle => "singleplayer",
+            GameModeId.Coop => "multiplayer",
+            _ => "menuGrid"
+        };
+    }
+
+    private static string ProtocolFor(GameModeId mode)
+    {
+        return mode switch
+        {
+            GameModeId.Tutorial => "TRAINING / 01",
+            GameModeId.SoloBattle => "SOLO OP / 02",
+            GameModeId.Coop => "CO-OP PVE / 03",
+            _ => "OPERATION"
+        };
+    }
+
+    private static string FeaturesFor(GameModeId mode)
+    {
+        return mode switch
+        {
+            GameModeId.Tutorial => "• 基础移动与射击训练\n• 固定目标与部位伤害教学",
+            GameModeId.SoloBattle => "• 波次任务与肉鸽成长\n• 背包、敌群与撤离流程",
+            GameModeId.Coop => "• 双人服务器权威战局\n• 公开房间、角色与准备系统",
+            _ => string.Empty
+        };
+    }
+
+    private static Color AccentFor(GameModeId mode)
+    {
+        return mode switch
+        {
+            GameModeId.Tutorial => TacticalUiTheme.Cyan,
+            GameModeId.SoloBattle => TacticalUiTheme.Amber,
+            GameModeId.Coop => TacticalUiTheme.Green,
+            _ => TacticalUiTheme.Blue
+        };
     }
 
     private void LinkNavigation()

@@ -45,6 +45,11 @@ namespace FPS.Tests.Architecture
 
             Assert.That(scenario.ContentId, Is.EqualTo(catalog.StableId));
             Assert.That(scenario.Players.Length, Is.EqualTo(2));
+            Assert.That(scenario.Players,
+                Has.All.Matches<CoopPlayerSpawnDefinition>(player =>
+                    player.Health == 100f && player.Armor == 50f &&
+                    player.MaximumArmor == 100f),
+                "联机战斗应为单人开房测试和双人 PVE 提供可用的基础生存数值。 ");
             Assert.That(scenario.Waves.Length,
                 Is.EqualTo(catalog.WaveSequence.WaveCount));
             Assert.That(scenario.Targets.Length,

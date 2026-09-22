@@ -56,6 +56,7 @@ public class PlayerController : MonoBehaviour
     public bool IsPaused { get; private set; }
     public bool GameplayInputEnabled { get; private set; } = true;
     public bool NetworkMovementControlled { get; private set; }
+    public bool PauseInputHandledExternally { get; private set; }
     public bool IsSprinting =>
         CanSprint(input.Move, input.SprintHeld);
     public bool InvertY
@@ -142,7 +143,10 @@ public class PlayerController : MonoBehaviour
             return;
         }
 
-        HandlePauseInput();
+        if (!PauseInputHandledExternally)
+        {
+            HandlePauseInput();
+        }
 
         HandleAimInput();
         Rotate();
@@ -229,6 +233,20 @@ public class PlayerController : MonoBehaviour
         }
 
         ApplyCursorState();
+    }
+
+    public void SetPauseInputHandledExternally(bool handledExternally)
+    {
+        if (PauseInputHandledExternally == handledExternally) return;
+        PauseInputHandledExternally = handledExternally;
+        if (handledExternally && IsPaused)
+        {
+            SetPaused(false);
+        }
+        else
+        {
+            ApplyCursorState();
+        }
     }
 
     public void SetNetworkMovementControlled(bool controlled)
@@ -345,6 +363,12 @@ public class PlayerController : MonoBehaviour
 
     private void HandlePauseInput()
     {
+        if (PauseInputHandledExternally)
+        {
+            ApplyCursorState();
+            return;
+        }
+
         if (input.PausePressed &&
             (gameplayLocks == null ||
              gameplayLocks.LastModalTransitionFrame != Time.frameCount))

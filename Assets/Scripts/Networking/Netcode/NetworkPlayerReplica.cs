@@ -51,6 +51,8 @@ namespace FPS.Networking.Netcode
             NetworkPresentationIds.RifleGameplay;
         private Vector3 localShotOrigin;
         private bool hasLocalShotOrigin;
+        private bool usePredictedShotOrigin;
+        private const float PredictedShotOriginHeight = 1.25f;
         private readonly List<NetcodePresentationEvent>
             pendingPresentationEvents = new();
         private readonly List<NetcodeShotFeedbackEvent> pendingShotEvents =
@@ -320,9 +322,7 @@ namespace FPS.Networking.Netcode
                 sprintHeld,
                 crouchRequested,
                 localGameplayWeaponId,
-                hasLocalShotOrigin
-                    ? NetcodeConversions.ToDomain(localShotOrigin)
-                    : predicted));
+                ResolveShotOrigin(predicted)));
             payload.AimingHeld = aimingHeld;
             PresentedSprinting = sprintHeld && !crouchRequested &&
                 moveZ > 0.1f;
@@ -342,6 +342,36 @@ namespace FPS.Networking.Netcode
                 : NetworkPresentationIds.RifleGameplay;
             localShotOrigin = shotOrigin;
             hasLocalShotOrigin = true;
+            usePredictedShotOrigin = false;
+        }
+
+        /// <summary>
+        /// Headless automation has no rendered weapon muzzle. Use the same
+        /// predicted player pose plus the standard first-person eye height as
+        /// its virtual muzzle. Using the feet as the muzzle would make the
+        /// otherwise correct pitch point into the ground.
+        /// Runtime clients continue to use ConfigureLocalCombatContext.
+        /// </summary>
+        public void ConfigurePredictedCombatContext(string gameplayWeaponId)
+        {
+            string normalized = gameplayWeaponId?.Trim() ?? string.Empty;
+            localGameplayWeaponId = string.Equals(normalized,
+                NetworkPresentationIds.HandgunGameplay,
+                StringComparison.Ordinal)
+                ? NetworkPresentationIds.HandgunGameplay
+                : NetworkPresentationIds.RifleGameplay;
+            hasLocalShotOrigin = false;
+            usePredictedShotOrigin = true;
+        }
+
+        private NetVector3 ResolveShotOrigin(NetVector3 predicted)
+        {
+            if (hasLocalShotOrigin)
+                return NetcodeConversions.ToDomain(localShotOrigin);
+            return usePredictedShotOrigin
+                ? predicted + new NetVector3(
+                    0d, PredictedShotOriginHeight, 0d)
+                : predicted;
         }
 
         public NetcodePlayerCommand SubmitLocalCommand(
@@ -679,6 +709,7 @@ namespace FPS.Networking.Netcode
             CombatWeaponId = NetworkPresentationIds.RifleGameplay;
             localGameplayWeaponId = NetworkPresentationIds.RifleGameplay;
             hasLocalShotOrigin = false;
+            usePredictedShotOrigin = false;
             PredictionSampleCount = 0;
             PredictionCorrectionCount = 0;
             MaximumPredictionError = 0d;

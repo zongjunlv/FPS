@@ -22,6 +22,7 @@ namespace FPS.Networking.Session
         NetworkUnavailable,
         RateLimited,
         SessionExpired,
+        ProviderUnavailable,
         ServiceUnavailable,
         Unknown
     }
@@ -307,6 +308,8 @@ namespace FPS.Networking.Session
                         "操作过于频繁，请稍后重试。",
                     CoopAuthenticationFailure.SessionExpired =>
                         "登录会话已失效，请重新登录。",
+                    CoopAuthenticationFailure.ProviderUnavailable =>
+                        "账号项目尚未启用用户名密码登录，请联系开发者检查认证配置。",
                     CoopAuthenticationFailure.ServiceUnavailable =>
                         "账号服务暂时不可用，请稍后重试。",
                     _ => "账号操作失败，请稍后重试。"

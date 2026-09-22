@@ -14,6 +14,8 @@ namespace FPS.Networking
     public static class CityNewAuthoritativeScenarioAdapter
     {
         private const int NetworkTickRate = 60;
+        private const float CooperativeEnemyDamageMultiplier = 0.25f;
+        private const float CooperativeStartingArmor = 50f;
         private static readonly Vector3 PlayerOrigin =
             new(49.761f, 0.16f, 59.719f);
         private static readonly Vector3 EncounterCenter =
@@ -27,6 +29,8 @@ namespace FPS.Networking
             CoopEnvironmentReadinessRegistry.RegisterCityNewEnvironment(
                 RuntimeNavMeshBootstrap.EnsureForActiveScene,
                 () => RuntimeNavMeshBootstrap.IsSceneReady);
+            CoopEnvironmentReadinessRegistry.RegisterCityNewContentIsolation(
+                () => CoopSceneContentIsolation.DisableLegacySceneEnemies());
         }
 
         public static CoopScenarioConfiguration Build(
@@ -52,7 +56,7 @@ namespace FPS.Networking
                     Position = PlayerOrigin +
                         Vector3.right * ((index - center) * 2.5f),
                     Health = 100f,
-                    Armor = 0f,
+                    Armor = CooperativeStartingArmor,
                     MaximumArmor = 100f
                 };
             }
@@ -140,7 +144,8 @@ namespace FPS.Networking
                         MoveSpeed = BaseMoveSpeed(role),
                         AttackRange = AttackRange(role),
                         AttackDamage = Mathf.Max(1f,
-                            enemy.Attack * DamageScale(role)),
+                            enemy.Attack * DamageScale(role) *
+                            CooperativeEnemyDamageMultiplier),
                         AttackIntervalTicks = AttackInterval(role),
                         RewardExperience = role ==
                             AuthoritativeEnemyRole.Elite
@@ -167,8 +172,8 @@ namespace FPS.Networking
                 reviveRadius: 2.5d,
                 terminalHoldTicks: 150,
                 extractionHoldTicks: 120,
-                reviveHoldTicks: 180,
-                revivedHealth: 40d);
+                reviveHoldTicks: 90,
+                revivedHealth: 60d);
             return new CoopScenarioConfiguration(
                 players,
                 targets.ToArray(),

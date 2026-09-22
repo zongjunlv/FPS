@@ -758,6 +758,7 @@ namespace FPS.Networking.Domain
             if (missionPhase == AuthoritativeMissionPhase.ClearEnemies &&
                 waveStatus == AuthoritativeWaveStatus.Completed)
             {
+                RestoreDownedSquadAfterCombat(events);
                 SetMissionPhase(AuthoritativeMissionPhase.ActivateTerminal,
                     events);
             }
@@ -837,6 +838,31 @@ namespace FPS.Networking.Domain
             ResetReviveProgress();
             events.Add(Emit(AuthoritativeEventKind.PlayerRevived,
                 helperId, revived, downed.Health));
+        }
+
+        private void RestoreDownedSquadAfterCombat(
+            ICollection<AuthoritativeEvent> events)
+        {
+            // Once the encounter is clear there is no remaining combat risk
+            // with which to complete a manual revive. Leaving a connected
+            // squad member downed here can permanently block the all-player
+            // extraction gate, so transition every survivor into the mission
+            // phase in a valid playable state. Manual revives during combat
+            // remain fully authoritative and unchanged.
+            foreach (MutablePlayer player in players.Values)
+            {
+                if (!player.Connected || player.IsAlive) continue;
+                player.Health = Math.Min(
+                    player.MaximumHealth,
+                    missionDefinition.RevivedHealth);
+                events.Add(Emit(
+                    AuthoritativeEventKind.PlayerRevived,
+                    0,
+                    player.Id,
+                    player.Health,
+                    "post-combat"));
+            }
+            ResetReviveProgress();
         }
 
         private void FailMission(

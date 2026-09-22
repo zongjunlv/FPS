@@ -21,6 +21,7 @@ public sealed class CoopNetworkInputBridge : MonoBehaviour
     private float nextDriverSearchTime;
     private bool combatSuppressed;
     private bool overlaySuppressed;
+    private bool localMenuSuppressed;
     private bool networkCrouching;
     private bool networkControlApplied;
     private string lastAmmoWeaponId;
@@ -33,6 +34,8 @@ public sealed class CoopNetworkInputBridge : MonoBehaviour
     private float lastServerMaximumArmor = -1f;
     private bool lastServerAlive;
     private readonly List<PredictedShot> pendingPredictedShots = new();
+
+    public bool LocalMenuSuppressed => localMenuSuppressed;
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
     private static void Install()
@@ -63,10 +66,21 @@ public sealed class CoopNetworkInputBridge : MonoBehaviour
     {
         ResolveSession();
         ResolveOverlay();
-        SetOverlaySuppressed(overlay != null && overlay.IsVisible);
-        bool connected = session != null && session.IsConnected;
-        SetCombatSuppressed(connected);
-        SetNetworkMovementControlled(connected);
+        SetOverlaySuppressed(localMenuSuppressed ||
+                             overlay != null && overlay.IsVisible);
+        bool coopBattle = GameModeContext.IsActive(
+                              GameModeId.Coop,
+                              GameModeStage.CoopBattle) ||
+                          GameModeContext.RequestedMode == GameModeId.Coop &&
+                          GameModeContext.RequestedStage ==
+                          GameModeStage.CoopBattle;
+        bool connected = session != null &&
+                         session.IsBattleTransportConnected;
+        // Never fall back to the scene's local single-player controller when
+        // the dedicated connection fails. That fallback was the source of the
+        // misleading one-Spider "co-op" battle.
+        SetCombatSuppressed(coopBattle);
+        SetNetworkMovementControlled(coopBattle);
         if (!connected || input == null || player == null)
         {
             SubscribeReplica(null);
@@ -108,11 +122,19 @@ public sealed class CoopNetworkInputBridge : MonoBehaviour
 
     private void OnDisable()
     {
+        localMenuSuppressed = false;
         SetCombatSuppressed(false);
         SetOverlaySuppressed(false);
         SetNetworkMovementControlled(false);
         SubscribeReplica(null);
         SubscribeDriver(null);
+    }
+
+    public void SetLocalMenuSuppressed(bool suppressed)
+    {
+        localMenuSuppressed = suppressed;
+        SetOverlaySuppressed(suppressed ||
+                             overlay != null && overlay.IsVisible);
     }
 
     private void ResolveOverlay()

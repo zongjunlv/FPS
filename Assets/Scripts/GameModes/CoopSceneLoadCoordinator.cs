@@ -49,6 +49,7 @@ public sealed class CoopSceneLoadCoordinator : MonoBehaviour
     private void Update()
     {
         session?.TickSceneLoadTimeout(Time.realtimeSinceStartupAsDouble);
+        session?.EnsureBattleTransportForCurrentPhase();
     }
 
     private void HandleLoadRequested()

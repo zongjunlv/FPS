@@ -107,6 +107,12 @@ namespace FPS.Networking.Acceptance
                     "客户端没有进入 CityNew。");
                 yield break;
             }
+            // The acceptance executable enters CityNew directly instead of
+            // through GameModeFlowController. Apply the same isolation used
+            // by a real cooperative session so the authored solo Spider can
+            // neither damage the local-only Health component nor display the
+            // obsolete single-enemy fallback during the network scenario.
+            CoopEnvironmentReadinessRegistry.IsolateCityNewLegacyContent();
             evidence.Passed(Issue100AcceptanceSteps.SceneLoad,
                 detail: "scene=CityNew");
 

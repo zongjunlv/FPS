@@ -50,6 +50,10 @@ namespace FPS.Tests.PlayMode.Issue69
             Assert.That(view.ReadyButton.gameObject.activeSelf, Is.False);
             Assert.That(view.StartRoomButton.gameObject.activeSelf, Is.False);
             Assert.That(view.JoinRoomButton.interactable, Is.False);
+            Assert.That(view.LobbyPanel
+                .GetComponentsInChildren<UnityEngine.UI.Image>(true)
+                .Any(image => image.gameObject.name == "大厅图标" &&
+                              image.sprite != null), Is.True);
 
             view.JoinCodeInput.text = "ABC123";
             yield return null;

@@ -126,6 +126,23 @@ namespace FPS.Networking.Session
                 networkBootstrap.NetworkManager.IsHost);
         public bool IsConnected => (activeSession != null || directSession) &&
             State == CoopSessionState.Connected;
+        /// <summary>
+        /// True only after the local NGO client has completed the dedicated
+        /// gameplay-server handshake. A connected UGS lobby is control-plane
+        /// state and must never be mistaken for a playable battle connection.
+        /// </summary>
+        public bool IsBattleTransportConnected
+        {
+            get
+            {
+                NetworkManager manager = networkBootstrap?.NetworkManager;
+                if (manager == null || !manager.IsConnectedClient)
+                    return false;
+                return directSession || dedicatedTransportConnected;
+            }
+        }
+        public bool IsBattleTransportConnecting =>
+            dedicatedTransportOperationInProgress;
         public string LastFailure { get; private set; } = string.Empty;
         public ISession ActiveSession => activeSession;
         public bool HasActiveSession => activeSession != null;
@@ -168,6 +185,46 @@ namespace FPS.Networking.Session
             ? PhaseLobby
             : Property(activeSession.Properties, PhaseProperty, PhaseLobby);
         public string SceneLoadFailure => sceneLoadFailure;
+
+        /// <summary>
+        /// Idempotent battle-scene watchdog. Session change notifications can
+        /// be delayed across a Single scene load, so the scene coordinator also
+        /// calls this once per frame until the data-plane connection starts.
+        /// </summary>
+        public void EnsureBattleTransportForCurrentPhase()
+        {
+            if (activeSession == null || dedicatedTransportConnected ||
+                dedicatedTransportOperationInProgress ||
+                State == CoopSessionState.Failed ||
+                !string.Equals(LobbyPhase, PhaseBattle,
+                    StringComparison.Ordinal))
+                return;
+            _ = EnsureDedicatedBattleTransportAsync();
+        }
+
+        public async Task<bool> RetryBattleTransportAsync()
+        {
+            if (activeSession == null ||
+                !string.Equals(LobbyPhase, PhaseBattle,
+                    StringComparison.Ordinal) ||
+                dedicatedTransportOperationInProgress)
+                return false;
+
+            if (networkBootstrap?.IsListening == true)
+            {
+                networkBootstrap.Shutdown();
+                NetworkManager manager = networkBootstrap.NetworkManager;
+                while (manager != null && manager.ShutdownInProgress)
+                    await Task.Yield();
+            }
+            dedicatedTransportConnected = false;
+            activeRemoteTicket = string.Empty;
+            LastFailure = string.Empty;
+            LobbyFailureMessage = string.Empty;
+            SetState(CoopSessionState.Connected);
+            await EnsureDedicatedBattleTransportAsync();
+            return IsBattleTransportConnected;
+        }
 
         public void ConfigureLobby(IEnumerable<string> allowedAppearanceIds,
             string defaultAppearanceId, string mapId = DefaultMapId)
@@ -1030,35 +1087,22 @@ namespace FPS.Networking.Session
                     CoopNetworkRuntimeInstaller>();
             networkInstaller = installer;
             installer.ConfigurePrefabs(authorityPrefab, replicaPrefab);
-            if (deferPlayerSpawn)
+            if (!CoopScenarioRegistry.TryCreateCityNew(
+                    seed: pendingScenarioSeed,
+                    maximumPlayers: MaximumPlayers,
+                    out CoopScenarioConfiguration scenario,
+                    out string scenarioError))
             {
-                if (!CoopScenarioRegistry.TryCreateCityNew(
-                        seed: pendingScenarioSeed,
-                        maximumPlayers: MaximumPlayers,
-                        out CoopScenarioConfiguration scenario,
-                        out string scenarioError))
-                {
-                    Destroy(networkBootstrap.gameObject);
-                    networkBootstrap = null;
-                    throw new InvalidOperationException(scenarioError);
-                }
-                installer.ConfigureScenario(
-                    scenario.Players,
-                    scenario.Targets,
-                    scenario.RequiredKills,
-                    scenario.Mission,
-                    scenario.Waves);
+                Destroy(networkBootstrap.gameObject);
+                networkBootstrap = null;
+                throw new InvalidOperationException(scenarioError);
             }
-            else
-            {
-                CoopTargetSpawnDefinition[] targetDefinitions =
-                    BuildTargetSpawns();
-                installer.ConfigureScenario(
-                    BuildPlayerSpawns(),
-                    targetDefinitions,
-                    1,
-                    AuthoritativeMissionDefinition.Default);
-            }
+            installer.ConfigureScenario(
+                scenario.Players,
+                scenario.Targets,
+                scenario.RequiredKills,
+                scenario.Mission,
+                scenario.Waves);
             installer.ConfigurePlayerSpawnBarrier(deferPlayerSpawn);
             networkBootstrap.gameObject.AddComponent<
                 CoopNetworkWorldPresenter>();
@@ -1097,6 +1141,8 @@ namespace FPS.Networking.Session
             dedicatedTransportOperationInProgress = true;
             try
             {
+                Debug.Log("[COOP_DATA_PLANE][CONNECTING] 正在连接专用服务器。",
+                    this);
                 EnsureNetworkPrerequisite(deferPlayerSpawn: true);
                 RemoteMatchConnectionInfo connection =
                     ResolveRemoteConnectionFromSession();
@@ -1149,6 +1195,8 @@ namespace FPS.Networking.Session
                 LastFailure = string.Empty;
                 LobbyFailureMessage = string.Empty;
                 SetState(CoopSessionState.Connected);
+                Debug.Log("[COOP_DATA_PLANE][CONNECTED] 专用服务器连接成功。",
+                    this);
                 RaiseBattleReadyOnce();
             }
             catch (Exception exception)
@@ -1159,6 +1207,8 @@ namespace FPS.Networking.Session
                     : exception.Message;
                 LobbyFailureMessage = LastFailure;
                 SetState(CoopSessionState.Failed);
+                Debug.LogError("[COOP_DATA_PLANE][FAILED] " + LastFailure,
+                    this);
                 NotifyLobbyChanged();
             }
             finally
@@ -1302,65 +1352,6 @@ namespace FPS.Networking.Session
                 return;
             LastFailure = string.Empty;
             SetState(CoopSessionState.Connected);
-        }
-
-        private static CoopPlayerSpawnDefinition[] BuildPlayerSpawns()
-        {
-            Vector3 origin = ResolveArenaOrigin(out Vector3 forward);
-            Vector3 right = Vector3.Cross(Vector3.up, forward).normalized;
-            return new[]
-            {
-                new CoopPlayerSpawnDefinition
-                {
-                    PlayerId = 1,
-                    Position = origin - right * 1.25f,
-                    Health = 100f
-                },
-                new CoopPlayerSpawnDefinition
-                {
-                    PlayerId = 2,
-                    Position = origin + right * 1.25f,
-                    Health = 100f
-                }
-            };
-        }
-
-        private static CoopTargetSpawnDefinition[] BuildTargetSpawns()
-        {
-            Vector3 origin = ResolveArenaOrigin(out Vector3 forward);
-            return new[]
-            {
-                new CoopTargetSpawnDefinition
-                {
-                    TargetId = 1,
-                    Position = origin + forward * 15f,
-                    Radius = 1.25f,
-                    Health = 68f,
-                    DropDefinitionId = "medical_kit",
-                    HeadOffset = new Vector3(0f, 0.85f, 0f),
-                    HeadRadius = 0.32f,
-                    Role = AuthoritativeEnemyRole.Assault,
-                    AttackRange = 1.8f,
-                    AttackIntervalTicks = 60,
-                    RewardExperience = 40
-                }
-            };
-        }
-
-        private static Vector3 ResolveArenaOrigin(out Vector3 forward)
-        {
-            Camera camera = Camera.main;
-            if (camera == null)
-            {
-                forward = Vector3.forward;
-                return Vector3.zero;
-            }
-
-            forward = Vector3.ProjectOnPlane(
-                camera.transform.forward,
-                Vector3.up).normalized;
-            if (forward.sqrMagnitude < 0.5f) forward = Vector3.forward;
-            return camera.transform.position;
         }
 
         private static int CreateRunSeed()

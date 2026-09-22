@@ -24,6 +24,16 @@ namespace FPS.Tests.PlayMode.Issue69
             ModeEntryView view = Object.FindFirstObjectByType<ModeEntryView>();
             Assert.That(view, Is.Not.Null);
             Assert.That(view.Buttons, Has.Count.EqualTo(3));
+            foreach (UnityEngine.UI.Button button in view.Buttons)
+            {
+                UnityEngine.UI.Image icon = button
+                    .GetComponentsInChildren<UnityEngine.UI.Image>(true)
+                    .FirstOrDefault(image => image.gameObject.name ==
+                                             "模式图标");
+                Assert.That(icon, Is.Not.Null, button.gameObject.name);
+                Assert.That(icon.sprite, Is.Not.Null,
+                    $"{button.gameObject.name} 应加载模式图标。");
+            }
             Assert.That(view.Buttons.Select(button =>
                     button.GetComponent<GameModeEntryButton>().Mode),
                 Is.EquivalentTo(new[]
@@ -299,6 +309,48 @@ namespace FPS.Tests.PlayMode.Issue69
                 "联机战斗不能同时启动单机玩家组合根。 ");
             Assert.That(Object.FindFirstObjectByType<WaveDirector>(), Is.Null,
                 "联机战斗必须由网络权威波次驱动，不能重复启动单机波次。");
+        }
+
+        [UnityTest]
+        public IEnumerator CooperativeEscapeMenuIsLocalAndNeverPausesServerTime()
+        {
+            GameModeContext.BeginTransition(
+                GameModeId.Coop,
+                GameModeStage.CoopBattle);
+            yield return SceneManager.LoadSceneAsync(
+                GameModeScenePaths.CityNew,
+                LoadSceneMode.Single);
+            yield return null;
+
+            PlayerController player =
+                Object.FindFirstObjectByType<PlayerController>();
+            Assert.That(player, Is.Not.Null);
+            CoopBattlePauseController pause =
+                player.GetComponent<CoopBattlePauseController>();
+            Assert.That(pause, Is.Not.Null);
+
+            Time.timeScale = 1f;
+            pause.OpenMenu();
+            yield return null;
+            Assert.That(pause.IsMenuOpen, Is.True);
+            Assert.That(Time.timeScale, Is.EqualTo(1f),
+                "联机 ESC 只能暂停本地输入，不能冻结权威服务器。");
+            Assert.That(player.IsPaused, Is.False);
+            CoopNetworkInputBridge bridge =
+                player.GetComponent<CoopNetworkInputBridge>();
+            Assert.That(bridge, Is.Not.Null);
+            Assert.That(bridge.LocalMenuSuppressed, Is.True);
+
+            pause.CloseMenu();
+            yield return null;
+            Assert.That(pause.IsMenuOpen, Is.False);
+            Assert.That(bridge.LocalMenuSuppressed, Is.False);
+            Assert.That(Time.timeScale, Is.EqualTo(1f));
+            Assert.That(Object.FindObjectsByType<EnemyController>(
+                    FindObjectsInactive.Exclude,
+                    FindObjectsSortMode.None),
+                Is.Empty,
+                "联机战斗只能显示服务器权威敌人，不能保留 CityNew 的本地 Spider 模板。");
         }
 
         [UnityTest]
