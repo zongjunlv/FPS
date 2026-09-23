@@ -27,11 +27,13 @@ UNITY_EXECUTABLE="/Users/jungle/UnityEditors/6000.5.3f1/Unity.app/Contents/MacOS
 
 默认报告目录为 `artifacts/quality-gate`，可以通过 `QUALITY_GATE_OUTPUT_DIR` 修改。
 
+PlayMode 分为普通用例与模拟输入设备用例两个独立 Unity 进程运行。Unity Input System 的 `InputTestFixture` 会重置全局设备状态；独立进程可避免其他场景中的 UI 动作缓存污染测试。两段合计覆盖全部 PlayMode 用例，任一段失败都会使门禁失败。
+
 ## 输出
 
-- `compile.log`、`editmode.log`、`playmode.log`：Unity 原始日志。
-- `editmode.xml`、`playmode.xml`：Unity Test Framework 机器可读报告。
-- `compile.json`、`editmode.json`、`playmode.json`：带失败分类的阶段报告。
+- `compile.log`、`editmode.log`、`playmode.log`、`playmode-input.log`：Unity 原始日志。
+- `editmode.xml`、`playmode.xml`、`playmode-input.xml`：Unity Test Framework 机器可读报告。
+- `compile.json`、`editmode.json`、`playmode.json`、`playmode-input.json`：带失败分类的阶段报告。
 - `summary.json`：机器可读总结果。
 - `summary.md`：供开发者和 GitHub Job Summary 阅读的总表。
 

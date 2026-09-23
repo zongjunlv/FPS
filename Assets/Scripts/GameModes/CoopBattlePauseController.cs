@@ -94,12 +94,14 @@ public sealed class CoopBattlePauseController : MonoBehaviour
             presentationGate.MenuOverlayVisible = true;
         View.SetStatus(string.Empty);
         View.SetVisible(true);
+        CoopUiInputGate.PauseMenuVisible = true;
     }
 
     public void CloseMenu()
     {
         if (leaving || View == null || !IsMenuOpen) return;
         View.SetVisible(false);
+        CoopUiInputGate.PauseMenuVisible = false;
         if (presentationGate != null)
             presentationGate.MenuOverlayVisible = false;
         networkInput?.SetLocalMenuSuppressed(false);
@@ -165,6 +167,7 @@ public sealed class CoopBattlePauseController : MonoBehaviour
 
     private void OnDestroy()
     {
+        CoopUiInputGate.PauseMenuVisible = false;
         if (presentationGate != null)
             presentationGate.MenuOverlayVisible = false;
         networkInput?.SetLocalMenuSuppressed(false);

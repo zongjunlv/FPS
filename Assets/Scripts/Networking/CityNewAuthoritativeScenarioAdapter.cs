@@ -85,7 +85,16 @@ namespace FPS.Networking
                                          NetworkTickRate)),
                     IntermissionTicks = Mathf.Max(0,
                         Mathf.RoundToInt(stage.IntermissionAfterSeconds *
-                                         NetworkTickRate))
+                                         NetworkTickRate)),
+                    WaveRewards = ConvertDrops(loot.Resolve(
+                        catalog.LootDropTable,
+                        new LootRewardContext("*", waveIndex,
+                            LootRewardTier.WaveClear, -waveIndex))),
+                    FinalRewards = ConvertDrops(loot.Resolve(
+                        catalog.LootDropTable,
+                        new LootRewardContext("*", waveIndex,
+                            LootRewardTier.FinalWave,
+                            int.MinValue + waveIndex)))
                 };
 
                 for (int spawnIndex = 0;
@@ -110,6 +119,8 @@ namespace FPS.Networking
                     LootDropStack drop = rolled.Count > 0
                         ? rolled[0]
                         : default;
+                    CoopLootDropDefinition[] allDrops =
+                        ConvertDrops(rolled);
                     float angle = DeterministicAngle(seed, targetId);
                     float radius = Mathf.Lerp(
                         wave.MinimumSpawnRadius,
@@ -132,6 +143,7 @@ namespace FPS.Networking
                         Health = Mathf.Max(1f, enemy.HP * healthMultiplier),
                         DropDefinitionId = drop.ItemStableId,
                         DropQuantity = Mathf.Max(1, drop.Quantity),
+                        LootDrops = allDrops,
                         HeadOffset = new Vector3(0f,
                             role == AuthoritativeEnemyRole.Elite
                                 ? 1.05f
@@ -181,6 +193,21 @@ namespace FPS.Networking
                 mission,
                 seed,
                 catalog.StableId);
+        }
+
+        private static CoopLootDropDefinition[] ConvertDrops(
+            IReadOnlyList<LootDropStack> rolled)
+        {
+            var result = new CoopLootDropDefinition[rolled?.Count ?? 0];
+            for (int index = 0; index < result.Length; index++)
+            {
+                result[index] = new CoopLootDropDefinition
+                {
+                    ItemId = rolled[index].ItemStableId,
+                    Quantity = Mathf.Max(1, rolled[index].Quantity)
+                };
+            }
+            return result;
         }
 
         private static AuthoritativeEnemyRole ToRole(string value)

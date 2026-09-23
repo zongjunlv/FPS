@@ -8,7 +8,7 @@ using UnityEngine.TestTools;
 
 namespace FPS.Tests.PlayMode
 {
-    public sealed class Issue76TutorialShootingLessonTests : InputTestFixture
+    public sealed class Issue76TutorialShootingLessonTests : TutorialInputTestFixture
     {
         [UnityTest]
         public IEnumerator HipFireOnlyCountsRealHitsInsideTeachingRegion()

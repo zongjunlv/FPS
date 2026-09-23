@@ -10,7 +10,7 @@ using UnityEngine.TestTools;
 
 namespace FPS.Tests.PlayMode
 {
-    public sealed class Issue75TutorialShootingWallTests : InputTestFixture
+    public sealed class Issue75TutorialShootingWallTests : TutorialInputTestFixture
     {
         [UnityTest]
         public IEnumerator RealShotsAcceptCenterAndRejectOutsideRegion()

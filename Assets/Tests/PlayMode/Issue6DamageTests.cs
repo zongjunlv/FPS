@@ -254,7 +254,10 @@ namespace FPS.Tests.PlayMode
             try
             {
                 Component pool = poolObject.AddComponent(poolType);
-                MethodInfo play = poolType.GetMethod("Play");
+                MethodInfo play = poolType.GetMethod("Play", new[]
+                {
+                    typeof(Vector3), typeof(Vector3), typeof(float)
+                });
                 PropertyInfo capacity =
                     poolType.GetProperty("Capacity");
                 Component first =

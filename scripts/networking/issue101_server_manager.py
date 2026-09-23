@@ -204,6 +204,7 @@ def monitor(state_path: pathlib.Path) -> int:
         stderr=subprocess.DEVNULL,
         start_new_session=True,
     )
+    state = read_json(state_path) or state
     state.update({
         "serverPid": process.pid,
         "processGroupId": process.pid,
@@ -213,7 +214,15 @@ def monitor(state_path: pathlib.Path) -> int:
     write_state(state_path, state)
 
     ready_recorded = False
+    stop_signaled = False
     while process.poll() is None:
+        latest = read_json(state_path)
+        if latest.get("stopRequested") and not stop_signaled:
+            try:
+                os.killpg(process.pid, signal.SIGTERM)
+            except ProcessLookupError:
+                pass
+            stop_signaled = True
         diagnostics = read_json(diagnostics_path)
         if diagnostics.get("status") == "ready" and not ready_recorded:
             state = read_json(state_path) or state
@@ -293,6 +302,7 @@ def start(args: argparse.Namespace) -> int:
         "roster": args.resolved_players,
         "diagnosticsPath": str(diagnostics_path),
         "logPath": str(log_path),
+        "statePath": str(state_path),
         "lifecycleStatus": "launching",
         "requestedAtUtc": iso(),
         "command": command,
@@ -375,19 +385,27 @@ def start(args: argparse.Namespace) -> int:
 
 
 def stop_process(state: dict[str, Any], reason: str) -> None:
-    state_path = pathlib.Path(state.get("statePath") or "")
-    if not str(state_path):
-        diagnostics = pathlib.Path(state.get("diagnosticsPath", ""))
-        state_path = diagnostics.parent / "server-state.json"
+    recorded_path = state.get("statePath")
+    diagnostics_path = state.get("diagnosticsPath")
+    if recorded_path:
+        state_path = pathlib.Path(recorded_path)
+    elif diagnostics_path:
+        state_path = pathlib.Path(diagnostics_path).parent / "server-state.json"
+    else:
+        state_path = None
     state["stopRequested"] = True
     state["stopReason"] = reason
-    write_state(state_path, state)
     process_group = int(state.get("processGroupId") or 0)
-    if process_group > 0:
-        try:
-            os.killpg(process_group, signal.SIGTERM)
-        except ProcessLookupError:
-            pass
+    try:
+        if state_path is None:
+            raise ValueError("战局状态缺少状态文件路径")
+        write_state(state_path, state)
+    finally:
+        if process_group > 0:
+            try:
+                os.killpg(process_group, signal.SIGTERM)
+            except ProcessLookupError:
+                pass
 
 
 def stop(args: argparse.Namespace) -> int:

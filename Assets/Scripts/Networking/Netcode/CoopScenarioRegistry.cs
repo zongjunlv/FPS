@@ -10,6 +10,8 @@ namespace FPS.Networking.Netcode
         public int MaximumAlive;
         public int SpawnIntervalTicks;
         public int IntermissionTicks;
+        public CoopLootDropDefinition[] WaveRewards;
+        public CoopLootDropDefinition[] FinalRewards;
 
         public AuthoritativeWaveDefinition ToDomain()
         {
@@ -17,7 +19,11 @@ namespace FPS.Networking.Netcode
                 WaveIndex,
                 MaximumAlive,
                 SpawnIntervalTicks,
-                IntermissionTicks);
+                IntermissionTicks,
+                WaveRewards == null ? null :
+                Array.ConvertAll(WaveRewards, value => value.ToDomain()),
+                FinalRewards == null ? null :
+                Array.ConvertAll(FinalRewards, value => value.ToDomain()));
         }
     }
 

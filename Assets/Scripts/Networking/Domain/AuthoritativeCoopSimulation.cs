@@ -32,7 +32,8 @@ namespace FPS.Networking.Domain
             PlayerInputCommand command,
             int elapsedTicks,
             CoopServerRules rules,
-            bool standingClearance = true)
+            bool standingClearance = true,
+            double movementSpeedMultiplier = 1d)
         {
             if (rules == null) throw new ArgumentNullException(nameof(rules));
             int ticks = Math.Max(1, elapsedTicks);
@@ -63,6 +64,7 @@ namespace FPS.Networking.Domain
                 : sprinting
                     ? rules.SprintSpeed
                     : rules.WalkSpeed;
+            targetSpeed *= Math.Max(0.01d, movementSpeedMultiplier);
             NetVector3 targetHorizontal = new(
                 worldX * targetSpeed,
                 0d,
@@ -1434,12 +1436,16 @@ namespace FPS.Networking.Domain
                 command,
                 elapsedTicks,
                 rules,
-                standingClearance);
+                standingClearance,
+                economy.Modifier(player.Id,
+                    AuthoritativeUpgradeEffect.MovementSpeed));
             nextMovement = playerMovementResolver(
                 player.Id,
                 player.Movement,
                 nextMovement);
             double missedTickAllowance = rules.MaximumMoveSpeed *
+                economy.Modifier(player.Id,
+                    AuthoritativeUpgradeEffect.MovementSpeed) *
                 rules.FixedDeltaSeconds * Math.Max(0, elapsedTicks - 1) * 2d;
             double claimedPositionTolerance =
                 rules.ClaimedPositionTolerance + missedTickAllowance;
@@ -1505,6 +1511,8 @@ namespace FPS.Networking.Domain
             NetVector3 direction = CoopGameplayRules.AimDirection(
                 command.AimYawDegrees,
                 command.AimPitchDegrees);
+            double accuracyAssist = economy.Modifier(shooter.Id,
+                AuthoritativeUpgradeEffect.Accuracy);
             MutableTarget selected = null;
             double selectedDistance = double.PositiveInfinity;
             AuthoritativeHitRegion selectedRegion =
@@ -1521,7 +1529,7 @@ namespace FPS.Networking.Domain
                         origin,
                         direction,
                         center + target.HeadOffset,
-                        target.HeadRadius,
+                        target.HeadRadius * accuracyAssist,
                         weapon.HitscanRange,
                         out headDistance);
                 if (hitHead && headDistance < selectedDistance)
@@ -1534,7 +1542,7 @@ namespace FPS.Networking.Domain
                         origin,
                         direction,
                         center,
-                        target.Radius,
+                        target.Radius * accuracyAssist,
                         weapon.HitscanRange,
                         out double distance) &&
                     distance < selectedDistance)
@@ -1643,25 +1651,26 @@ namespace FPS.Networking.Domain
                 shooter.Id,
                 selected.Id,
                 0d));
-            if (!string.IsNullOrEmpty(selected.DropDefinitionId))
+            foreach (AuthoritativeLootStack drop in selected.LootDrops)
             {
+                if (string.IsNullOrEmpty(drop.ItemId)) continue;
                 int dropId = economy.SpawnDrop(
-                    selected.DropDefinitionId,
-                    selected.DropQuantity,
+                    drop.ItemId,
+                    drop.Quantity,
                     selected.Position);
                 events.Add(Emit(
                     AuthoritativeEventKind.LootDropped,
                     shooter.Id,
                     selected.Id,
                     1d,
-                    selected.DropDefinitionId));
+                    drop.ItemId));
                 if (dropId > 0)
                     events.Add(Emit(
                         AuthoritativeEventKind.WorldDropSpawned,
                         shooter.Id,
                         dropId,
-                        selected.DropQuantity,
-                        selected.DropDefinitionId));
+                        drop.Quantity,
+                        drop.ItemId));
             }
             int levelsGained = economy.GrantExperience(
                 shooter.Id, selected.RewardExperience);
@@ -1684,7 +1693,7 @@ namespace FPS.Networking.Domain
                     0,
                     levelsGained));
             }
-            AdvanceWaveAfterKill(shooter.Id, events);
+            AdvanceWaveAfterKill(shooter.Id, selected.Position, events);
 
             return new ShotResolution(
                 ShotResolutionKind.Killed,
@@ -2045,6 +2054,7 @@ namespace FPS.Networking.Domain
 
         private void AdvanceWaveAfterKill(
             int sourcePlayerId,
+            NetVector3 rewardPosition,
             ICollection<AuthoritativeEvent> events)
         {
             if (!usesWaveSequence)
@@ -2071,15 +2081,43 @@ namespace FPS.Networking.Domain
                 sourcePlayerId,
                 currentWave,
                 killedTargets));
+            AuthoritativeWaveDefinition completedWave =
+                CurrentWaveDefinition();
             if (currentWave >= TotalWaves || killedTargets >= requiredKills)
             {
+                SpawnWaveRewards(completedWave.FinalRewards,
+                    sourcePlayerId, rewardPosition, events);
                 waveStatus = AuthoritativeWaveStatus.Completed;
                 return;
             }
 
+            SpawnWaveRewards(completedWave.WaveRewards,
+                sourcePlayerId, rewardPosition, events);
+
             int delay = CurrentWaveDefinition().IntermissionTicks;
             intermissionEndTick = currentTick + delay;
             waveStatus = AuthoritativeWaveStatus.Intermission;
+        }
+
+        private void SpawnWaveRewards(
+            IReadOnlyList<AuthoritativeLootStack> rewards,
+            int sourcePlayerId,
+            NetVector3 position,
+            ICollection<AuthoritativeEvent> events)
+        {
+            foreach (AuthoritativeLootStack reward in rewards)
+            {
+                if (string.IsNullOrEmpty(reward.ItemId)) continue;
+                int dropId = economy.SpawnDrop(
+                    reward.ItemId, reward.Quantity, position);
+                if (dropId <= 0) continue;
+                events.Add(Emit(
+                    AuthoritativeEventKind.WorldDropSpawned,
+                    sourcePlayerId,
+                    dropId,
+                    reward.Quantity,
+                    reward.ItemId));
+            }
         }
 
         private MutableTarget[] CurrentWaveTargets()
@@ -2143,6 +2181,7 @@ namespace FPS.Networking.Domain
                 AttackIntervalTicks = spawn.AttackIntervalTicks;
                 RewardExperience = spawn.RewardExperience;
                 DropQuantity = spawn.DropQuantity;
+                LootDrops = spawn.LootDrops;
                 ArchetypeId = spawn.ArchetypeId;
                 PresentationAddress = spawn.PresentationAddress;
                 WaveIndex = spawn.WaveIndex;
@@ -2171,6 +2210,7 @@ namespace FPS.Networking.Domain
             public int AttackIntervalTicks;
             public int RewardExperience;
             public int DropQuantity;
+            public IReadOnlyList<AuthoritativeLootStack> LootDrops;
             public string ArchetypeId;
             public string PresentationAddress;
             public int WaveIndex;

@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 
 namespace FPS.Networking.Domain
 {
@@ -8,7 +10,9 @@ namespace FPS.Networking.Domain
             int waveIndex,
             int maximumAlive,
             int spawnIntervalTicks,
-            int intermissionTicks)
+            int intermissionTicks,
+            IReadOnlyList<AuthoritativeLootStack> waveRewards = null,
+            IReadOnlyList<AuthoritativeLootStack> finalRewards = null)
         {
             if (waveIndex < 1)
                 throw new ArgumentOutOfRangeException(nameof(waveIndex));
@@ -23,11 +27,17 @@ namespace FPS.Networking.Domain
             MaximumAlive = maximumAlive;
             SpawnIntervalTicks = spawnIntervalTicks;
             IntermissionTicks = intermissionTicks;
+            WaveRewards = waveRewards?.ToArray() ??
+                Array.Empty<AuthoritativeLootStack>();
+            FinalRewards = finalRewards?.ToArray() ??
+                Array.Empty<AuthoritativeLootStack>();
         }
 
         public int WaveIndex { get; }
         public int MaximumAlive { get; }
         public int SpawnIntervalTicks { get; }
         public int IntermissionTicks { get; }
+        public IReadOnlyList<AuthoritativeLootStack> WaveRewards { get; }
+        public IReadOnlyList<AuthoritativeLootStack> FinalRewards { get; }
     }
 }

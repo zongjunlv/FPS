@@ -105,6 +105,33 @@ class Issue101ServerManagerTests(unittest.TestCase):
                                return_value=False):
             self.assertFalse(MODULE.state_has_live_process(state))
 
+    def test_stop_process_uses_diagnostics_parent_when_state_path_missing(self):
+        state = {"diagnosticsPath": "/srv/fps/data/match/server-diagnostics.json",
+                 "processGroupId": 123}
+        with mock.patch.object(MODULE, "write_state") as write_state, \
+                mock.patch.object(MODULE.os, "killpg") as killpg:
+            MODULE.stop_process(state, "startup-timeout")
+        write_state.assert_called_once_with(
+            pathlib.Path("/srv/fps/data/match/server-state.json"), state)
+        killpg.assert_called_once_with(123, MODULE.signal.SIGTERM)
+
+    def test_stop_process_terminates_group_even_when_state_write_fails(self):
+        state = {"statePath": "/srv/fps/data/match/server-state.json",
+                 "processGroupId": 123}
+        with mock.patch.object(MODULE, "write_state",
+                               side_effect=OSError("disk full")), \
+                mock.patch.object(MODULE.os, "killpg") as killpg:
+            with self.assertRaises(OSError):
+                MODULE.stop_process(state, "startup-timeout")
+        killpg.assert_called_once_with(123, MODULE.signal.SIGTERM)
+
+    def test_stop_process_terminates_group_without_any_state_path(self):
+        state = {"processGroupId": 123}
+        with mock.patch.object(MODULE.os, "killpg") as killpg:
+            with self.assertRaises(ValueError):
+                MODULE.stop_process(state, "startup-timeout")
+        killpg.assert_called_once_with(123, MODULE.signal.SIGTERM)
+
 
 if __name__ == "__main__":
     unittest.main()

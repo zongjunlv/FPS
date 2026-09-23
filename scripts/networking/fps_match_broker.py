@@ -22,6 +22,7 @@ import sys
 import threading
 import time
 import urllib.request
+import urllib.error
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
@@ -139,21 +140,84 @@ class UnityTokenVerifier:
             return False
 
 
+class UnityLobbyVerifier:
+    """Read room membership from Unity instead of trusting the client body."""
+
+    def __init__(self, project_id: str, environment_id: str = "") -> None:
+        self.project_id = project_id
+        self.environment_id = environment_id
+
+    def get(self, session_id: str, token: str) -> dict[str, Any]:
+        request = urllib.request.Request(
+            f"https://lobby.services.api.unity.com/v1/{session_id}",
+            headers={"Authorization": f"Bearer {token}",
+                     "User-Agent": "fps-match-broker/1"})
+        try:
+            with urllib.request.urlopen(request, timeout=8) as response:
+                lobby = json.loads(response.read(MAXIMUM_BODY_BYTES))
+        except (urllib.error.HTTPError, urllib.error.URLError,
+                ValueError, json.JSONDecodeError) as error:
+            raise PermissionError("无法验证 Unity 房间成员") from error
+        if not isinstance(lobby, dict) or lobby.get("id") != session_id or \
+                lobby.get("upid") != self.project_id or \
+                self.environment_id and lobby.get("environmentId") != \
+                self.environment_id:
+            raise PermissionError("房间不属于当前项目或环境")
+        return lobby
+
+    @staticmethod
+    def roster(lobby: dict[str, Any], account: str,
+               require_ready: bool) -> list[dict[str, str]]:
+        players = lobby.get("players")
+        host = lobby.get("hostId")
+        data = lobby.get("data") or {}
+        if not isinstance(players, list) or not 1 <= len(players) <= 2 or \
+                lobby.get("maxPlayers") != 2 or \
+                not isinstance(host, str) or not isinstance(data, dict) or \
+                (data.get("map") or {}).get("value") != "CityNew":
+            raise PermissionError("房间人数、地图或房主信息无效")
+        if require_ready and (account != host or
+                              (data.get("phase") or {}).get("value") !=
+                              "lobby"):
+            raise PermissionError("只有就绪房间的房主可以分配战局")
+        result: list[dict[str, str]] = []
+        for player in sorted(players, key=lambda item: item.get("id") != host):
+            if not isinstance(player, dict):
+                raise PermissionError("房间成员信息无效")
+            player_data = player.get("data") or {}
+            appearance = (player_data.get("appearance") or {}).get("value")
+            if require_ready and (player_data.get("ready") or {}).get(
+                    "value") != "1":
+                raise PermissionError("有房间成员尚未准备")
+            result.append({
+                "accountId": safe_identifier(player.get("id"), "玩家账号"),
+                "appearanceId": safe_identifier(appearance, "角色外观"),
+            })
+        if not any(value["accountId"] == host for value in result) or \
+                not any(value["accountId"] == account for value in result):
+            raise PermissionError("当前账号不是房间成员")
+        return result
+
+
 class MatchBroker:
     def __init__(self, args: argparse.Namespace) -> None:
         self.args = args
         self.secret = server_manager.require_secret()
         self.verifier = UnityTokenVerifier(
             args.project_id, args.unity_issuer, args.jwks_url)
+        self.lobbies = UnityLobbyVerifier(args.project_id,
+                                          args.environment_id)
         self.state_path = args.state_root / "broker-state.json"
         self.lock = threading.Lock()
 
-    def allocate(self, account: str, payload: dict[str, Any]) -> dict[str, Any]:
+    def allocate(self, account: str, token: str,
+                 payload: dict[str, Any]) -> dict[str, Any]:
         session_id = safe_identifier(payload.get("sessionId"), "房间 ID")
         seed = int(payload.get("seed") or 18018)
-        roster = self._roster(payload.get("players"))
-        if not any(player["accountId"] == account for player in roster):
-            raise PermissionError("房主账号不在战局名单中")
+        lobby = self.lobbies.get(session_id, token)
+        roster = self.lobbies.roster(lobby, account, require_ready=True)
+        if self._roster(payload.get("players")) != roster:
+            raise PermissionError("客户端名单与房间实际成员不一致")
         self._validate_compatibility(payload)
         match_id = "coop-" + hashlib.sha256(
             session_id.encode("utf-8")).hexdigest()[:24]
@@ -215,10 +279,13 @@ class MatchBroker:
             server_manager.write_state(self.state_path, state)
             return self._response(state, account)
 
-    def join(self, account: str, payload: dict[str, Any]) -> dict[str, Any]:
+    def join(self, account: str, token: str,
+             payload: dict[str, Any]) -> dict[str, Any]:
         session_id = safe_identifier(payload.get("sessionId"), "房间 ID")
         match_id = safe_identifier(payload.get("matchId"), "战局 ID")
         self._validate_compatibility(payload)
+        lobby = self.lobbies.get(session_id, token)
+        self.lobbies.roster(lobby, account, require_ready=False)
         with self.lock:
             state = server_manager.read_json(self.state_path)
             if state.get("sessionId") != session_id or \
@@ -229,9 +296,14 @@ class MatchBroker:
                 raise RuntimeError("专用服务器尚未就绪或已经回收")
             return self._response(state, account)
 
-    def release(self, account: str, payload: dict[str, Any]) -> dict[str, Any]:
+    def release(self, account: str, token: str,
+                payload: dict[str, Any]) -> dict[str, Any]:
         session_id = safe_identifier(payload.get("sessionId"), "房间 ID")
         match_id = safe_identifier(payload.get("matchId"), "战局 ID")
+        lobby = self.lobbies.get(session_id, token)
+        self.lobbies.roster(lobby, account, require_ready=False)
+        if lobby.get("hostId") != account:
+            raise PermissionError("只有当前房主可以结束战局")
         with self.lock:
             state = server_manager.read_json(self.state_path)
             roster = state.get("roster", [])
@@ -347,16 +419,17 @@ class BrokerHandler(BaseHTTPRequestHandler):
                 raise PermissionError("缺少 Unity 登录令牌")
             account = self.server.broker.verifier.verify(
                 authorization[7:].strip())
+            token = authorization[7:].strip()
             length = int(self.headers.get("Content-Length") or 0)
             if length < 1 or length > MAXIMUM_BODY_BYTES:
                 raise ValueError("请求内容大小无效")
             payload = json.loads(self.rfile.read(length))
             if self.path.endswith("/allocate"):
-                result = self.server.broker.allocate(account, payload)
+                result = self.server.broker.allocate(account, token, payload)
             elif self.path.endswith("/release"):
-                result = self.server.broker.release(account, payload)
+                result = self.server.broker.release(account, token, payload)
             else:
-                result = self.server.broker.join(account, payload)
+                result = self.server.broker.join(account, token, payload)
             self._json(HTTPStatus.OK, result)
         except PermissionError as error:
             self._json(HTTPStatus.FORBIDDEN, {"error": str(error)})
@@ -386,9 +459,43 @@ class BrokerHandler(BaseHTTPRequestHandler):
 
 
 class BrokerServer(ThreadingHTTPServer):
+    daemon_threads = True
+    maximum_connections = 32
+
     def __init__(self, address: tuple[str, int], broker: MatchBroker) -> None:
         super().__init__(address, BrokerHandler)
         self.broker = broker
+        self.tls_context: ssl.SSLContext | None = None
+        self.connection_slots = threading.BoundedSemaphore(
+            self.maximum_connections)
+
+    def process_request(self, request: Any,
+                        client_address: tuple[str, int]) -> None:
+        if not self.connection_slots.acquire(blocking=False):
+            request.close()
+            return
+        try:
+            super().process_request(request, client_address)
+        except Exception:
+            self.connection_slots.release()
+            raise
+
+    def process_request_thread(self, request: Any,
+                               client_address: tuple[str, int]) -> None:
+        # TLS negotiation belongs to the accepted client's worker thread.
+        # Wrapping the listening socket performs the handshake in accept() and
+        # lets one silent client stall every subsequent connection.
+        try:
+            request.settimeout(8)
+            context = self.tls_context
+            if context is None:
+                raise RuntimeError("TLS 未配置")
+            with context.wrap_socket(request, server_side=True) as secure:
+                super().process_request_thread(secure, client_address)
+        except (OSError, ssl.SSLError):
+            request.close()
+        finally:
+            self.connection_slots.release()
 
 
 def parser() -> argparse.ArgumentParser:
@@ -398,6 +505,7 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--cert", type=pathlib.Path, required=True)
     result.add_argument("--key", type=pathlib.Path, required=True)
     result.add_argument("--project-id", required=True)
+    result.add_argument("--environment-id", default="")
     result.add_argument("--unity-issuer",
                         default="https://player-auth.services.api.unity.com")
     result.add_argument("--jwks-url", default=JWKS_URL)
@@ -425,7 +533,7 @@ def main() -> int:
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     context.minimum_version = ssl.TLSVersion.TLSv1_2
     context.load_cert_chain(str(args.cert), str(args.key))
-    server.socket = context.wrap_socket(server.socket, server_side=True)
+    server.tls_context = context
     server.serve_forever()
     return 0
 

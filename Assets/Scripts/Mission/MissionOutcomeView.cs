@@ -13,7 +13,9 @@ public sealed class MissionOutcomeView : MonoBehaviour
     private TMP_Text summaryText;
     private TMP_Text upgradeText;
     private Button restartButton;
+    private Button returnButton;
     private Action restartAction;
+    private Action returnAction;
 
     public bool IsVisible => root != null && root.gameObject.activeSelf;
     public string TitleText => titleText != null ? titleText.text : string.Empty;
@@ -67,12 +69,15 @@ public sealed class MissionOutcomeView : MonoBehaviour
         upgradeText.lineSpacing = 10f;
         upgradeText.textWrappingMode = TextWrappingModes.Normal;
 
-        restartButton = CreateButton(panel, "重新开始  [R]", new Vector2(0f, 42f));
+        restartButton = CreateButton(panel, "重新开始  [R]", new Vector2(-180f, 42f));
         restartButton.onClick.AddListener(HandleRestart);
+        returnButton = CreateButton(panel, "返回模式大厅", new Vector2(180f, 42f));
+        returnButton.onClick.AddListener(HandleReturn);
         root.gameObject.SetActive(false);
     }
 
-    public void Show(MissionRunSummary summary, Action onRestart)
+    public void Show(MissionRunSummary summary, Action onRestart,
+        Action onReturn = null)
     {
         if (root == null || !summary.IsValid)
         {
@@ -80,6 +85,7 @@ public sealed class MissionOutcomeView : MonoBehaviour
         }
 
         restartAction = onRestart;
+        returnAction = onReturn;
         bool victory = summary.Outcome == MissionFlowState.Victory;
         titleText.text = victory ? "任务完成" : "任务失败";
         titleText.color = victory
@@ -89,12 +95,14 @@ public sealed class MissionOutcomeView : MonoBehaviour
         upgradeText.text = BuildUpgrades(summary);
         root.gameObject.SetActive(true);
         restartButton.interactable = true;
+        returnButton.interactable = onReturn != null;
         ShowCount++;
     }
 
     public void Hide()
     {
         restartAction = null;
+        returnAction = null;
         if (root != null)
         {
             root.gameObject.SetActive(false);
@@ -113,6 +121,12 @@ public sealed class MissionOutcomeView : MonoBehaviour
     {
         restartButton.interactable = false;
         restartAction?.Invoke();
+    }
+
+    private void HandleReturn()
+    {
+        returnButton.interactable = false;
+        returnAction?.Invoke();
     }
 
     private static string BuildSummary(MissionRunSummary summary)

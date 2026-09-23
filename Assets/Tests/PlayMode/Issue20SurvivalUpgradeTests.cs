@@ -328,10 +328,16 @@ namespace FPS.Tests.PlayMode
                 Vector3 sprint = (Vector3)playerType
                     .GetMethod("CalculateHorizontalVelocity").Invoke(
                         player, new object[] { Vector2.up, true });
+                float baseWalk = (float)playerType.GetField("walkSpeed",
+                    BindingFlags.Instance | BindingFlags.NonPublic)
+                    .GetValue(player);
+                float baseSprint = (float)playerType.GetField("sprintSpeed",
+                    BindingFlags.Instance | BindingFlags.NonPublic)
+                    .GetValue(player);
                 Assert.That(walk.magnitude,
-                    Is.EqualTo(2.4f).Within(0.001f));
+                    Is.EqualTo(baseWalk * 1.2f).Within(0.001f));
                 Assert.That(sprint.magnitude,
-                    Is.EqualTo(6f).Within(0.001f));
+                    Is.EqualTo(baseSprint * 1.2f).Within(0.001f));
                 Assert.That(hudType.GetProperty("MovementText").GetValue(hud),
                     Is.EqualTo("MOVE  120%"));
 

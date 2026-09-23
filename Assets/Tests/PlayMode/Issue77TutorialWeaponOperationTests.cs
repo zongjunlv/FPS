@@ -10,7 +10,7 @@ using UnityEngine.TestTools;
 
 namespace FPS.Tests.PlayMode
 {
-    public sealed class Issue77TutorialWeaponOperationTests : InputTestFixture
+    public sealed class Issue77TutorialWeaponOperationTests : TutorialInputTestFixture
     {
         [UnityTest]
         public IEnumerator DigitTwoThenWheelRequireActualCompletedSwitches()

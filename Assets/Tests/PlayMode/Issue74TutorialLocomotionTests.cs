@@ -9,7 +9,7 @@ using UnityEngine.TestTools;
 
 namespace FPS.Tests.PlayMode
 {
-    public sealed class Issue74TutorialLocomotionTests : InputTestFixture
+    public sealed class Issue74TutorialLocomotionTests : TutorialInputTestFixture
     {
         [UnityTest]
         public IEnumerator JumpRequiresTakeoffAirborneAndLandingCycle()

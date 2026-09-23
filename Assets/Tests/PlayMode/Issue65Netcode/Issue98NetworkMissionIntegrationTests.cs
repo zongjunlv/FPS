@@ -92,6 +92,8 @@ namespace FPS.Tests.PlayMode.Issue65
             NetworkCoopSessionAuthority authority = Authority(reviveTicks: 1);
             authority.RegisterPlayerClient(1001, 1);
             authority.RegisterPlayerClient(1002, 2);
+            Assert.That(authority.TryRestartMission(1001), Is.False,
+                "战斗尚未结束时不得重置战局");
             authority.ApplyServerDamageToPlayer(1, 100d);
             Assert.That(authority.TryGetPlayerState(1,
                 out NetcodePlayerState downed), Is.True);

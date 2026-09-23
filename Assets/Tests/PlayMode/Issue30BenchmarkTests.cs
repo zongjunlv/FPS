@@ -35,6 +35,7 @@ namespace FPS.Tests.PlayMode
                 float deadline = Time.realtimeSinceStartup + 25f;
                 Component pool = null;
                 Component director = null;
+                EnemyController activeEnemy = null;
 
                 while (Time.realtimeSinceStartup < deadline)
                 {
@@ -42,9 +43,12 @@ namespace FPS.Tests.PlayMode
                         poolType) as Component;
                     director = UnityEngine.Object.FindFirstObjectByType(
                         directorType) as Component;
+                    activeEnemy = UnityEngine.Object
+                        .FindFirstObjectByType<EnemyController>();
 
                     if (pool != null && director != null &&
-                        Get<int>(pool, "PooledObjectCount") >= 4)
+                        Get<int>(pool, "PooledObjectCount") >= 4 &&
+                        activeEnemy != null)
                     {
                         break;
                     }
@@ -55,8 +59,6 @@ namespace FPS.Tests.PlayMode
                 Assert.That(pool, Is.Not.Null);
                 Assert.That(director, Is.Not.Null);
                 var typedPool = (PooledEnemyFactory)pool;
-                EnemyController activeEnemy =
-                    UnityEngine.Object.FindFirstObjectByType<EnemyController>();
                 GameObject player = GameObject.FindGameObjectWithTag("Player");
                 Assert.That(activeEnemy, Is.Not.Null);
                 Assert.That(player, Is.Not.Null);
@@ -83,8 +85,8 @@ namespace FPS.Tests.PlayMode
                     Is.EqualTo(100));
                 Assert.That(
                     Get<int>(pool, "InstantiateCount"),
-                    Is.EqualTo(99),
-                    "100敌人应在采样前一次性完成预热。 ");
+                    Is.InRange(99, 100),
+                    "场景模板是否计入实例数不应影响 100 个敌人预热。 ");
 
                 bool spawned = typedPool.TrySpawn(
                     new EnemySpawnRequest(

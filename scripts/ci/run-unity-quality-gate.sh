@@ -75,6 +75,7 @@ run_tests() {
   local current_phase="$1"
   local platform="$2"
   local graphics_flag="$3"
+  local test_filter="${4:-}"
   local log_path="$output_dir/${current_phase}.log"
   local results_path="$output_dir/${current_phase}.xml"
   rm -f "$log_path" "$results_path"
@@ -92,6 +93,9 @@ run_tests() {
   if [[ -n "$graphics_flag" ]]; then
     command+=("$graphics_flag")
   fi
+  if [[ -n "$test_filter" ]]; then
+    command+=(-testFilter "$test_filter")
+  fi
 
   "${command[@]}"
   local exit_code=$?
@@ -107,7 +111,7 @@ case "$phase" in
 esac
 
 mkdir -p "$output_dir"
-rm -f "$output_dir"/{compile,editmode,playmode,summary}.{json,md}
+rm -f "$output_dir"/{compile,editmode,playmode,playmode-input,summary}.{json,md}
 
 if ! unity="$(resolve_unity)"; then
   printf 'Unity %s executable was not found.\n' "$unity_version" \
@@ -141,7 +145,9 @@ if [[ "$phase" == "all" || "$phase" == "editmode" ]]; then
 fi
 
 if [[ "$phase" == "all" || "$phase" == "playmode" ]]; then
-  run_tests playmode PlayMode "" || overall_failure=1
+  input_fixtures='Issue73TutorialMovementTests;Issue74TutorialLocomotionTests;Issue75TutorialShootingWallTests;Issue76TutorialShootingLessonTests;Issue77TutorialWeaponOperationTests;Issue79TutorialPauseMenuTests;Issue83BattleCharacterSelectionTests'
+  run_tests playmode PlayMode "" "!${input_fixtures//;/;!}" || overall_failure=1
+  run_tests playmode-input PlayMode "" "$input_fixtures" || overall_failure=1
 fi
 
 python3 "$reporter" aggregate --output-dir "$output_dir" || overall_failure=1

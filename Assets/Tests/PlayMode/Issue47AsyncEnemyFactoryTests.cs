@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using FPS.Core.GameModes;
 using NUnit.Framework;
 using UnityEngine;
 using UnityEngine.SceneManagement;
@@ -20,6 +21,14 @@ namespace FPS.Tests.PlayMode
         public void SetUp()
         {
             previousScene = SceneManager.GetActiveScene();
+            GameModeFlowController.ResetRuntimeForTests();
+            foreach (CityNewWaveBootstrap bootstrap in Object
+                .FindObjectsByType<CityNewWaveBootstrap>(
+                    FindObjectsInactive.Include,
+                    FindObjectsSortMode.None))
+            {
+                Object.DestroyImmediate(bootstrap);
+            }
             testScene = SceneManager.CreateScene("Issue47 Factory Test");
             SceneManager.SetActiveScene(testScene);
             factory = new GameObject("Async Factory").AddComponent<AddressableEnemyFactory>();

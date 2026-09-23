@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using FPS.Networking.Domain;
 using FPS.Core.GameModes;
 using FPS.Networking.Netcode;
 using FPS.Networking.Session;
@@ -13,6 +14,7 @@ public sealed class CoopNetworkInputBridge : MonoBehaviour
     private PlayerController player;
     private PlayerCombatController combat;
     private Health health;
+    private PlayerRuntimeCombatStats combatStats;
     private CoopSessionController session;
     private CoopSessionOverlay overlay;
     private NetworkVerticalSliceInputDriver networkDriver;
@@ -33,9 +35,15 @@ public sealed class CoopNetworkInputBridge : MonoBehaviour
     private float lastServerArmor = -1f;
     private float lastServerMaximumArmor = -1f;
     private bool lastServerAlive;
+    private int lastUpgradeSignature = int.MinValue;
+    private static readonly IReadOnlyList<AuthoritativeUpgradeDefinition>
+        UpgradeDefinitions =
+            AuthoritativeUpgradeDefinition.CreateProjectDefaults();
     private readonly List<PredictedShot> pendingPredictedShots = new();
 
     public bool LocalMenuSuppressed => localMenuSuppressed;
+    public bool GameplayInputSuppressed => localMenuSuppressed ||
+        CoopUiInputGate.EconomyModalVisible || overlaySuppressed;
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
     private static void Install()
@@ -60,6 +68,7 @@ public sealed class CoopNetworkInputBridge : MonoBehaviour
         player = GetComponent<PlayerController>();
         combat = GetComponent<PlayerCombatController>();
         health = GetComponent<Health>();
+        combatStats = GetComponent<PlayerRuntimeCombatStats>();
     }
 
     private void Update()
@@ -67,6 +76,7 @@ public sealed class CoopNetworkInputBridge : MonoBehaviour
         ResolveSession();
         ResolveOverlay();
         SetOverlaySuppressed(localMenuSuppressed ||
+                             CoopUiInputGate.EconomyModalVisible ||
                              overlay != null && overlay.IsVisible);
         bool coopBattle = GameModeContext.IsActive(
                               GameModeId.Coop,
@@ -90,8 +100,10 @@ public sealed class CoopNetworkInputBridge : MonoBehaviour
 
         ResolveLocalDriver();
         if (networkDriver == null) return;
+        ReconcileUpgradeModifiers();
         ReconcileCombatState();
-        HandleCombatPresentationInput();
+        if (!GameplayInputSuppressed)
+            HandleCombatPresentationInput();
         bool jumpRequested = input.JumpPressed;
         if (input.CrouchPressed)
             networkCrouching = !networkCrouching;
@@ -134,6 +146,7 @@ public sealed class CoopNetworkInputBridge : MonoBehaviour
     {
         localMenuSuppressed = suppressed;
         SetOverlaySuppressed(suppressed ||
+                             CoopUiInputGate.EconomyModalVisible ||
                              overlay != null && overlay.IsVisible);
     }
 
@@ -243,6 +256,7 @@ public sealed class CoopNetworkInputBridge : MonoBehaviour
         lastServerArmor = -1f;
         lastServerMaximumArmor = -1f;
         lastServerAlive = false;
+        lastUpgradeSignature = int.MinValue;
         if (subscribedReplica != null)
             subscribedReplica.PosePresented += HandleNetworkPose;
     }
@@ -283,6 +297,74 @@ public sealed class CoopNetworkInputBridge : MonoBehaviour
         lastServerAcknowledgedSequence = acknowledged;
         combat.ReconcileAuthoritativeAmmo(
             weaponId, predictedMagazine, reserve);
+    }
+
+    private void ReconcileUpgradeModifiers()
+    {
+        if (combatStats == null || subscribedReplica == null ||
+            !subscribedReplica.HasConsumedServerState) return;
+        NetworkCoopSessionAuthority authority = subscribedReplica.Session;
+        if (authority == null) return;
+        int signature = 17;
+        float damage = 1f;
+        float fireRate = 1f;
+        float magazine = 1f;
+        float reload = 1f;
+        float recoil = 1f;
+        float accuracy = 1f;
+        float movement = 1f;
+        for (int index = 0; index < authority.ReplicatedUpgradeCount;
+             index++)
+        {
+            NetcodeUpgradeStackState stack =
+                authority.GetReplicatedUpgrade(index);
+            if (stack.PlayerId != subscribedReplica.PlayerId) continue;
+            string id = stack.UpgradeId.ToString();
+            signature = unchecked(signature * 31 + id.GetHashCode());
+            signature = unchecked(signature * 31 + stack.Level);
+            for (int definitionIndex = 0;
+                 definitionIndex < UpgradeDefinitions.Count;
+                 definitionIndex++)
+            {
+                AuthoritativeUpgradeDefinition definition =
+                    UpgradeDefinitions[definitionIndex];
+                if (definition.StableId != id) continue;
+                float bonus = (float)definition.EffectAmount * stack.Level;
+                switch (definition.Effect)
+                {
+                    case AuthoritativeUpgradeEffect.WeaponDamage:
+                        damage += bonus;
+                        break;
+                    case AuthoritativeUpgradeEffect.WeaponFireRate:
+                        fireRate += bonus;
+                        break;
+                    case AuthoritativeUpgradeEffect.MagazineCapacity:
+                        magazine += bonus;
+                        break;
+                    case AuthoritativeUpgradeEffect.ReloadSpeed:
+                        reload += bonus;
+                        break;
+                    case AuthoritativeUpgradeEffect.RecoilControl:
+                        recoil += bonus;
+                        break;
+                    case AuthoritativeUpgradeEffect.Accuracy:
+                        accuracy += bonus;
+                        break;
+                    case AuthoritativeUpgradeEffect.MovementSpeed:
+                        movement += bonus;
+                        break;
+                }
+                break;
+            }
+        }
+        signature = unchecked(signature * 31 +
+            authority.WorldState.RunGeneration);
+        if (signature == lastUpgradeSignature) return;
+        lastUpgradeSignature = signature;
+        combatStats.SetWeaponModifiers(new WeaponRuntimeModifiers(
+            damage, fireRate, magazine, reload, recoil, accuracy));
+        combatStats.SetSurvivalModifiers(new SurvivalRuntimeModifiers(
+            1f, 1f, movement));
     }
 
     private void ReconcileVitals()

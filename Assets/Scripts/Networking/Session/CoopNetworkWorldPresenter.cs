@@ -285,6 +285,12 @@ namespace FPS.Networking.Session
         private static void ReleasePresentation(TargetView targetView)
         {
             if (targetView == null || !targetView.HasLoadHandle) return;
+            if (targetView.LoadHandle.IsValid() &&
+                !targetView.LoadHandle.IsDone)
+            {
+                targetView.ReleaseRequested = true;
+                return;
+            }
             if (targetView.LoadHandle.IsValid())
                 Addressables.Release(targetView.LoadHandle);
             targetView.HasLoadHandle = false;
@@ -300,7 +306,9 @@ namespace FPS.Networking.Session
             targetView.HasLoadHandle = true;
             targetView.LoadHandle.Completed += handle =>
             {
-                if (this == null || targetView.View == null)
+                if (!targetView.HasLoadHandle) return;
+                if (targetView.ReleaseRequested || this == null ||
+                    targetView.View == null)
                 {
                     if (handle.IsValid()) Addressables.Release(handle);
                     targetView.HasLoadHandle = false;
@@ -396,6 +404,7 @@ namespace FPS.Networking.Session
             public string Address;
             public AsyncOperationHandle<GameObject> LoadHandle;
             public bool HasLoadHandle;
+            public bool ReleaseRequested;
             public bool UsesDebugPrimitive;
             public Vector3 TargetPosition;
             public Quaternion TargetRotation;

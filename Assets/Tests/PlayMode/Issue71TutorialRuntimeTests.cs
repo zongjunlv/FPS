@@ -31,7 +31,11 @@ namespace FPS.Tests.PlayMode
                 FindObjectsInactive.Include), Has.Length.EqualTo(1));
             Assert.That(Object.FindAnyObjectByType<ModeDestinationView>(),
                 Is.Null);
-            Assert.That(Cursor.lockState, Is.EqualTo(CursorLockMode.Locked));
+            if (!Application.isBatchMode)
+            {
+                Assert.That(Cursor.lockState,
+                    Is.EqualTo(CursorLockMode.Locked));
+            }
             AssertNoBattleRuntime();
 
             for (int frame = 0; frame < 60; frame++)

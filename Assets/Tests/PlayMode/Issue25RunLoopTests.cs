@@ -232,11 +232,12 @@ namespace FPS.Tests.PlayMode
 
             Assert.That(SceneManager.GetActiveScene().path,
                 Is.EqualTo(GameModeScenePaths.BattlePreparation));
-            ModeDestinationView preparation =
-                UnityEngine.Object.FindFirstObjectByType<ModeDestinationView>();
+            BattleCharacterSelectionView preparation =
+                UnityEngine.Object.FindFirstObjectByType<
+                    BattleCharacterSelectionView>();
             Assert.That(preparation, Is.Not.Null);
-            Assert.That(preparation.PrimaryActionButton, Is.Not.Null);
-            preparation.PrimaryActionButton.onClick.Invoke();
+            Assert.That(preparation.ConfirmButton, Is.Not.Null);
+            preparation.ConfirmButton.onClick.Invoke();
 
             float runtimeDeadline = Time.realtimeSinceStartup + 25f;
             while (Time.realtimeSinceStartup < runtimeDeadline)

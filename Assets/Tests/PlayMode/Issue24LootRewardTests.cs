@@ -88,7 +88,8 @@ namespace FPS.Tests.PlayMode
                         "spider_bot",
                         2,
                         Enum.Parse(fixture.TierType, "Normal"),
-                        spawnId);
+                        spawnId,
+                        1f);
                     firstResults.Add(DescribeDrops(
                         resolverType.GetMethod("Resolve").Invoke(
                             first,
@@ -102,7 +103,8 @@ namespace FPS.Tests.PlayMode
                         "spider_bot",
                         2,
                         Enum.Parse(fixture.TierType, "Normal"),
-                        spawnId);
+                        spawnId,
+                        1f);
                     secondResults.Insert(0, DescribeDrops(
                         resolverType.GetMethod("Resolve").Invoke(
                             second,
@@ -157,7 +159,8 @@ namespace FPS.Tests.PlayMode
                     40,
                     new Vector3(10000f, 500f, 10000f),
                     "spider_bot",
-                    Enum.Parse(fixture.TierType, "Elite"));
+                    Enum.Parse(fixture.TierType, "Elite"),
+                    1f);
 
                 Assert.That(controllerType.GetMethod("ProcessEnemyDeath")
                     .Invoke(controller, new[] { death }), Is.EqualTo(true));
@@ -404,11 +407,11 @@ namespace FPS.Tests.PlayMode
             Assert.That(pickupType.GetProperty("Source").GetValue(lastPickup)
                 .ToString(), Is.EqualTo("EnemyDrop"));
             Assert.That(hudType.GetProperty("RewardCueCount").GetValue(hud),
-                Is.GreaterThanOrEqualTo(2),
-                "Elite and wave clear rewards must both publish HUD feedback.");
+                Is.GreaterThanOrEqualTo(1),
+                "Wave clear rewards must publish HUD feedback.");
             Assert.That(hudType.GetProperty("RewardCueText").GetValue(hud)
-                .ToString(), Does.Contain("精英奖励"),
-                "The elite notice must remain visible while the wave notice waits in queue.");
+                .ToString(), Does.Contain("波奖励"),
+                "Wave one contains no elite enemy, so its wave reward is the visible notice.");
         }
 
         [UnityTest]
@@ -424,10 +427,12 @@ namespace FPS.Tests.PlayMode
                 "WorldItemFactory");
             Type missionType = RuntimeTypeResolver.GetType(
                 "CityNewMissionController");
+            Type directorType = RuntimeTypeResolver.GetType("WaveDirector");
             Type healthType = RuntimeTypeResolver.GetType("Health");
             Type damageType = RuntimeTypeResolver.GetType("DamageInfo");
             Component rewards = null;
             Component mission = null;
+            Component director = null;
             GameObject player = null;
             float deadline = Time.realtimeSinceStartup + 25f;
 
@@ -437,9 +442,13 @@ namespace FPS.Tests.PlayMode
                     .FindAnyObjectByType(rewardsType);
                 mission = (Component)UnityEngine.Object
                     .FindAnyObjectByType(missionType);
+                director = (Component)UnityEngine.Object
+                    .FindAnyObjectByType(directorType);
                 player = GameObject.FindGameObjectWithTag("Player");
 
-                if (rewards != null && mission != null && player != null)
+                if (rewards != null && mission != null && player != null &&
+                    director != null && GetActiveEnemyCount(
+                        directorType, director) > 0)
                 {
                     break;
                 }
@@ -449,8 +458,12 @@ namespace FPS.Tests.PlayMode
 
             Assert.That(rewards, Is.Not.Null);
             Assert.That(mission, Is.Not.Null);
-            Assert.That(rewardsType.GetMethod("ProcessWaveEnded")
-                .Invoke(rewards, new object[] { 1 }), Is.EqualTo(true));
+            if ((int)rewardsType.GetProperty("WaveRewardCount")
+                    .GetValue(rewards) == 0)
+            {
+                Assert.That(rewardsType.GetMethod("ProcessWaveEnded")
+                    .Invoke(rewards, new object[] { 1 }), Is.EqualTo(true));
+            }
 
             while (Time.realtimeSinceStartup < deadline &&
                    (int)rewardsType.GetProperty("WaveRewardCount")
@@ -470,13 +483,18 @@ namespace FPS.Tests.PlayMode
                 .GetValue(playerHealth);
             object lethal = Activator.CreateInstance(
                 damageType,
-                maxHealth + 100f,
+                maxHealth + 100000f,
                 player.transform.position,
                 Vector3.back,
                 null);
             healthType.GetMethod("ApplyDamage")
                 .Invoke(playerHealth, new[] { lethal });
             yield return null;
+            Assert.That(healthType.GetProperty("IsDead").GetValue(playerHealth),
+                Is.EqualTo(true), "测试应先触发玩家死亡，才能验证失败结算重开。");
+            Assert.That(missionType.GetProperty("State").GetValue(mission)
+                .ToString(), Is.EqualTo("Defeat"),
+                "玩家死亡后应进入失败结算，而不是直接在战斗中重开。");
             Assert.That(missionType.GetMethod("RestartLevel")
                 .Invoke(mission, null), Is.EqualTo(true));
 

@@ -1,10 +1,12 @@
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
+using FPS.Core.GameModes;
 using NUnit.Framework;
 using UnityEngine;
 using UnityEngine.AddressableAssets;
 using UnityEngine.ResourceManagement.AsyncOperations;
+using UnityEngine.SceneManagement;
 using UnityEngine.TestTools;
 
 namespace FPS.Tests.PlayMode
@@ -195,6 +197,21 @@ namespace FPS.Tests.PlayMode
         [UnityTest]
         public IEnumerator EveryNewVisualUsesExplicitHitRegionsAndAdaptiveOverhead()
         {
+            Time.timeScale = 1f;
+            Scene priorScene = SceneManager.GetActiveScene();
+            GameModeFlowController.ResetRuntimeForTests();
+            foreach (CityNewWaveBootstrap bootstrap in Object
+                .FindObjectsByType<CityNewWaveBootstrap>(
+                    FindObjectsInactive.Include,
+                    FindObjectsSortMode.None))
+            {
+                Object.DestroyImmediate(bootstrap);
+            }
+            Scene isolatedScene = SceneManager.CreateScene(
+                "Issue66 Visual Bounds Test");
+            SceneManager.SetActiveScene(isolatedScene);
+            if (priorScene.IsValid() && priorScene.isLoaded)
+                yield return SceneManager.UnloadSceneAsync(priorScene);
             foreach (string address in ExpectedAddresses.Values.Where(
                          value => value != "enemy/spider"))
             {
@@ -216,7 +233,17 @@ namespace FPS.Tests.PlayMode
                         $"{address} 必须在 Prefab 中显式保存身体和头部命中区。");
 
                     instance = Object.Instantiate(prefab);
+                    foreach (SkinnedMeshRenderer renderer in instance
+                        .GetComponentsInChildren<SkinnedMeshRenderer>(true))
+                    {
+                        renderer.updateWhenOffscreen = true;
+                    }
+                    Animator animator = instance.GetComponentInChildren<Animator>(true);
+                    animator.cullingMode = AnimatorCullingMode.AlwaysAnimate;
                     yield return null;
+                    animator.Rebind();
+                    animator.Play("Idle", 0, 0f);
+                    animator.Update(0.5f);
                     DamageHitbox[] hitboxes =
                         instance.GetComponentsInChildren<DamageHitbox>(true);
                     DamageHitbox body = hitboxes.Single(
@@ -419,9 +446,11 @@ namespace FPS.Tests.PlayMode
             Bounds tolerance = visualBounds;
             tolerance.Expand(0.18f);
             Assert.That(tolerance.Contains(hitboxBounds.min), Is.True,
-                $"{address}: {hitbox.Region} 命中区最小点超出模型轮廓。");
+                $"{address}: {hitbox.Region} 命中区最小点超出模型轮廓。" +
+                $" Visual={visualBounds}, Hitbox={hitboxBounds}");
             Assert.That(tolerance.Contains(hitboxBounds.max), Is.True,
-                $"{address}: {hitbox.Region} 命中区最大点超出模型轮廓。");
+                $"{address}: {hitbox.Region} 命中区最大点超出模型轮廓。" +
+                $" Visual={visualBounds}, Hitbox={hitboxBounds}");
         }
     }
 }

@@ -418,6 +418,13 @@ namespace FPS.Networking.Netcode
                 payload);
         }
 
+        [Rpc(SendTo.Server, InvokePermission = RpcInvokePermission.Everyone,
+            Delivery = RpcDelivery.Reliable)]
+        public void RequestRestartMissionRpc(RpcParams rpcParams = default)
+        {
+            TryRestartMission(rpcParams.Receive.SenderClientId);
+        }
+
         /// <summary>
         /// Server-side transport/authentication seam. This is public so a
         /// multi-process PlayMode fixture can inject the actual sender id.
@@ -598,7 +605,11 @@ namespace FPS.Networking.Netcode
             if (!playerByClient.TryGetValue(senderClientId, out int playerId) ||
                 playerId != 1 || configuredRules == null ||
                 configuredPlayers.Length == 0 ||
-                configuredTargets.Length == 0)
+                configuredTargets.Length == 0 || simulation == null ||
+                (lastSnapshot?.Mission?.Phase !=
+                     AuthoritativeMissionPhase.Victory &&
+                 lastSnapshot?.Mission?.Phase !=
+                     AuthoritativeMissionPhase.Defeat))
                 return false;
             runGeneration++;
             simulation = new AuthoritativeCoopSimulation(

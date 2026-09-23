@@ -51,6 +51,8 @@ namespace FPS.Networking.Domain
         private long lastPredictedTick = long.MinValue;
         private long lastAcknowledgedClientTick = long.MinValue;
 
+        public double MovementSpeedMultiplier { get; set; } = 1d;
+
         public LocalPredictionBuffer(
             CoopServerRules rules,
             int playerId,
@@ -99,7 +101,8 @@ namespace FPS.Networking.Domain
                 predictedMovement,
                 command,
                 elapsedTicks,
-                rules);
+                rules,
+                movementSpeedMultiplier: MovementSpeedMultiplier);
             lastPredictedTick = command.ClientTick;
             pending.Add(command);
             return predictedMovement.Position;
@@ -136,7 +139,8 @@ namespace FPS.Networking.Domain
                     replayMovement,
                     command,
                     elapsedTicks,
-                    rules);
+                    rules,
+                    movementSpeedMultiplier: MovementSpeedMultiplier);
                 replayTick = command.ClientTick;
             }
 

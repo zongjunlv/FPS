@@ -237,11 +237,11 @@ public sealed class Issue51RunSnapshotContinuationTests
             yield return null;
         }
 
-        ModeDestinationView preparation =
-            Object.FindAnyObjectByType<ModeDestinationView>();
+        BattleCharacterSelectionView preparation =
+            Object.FindAnyObjectByType<BattleCharacterSelectionView>();
         Assert.That(preparation, Is.Not.Null);
-        Assert.That(preparation.PrimaryActionButton, Is.Not.Null);
-        preparation.PrimaryActionButton.onClick.Invoke();
+        Assert.That(preparation.ConfirmButton, Is.Not.Null);
+        preparation.ConfirmButton.onClick.Invoke();
         yield return WaitReady(null);
         Assert.That(GameModeContext.IsActive(
             GameModeId.SoloBattle, GameModeStage.Battle), Is.True);

@@ -7,6 +7,14 @@ using UnityEngine.InputSystem;
 
 namespace FPS.Networking.Session
 {
+    public static class CoopUiInputGate
+    {
+        public static bool EconomyModalVisible { get; set; }
+        public static bool PauseMenuVisible { get; set; }
+        public static bool GameplayInputSuppressed =>
+            EconomyModalVisible || PauseMenuVisible;
+    }
+
     /// <summary>
     /// Read-only projection of the authoritative co-op mission snapshot.
     /// Interaction keys submit intents; this view never advances the mission.
@@ -53,7 +61,9 @@ namespace FPS.Networking.Session
             }
 
             Keyboard keyboard = Keyboard.current;
-            if (keyboard == null || !keyboard.eKey.isPressed) return;
+            if (keyboard == null || !keyboard.eKey.isPressed ||
+                CoopUiInputGate.GameplayInputSuppressed)
+                return;
             if (TryDownedTeammate(out NetcodePlayerState teammate) &&
                 InRange(localPlayer.PresentedPosition, teammate.Position,
                     world.ReviveRadius))
@@ -181,12 +191,7 @@ namespace FPS.Networking.Session
             {
                 GUILayout.BeginHorizontal();
                 if (GUILayout.Button("开始新战局", GUILayout.Height(46f)))
-                {
-                    ulong sender = NetworkManager.Singleton != null
-                        ? NetworkManager.Singleton.LocalClientId
-                        : NetworkManager.ServerClientId;
-                    authority.TryRestartMission(sender);
-                }
+                    authority.RequestRestartMissionRpc();
                 if (GUILayout.Button("所有成员返回房间",
                         GUILayout.Height(46f)))
                     _ = session.ReturnToLobbyAfterMatchAsync();

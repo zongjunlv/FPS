@@ -7,7 +7,8 @@ using UnityEngine.InputSystem;
 using UnityEngine.SceneManagement;
 using UnityEngine.TestTools;
 
-public sealed class Issue83BattleCharacterSelectionTests : InputTestFixture
+public sealed class Issue83BattleCharacterSelectionTests :
+    FPS.Tests.PlayMode.TutorialInputTestFixture
 {
     private bool hadStoredSelection;
     private string storedSelection;

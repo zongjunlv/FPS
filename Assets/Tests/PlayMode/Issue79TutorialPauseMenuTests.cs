@@ -11,7 +11,7 @@ using UnityEngine.UI;
 
 namespace FPS.Tests.PlayMode
 {
-    public sealed class Issue79TutorialPauseMenuTests : InputTestFixture
+    public sealed class Issue79TutorialPauseMenuTests : TutorialInputTestFixture
     {
         [UnityTest]
         public IEnumerator EscapePauseCanContinueCurrentTutorialStep()

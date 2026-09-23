@@ -652,7 +652,7 @@ public sealed class CityNewMissionController : MonoBehaviour
 
         hud?.ClearRewardCues();
         hud?.SetOutcomePresentation(true);
-        outcomeView.Show(OutcomeSummary, () => RestartLevel());
+        outcomeView.Show(OutcomeSummary, () => RestartLevel(), RequestQuit);
     }
 
     private void CreateExtractionZone(Vector3 position)

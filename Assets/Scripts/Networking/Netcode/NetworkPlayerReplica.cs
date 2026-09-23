@@ -297,6 +297,8 @@ namespace FPS.Networking.Netcode
                 jumpPressed,
                 sprintHeld,
                 crouchRequested);
+            prediction.MovementSpeedMultiplier =
+                ResolveMovementSpeedMultiplier();
             NetVector3 predicted = prediction.Predict(provisional);
             PlayerMovementState movement = prediction.PredictedMovement;
             PresentedPosition = NetcodeConversions.ToUnity(predicted);
@@ -603,6 +605,8 @@ namespace FPS.Networking.Netcode
                 lastConsumedServerTick = state.ServerTick;
                 if (treatAsLocalOwner)
                 {
+                    prediction.MovementSpeedMultiplier =
+                        ResolveMovementSpeedMultiplier();
                     LastPredictionCorrection = prediction.Reconcile(
                         state.ToDomain());
                     PredictionReconciled?.Invoke(
@@ -658,6 +662,23 @@ namespace FPS.Networking.Netcode
             ApplyPresentedPose();
             if (!wasReady && HasConsumedServerState)
                 ApplyOwnershipPolicy();
+        }
+
+        private double ResolveMovementSpeedMultiplier()
+        {
+            if (session == null) return 1d;
+            double bonus = 0d;
+            for (int index = 0; index < session.ReplicatedUpgradeCount;
+                 index++)
+            {
+                NetcodeUpgradeStackState stack =
+                    session.GetReplicatedUpgrade(index);
+                if (stack.PlayerId == playerId &&
+                    stack.UpgradeId.ToString() ==
+                    "survival_mobility_training")
+                    bonus += 0.1d * stack.Level;
+            }
+            return 1d + bonus;
         }
 
         public void EnableOwnerTestHook(

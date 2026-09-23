@@ -1,15 +1,54 @@
+using System;
 using System.Collections;
+using System.Reflection;
 using FPS.Core.GameModes;
 using NUnit.Framework;
 using UnityEngine;
 using UnityEngine.InputSystem;
 using UnityEngine.InputSystem.Controls;
+using UnityEngine.InputSystem.UI;
 using UnityEngine.SceneManagement;
 using UnityEngine.TestTools;
+using Object = UnityEngine.Object;
 
 namespace FPS.Tests.PlayMode
 {
-    public sealed class Issue73TutorialMovementTests : InputTestFixture
+    public abstract class TutorialInputTestFixture : InputTestFixture
+    {
+        [SetUp]
+        public override void Setup()
+        {
+            // A preceding fixture may leave actions alive across scene tests.
+            foreach (InputAction action in InputSystem.ListEnabledActions())
+            {
+                action.Disable();
+            }
+
+            base.Setup();
+            // InputSystemUIInputModule caches one default action asset in a
+            // static field; that asset still points at the pre-reset manager.
+            FieldInfo defaults = typeof(InputSystemUIInputModule).GetField(
+                "defaultActions",
+                BindingFlags.Static | BindingFlags.NonPublic);
+            (defaults?.GetValue(null) as IDisposable)?.Dispose();
+            defaults?.SetValue(null, null);
+        }
+
+        [TearDown]
+        public override void TearDown()
+        {
+            // Live tutorial rigs retain actions until the next scene load. Disable
+            // them before InputTestFixture restores the native input state.
+            foreach (InputAction action in InputSystem.ListEnabledActions())
+            {
+                action.Disable();
+            }
+
+            base.TearDown();
+        }
+    }
+
+    public sealed class Issue73TutorialMovementTests : TutorialInputTestFixture
     {
         [UnityTest]
         public IEnumerator WsadStepsCompleteFromActualLocalDisplacement()

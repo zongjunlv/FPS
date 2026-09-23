@@ -18,6 +18,7 @@ namespace FPS.Networking.Session
         private NetworkCoopSessionAuthority authority;
         private NetworkPlayerReplica localPlayer;
         private bool inventoryVisible;
+        private bool modalVisible;
 
         private void Update()
         {
@@ -26,17 +27,26 @@ namespace FPS.Networking.Session
                 !localPlayer.HasConsumedServerState)
             {
                 inventoryVisible = false;
+                SetModalVisible(false);
                 return;
             }
             if (authority != null && IsOutcome(authority.WorldState))
             {
                 inventoryVisible = false;
+                SetModalVisible(false);
                 return;
             }
             if (Keyboard.current == null || localPlayer == null) return;
-            if (Keyboard.current.iKey.wasPressedThisFrame)
+            bool pauseOpen = CoopUiInputGate.PauseMenuVisible;
+            if (!pauseOpen && Keyboard.current.iKey.wasPressedThisFrame)
                 inventoryVisible = !inventoryVisible;
-            if (Keyboard.current.fKey.wasPressedThisFrame &&
+            bool choosingUpgrade = authority != null &&
+                authority.TryGetProgression(localPlayer.PlayerId,
+                    out NetcodeProgressionState progression) &&
+                progression.PendingUpgradeChoices > 0;
+            SetModalVisible(inventoryVisible || choosingUpgrade);
+            if (!pauseOpen && !modalVisible &&
+                Keyboard.current.fKey.wasPressedThisFrame &&
                 TryNearestDrop(out NetcodeWorldDropState drop))
             {
                 localPlayer.SubmitEconomyAction(
@@ -44,6 +54,33 @@ namespace FPS.Networking.Session
                     entityId: drop.DropId,
                     expectedDropRevision: drop.Revision,
                     expectedItemId: drop.ItemId.ToString());
+            }
+        }
+
+        private void LateUpdate()
+        {
+            if (!modalVisible) return;
+            Cursor.lockState = CursorLockMode.None;
+            Cursor.visible = true;
+        }
+
+        private void OnDisable()
+        {
+            inventoryVisible = false;
+            SetModalVisible(false);
+        }
+
+        private void SetModalVisible(bool visible)
+        {
+            if (modalVisible == visible) return;
+            modalVisible = visible;
+            CoopUiInputGate.EconomyModalVisible = visible;
+            if (!visible && !CoopUiInputGate.PauseMenuVisible &&
+                authority != null &&
+                !IsOutcome(authority.WorldState))
+            {
+                Cursor.lockState = CursorLockMode.Locked;
+                Cursor.visible = false;
             }
         }
 

@@ -60,6 +60,20 @@ class QualityGateReportTests(unittest.TestCase):
         report = evaluate("editmode", 0, log, results)
         self.assertEqual("passed", report["category"])
 
+    def test_input_fixture_shard_requires_real_xml(self):
+        log = self.write("playmode-input.log", "Tests completed")
+        missing = self.root / "playmode-input.xml"
+        report = evaluate("playmode-input", 0, log, missing)
+        self.assertEqual("environment-report", report["category"])
+
+        results = self.write(
+            "playmode-input.xml",
+            '<test-run result="Passed" total="2" passed="2" '
+            'failed="0" skipped="0" inconclusive="0" />',
+        )
+        report = evaluate("playmode-input", 0, log, results)
+        self.assertEqual("passed", report["category"])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -27,6 +27,16 @@ namespace FPS.Networking.Netcode
     }
 
     [Serializable]
+    public struct CoopLootDropDefinition
+    {
+        public string ItemId;
+        public int Quantity;
+
+        public AuthoritativeLootStack ToDomain() =>
+            new(ItemId, Quantity);
+    }
+
+    [Serializable]
     public struct CoopTargetSpawnDefinition
     {
         public int TargetId;
@@ -44,6 +54,7 @@ namespace FPS.Networking.Netcode
         [Min(1)] public int AttackIntervalTicks;
         [Min(0)] public int RewardExperience;
         [Min(1)] public int DropQuantity;
+        public CoopLootDropDefinition[] LootDrops;
         public string ArchetypeId;
         public string PresentationAddress;
         [Min(1)] public int WaveIndex;
@@ -70,7 +81,9 @@ namespace FPS.Networking.Netcode
                 ArchetypeId,
                 PresentationAddress,
                 Mathf.Max(1, WaveIndex),
-                Mathf.Max(0, SpawnOrder));
+                Mathf.Max(0, SpawnOrder),
+                LootDrops == null ? null :
+                Array.ConvertAll(LootDrops, value => value.ToDomain()));
         }
     }
 

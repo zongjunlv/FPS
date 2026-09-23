@@ -11,6 +11,17 @@ namespace FPS.Tests.PlayMode
 {
     public sealed class Issue72TutorialHudTests
     {
+        [UnityTearDown]
+        public IEnumerator ClearTutorialScene()
+        {
+            Scene tutorial = SceneManager.GetActiveScene();
+            Scene empty = SceneManager.CreateScene("Issue72 Empty Test Scene");
+            SceneManager.SetActiveScene(empty);
+            if (tutorial.IsValid() && tutorial.isLoaded)
+                yield return SceneManager.UnloadSceneAsync(tutorial);
+            GameModeFlowController.ResetRuntimeForTests();
+        }
+
         [UnityTest]
         public IEnumerator TopGuideIsReadableSafeAndDoesNotBlockGameplay()
         {

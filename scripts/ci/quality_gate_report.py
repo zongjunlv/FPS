@@ -100,7 +100,7 @@ def evaluate(
         )
         return report
 
-    if phase in {"editmode", "playmode"}:
+    if phase in {"editmode", "playmode", "playmode-input"}:
         if results_path is None or not results_path.exists():
             report.update(
                 category="environment-report",
@@ -176,7 +176,8 @@ def _write_phase_report(report: dict[str, Any], output_dir: Path) -> None:
 
 
 def aggregate(output_dir: Path) -> dict[str, Any]:
-    order = {"compile": 0, "editmode": 1, "playmode": 2}
+    order = {"compile": 0, "editmode": 1, "playmode": 2,
+             "playmode-input": 3}
     reports = []
 
     for path in output_dir.glob("*.json"):

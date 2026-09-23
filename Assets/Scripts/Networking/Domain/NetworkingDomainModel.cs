@@ -258,6 +258,18 @@ namespace FPS.Networking.Domain
         public double MaximumArmor { get; }
     }
 
+    public readonly struct AuthoritativeLootStack
+    {
+        public AuthoritativeLootStack(string itemId, int quantity)
+        {
+            ItemId = itemId ?? string.Empty;
+            Quantity = Math.Max(1, quantity);
+        }
+
+        public string ItemId { get; }
+        public int Quantity { get; }
+    }
+
     public readonly struct CoopTargetSpawn
     {
         public CoopTargetSpawn(
@@ -279,7 +291,8 @@ namespace FPS.Networking.Domain
             string archetypeId = "",
             string presentationAddress = "",
             int waveIndex = 1,
-            int spawnOrder = 0)
+            int spawnOrder = 0,
+            IReadOnlyList<AuthoritativeLootStack> lootDrops = null)
         {
             if (targetId <= 0) throw new ArgumentOutOfRangeException(nameof(targetId));
             if (!position.IsFinite) throw new ArgumentOutOfRangeException(nameof(position));
@@ -331,6 +344,12 @@ namespace FPS.Networking.Domain
             PresentationAddress = presentationAddress?.Trim() ?? string.Empty;
             WaveIndex = waveIndex;
             SpawnOrder = spawnOrder;
+            LootDrops = lootDrops == null
+                ? string.IsNullOrEmpty(DropDefinitionId)
+                    ? Array.Empty<AuthoritativeLootStack>()
+                    : new[] { new AuthoritativeLootStack(
+                        DropDefinitionId, DropQuantity) }
+                : lootDrops.ToArray();
         }
 
         public int TargetId { get; }
@@ -348,6 +367,7 @@ namespace FPS.Networking.Domain
         public int AttackIntervalTicks { get; }
         public int RewardExperience { get; }
         public int DropQuantity { get; }
+        public IReadOnlyList<AuthoritativeLootStack> LootDrops { get; }
         public string ArchetypeId { get; }
         public string PresentationAddress { get; }
         public int WaveIndex { get; }

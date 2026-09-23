@@ -189,6 +189,119 @@ namespace FPS.Tests.Architecture
         }
 
         [Test]
+        public void EliteKillPublishesEveryRolledLootStack()
+        {
+            var simulation = new AuthoritativeCoopSimulation(
+                new CoopServerRules(tickRate: 60,
+                    fireCooldownTicks: 1, shotDamage: 100d),
+                new[] { new CoopPlayerSpawn(1, default) },
+                new[]
+                {
+                    new CoopTargetSpawn(1,
+                        new NetVector3(0d, 0d, 10d), 0.5d, 10d,
+                        role: AuthoritativeEnemyRole.Elite,
+                        lootDrops: new[]
+                        {
+                            new AuthoritativeLootStack("medical_kit", 2),
+                            new AuthoritativeLootStack("armor_pack", 1)
+                        })
+                });
+
+            AuthoritativeTickResult result = simulation.Step(new[]
+            {
+                new PlayerInputCommand(1, 1, 101, 1,
+                    0d, 0d, 0d, 0d, true, default,
+                    false, false, false, "weapon.rifle", default)
+            });
+
+            Assert.That(result.Snapshot.Economy.WorldDrops.Select(value =>
+                    value.ItemId),
+                Is.EquivalentTo(new[] { "medical_kit", "armor_pack" }));
+            Assert.That(result.Events.Count(value =>
+                value.Kind == AuthoritativeEventKind.WorldDropSpawned),
+                Is.EqualTo(2));
+        }
+
+        [Test]
+        public void WaveAndFinalRewardsAreGrantedOnceAtTheirBoundaries()
+        {
+            var simulation = new AuthoritativeCoopSimulation(
+                new CoopServerRules(tickRate: 60,
+                    fireCooldownTicks: 1, shotDamage: 100d),
+                new[] { new CoopPlayerSpawn(1, default) },
+                new[]
+                {
+                    new CoopTargetSpawn(1,
+                        new NetVector3(0d, 0d, 10d), 0.5d, 10d,
+                        waveIndex: 1),
+                    new CoopTargetSpawn(2,
+                        new NetVector3(0d, 0d, 10d), 0.5d, 10d,
+                        waveIndex: 2)
+                },
+                configuredWaves: new[]
+                {
+                    new AuthoritativeWaveDefinition(1, 1, 0, 0,
+                        waveRewards: new[]
+                        {
+                            new AuthoritativeLootStack("medical_kit", 1)
+                        }),
+                    new AuthoritativeWaveDefinition(2, 1, 0, 0,
+                        finalRewards: new[]
+                        {
+                            new AuthoritativeLootStack("armor_pack", 1)
+                        })
+                });
+
+            for (uint sequence = 1; sequence <= 2; sequence++)
+            {
+                simulation.Step(new[]
+                {
+                    new PlayerInputCommand(1, sequence,
+                        100UL + sequence, sequence,
+                        0d, 0d, 0d, 0d, true, default,
+                        false, false, false, "weapon.rifle", default)
+                });
+            }
+
+            Assert.That(simulation.CaptureSnapshot().Economy.WorldDrops
+                    .Select(value => value.ItemId),
+                Is.EquivalentTo(new[] { "medical_kit", "armor_pack" }));
+            simulation.Step(Array.Empty<PlayerInputCommand>());
+            Assert.That(simulation.CaptureSnapshot().Economy.WorldDrops.Count,
+                Is.EqualTo(2));
+        }
+
+        [Test]
+        public void MovementModifierUsesTheSameRuleForServerAndPrediction()
+        {
+            var rules = new CoopServerRules(tickRate: 60,
+                maximumAcceleration: 1000d);
+            var start = new PlayerMovementState(default, default,
+                0d, 0d, PlayerStance.Standing, true, long.MinValue, 0d);
+            var command = new PlayerInputCommand(1, 1, 101, 1,
+                0d, 1d, 0d, 0d, false, default);
+            PlayerMovementState baseMovement =
+                CoopGameplayRules.IntegrateMovement(
+                    start, command, 60, rules);
+            PlayerMovementState boostedMovement =
+                CoopGameplayRules.IntegrateMovement(
+                    start, command, 60, rules,
+                    movementSpeedMultiplier: 1.1d);
+
+            Assert.That(boostedMovement.Position.Z,
+                Is.GreaterThan(baseMovement.Position.Z));
+            var prediction = new LocalPredictionBuffer(rules, 1, default)
+            {
+                MovementSpeedMultiplier = 1.1d
+            };
+            Assert.That(prediction.Predict(command).Z,
+                Is.EqualTo(CoopGameplayRules.IntegrateMovement(
+                    start, command, 1, rules,
+                    movementSpeedMultiplier: 1.1d).Position.Z)
+                    .Within(0.000001d));
+        }
+
+        [Test]
         public void ExperienceOverflowOffersCardsAndSelectionIsIdempotent()
         {
             AuthoritativeCoopSimulation simulation = Simulation();
