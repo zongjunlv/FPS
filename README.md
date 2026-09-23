@@ -24,13 +24,13 @@
 
 ## 下载客户端
 
-当前 Windows 客户端版本为 **v0.2.0 Windows x86_64**；macOS 客户端继续提供 **v0.1.0 Universal**，同时支持 Apple Silicon 与 Intel Mac。
+当前 Windows 客户端版本为 **v0.2.0 Windows x86_64**；macOS 客户端版本为 **v0.2.1 Universal**，同时支持 Apple Silicon 与 Intel Mac。
 
 - [前往 Releases 页面](https://github.com/zongjunlv/FPS/releases/latest)
 - [直接下载 Windows x86_64 客户端](https://github.com/zongjunlv/FPS/releases/download/v0.2.0/FPS-PVE-Demo-v0.2.0-Windows-x86_64.zip)
-- [直接下载 macOS 客户端](https://github.com/zongjunlv/FPS/releases/download/v0.1.0/FPS-PVE-Demo-v0.1.0-macOS-universal.zip)
+- [直接下载 macOS 客户端](https://github.com/zongjunlv/FPS/releases/download/v0.2.1/FPS-PVE-Demo-v0.2.1-macOS-universal.zip)
 - Windows SHA-256：`1209bafe84db7fd05972c4421823f084c39c8f577e4f7b45c93752da2179ec13`
-- macOS SHA-256：`4621702e0740dfa21127979f342629b2bdc914c489ce511677163f3907756520`
+- macOS SHA-256：`5030873105fd907d87cd6182ab5a0059c03c7fe173e96dc0db56c68064c9fb03`
 
 Windows 解压后运行 `FPS-PVE-Demo.exe`；请保留 EXE、`FPS-PVE-Demo_Data`、`UnityPlayer.dll` 和 `MonoBleedingEdge` 在同一目录。macOS 解压后运行 `FPS-PVE-Demo.app`；当前 macOS 客户端采用 ad-hoc 签名，尚未经过 Apple 公证，如果首次启动被 Gatekeeper 拦截，请在 Finder 中右键应用并选择“打开”。联机模式依赖网络服务，公开服务可能因维护临时不可用。
 
