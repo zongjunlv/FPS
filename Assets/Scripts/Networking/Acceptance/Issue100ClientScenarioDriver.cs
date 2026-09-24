@@ -204,7 +204,9 @@ namespace FPS.Networking.Acceptance
                 authority = FindAnyObjectByType<NetworkCoopSessionAuthority>();
                 replica = FindObjectsByType<NetworkPlayerReplica>(
                         FindObjectsInactive.Exclude, FindObjectsSortMode.None)
-                    .FirstOrDefault(value => value.IsLocallyControlled &&
+                    .FirstOrDefault(value => value.IsSpawned &&
+                        value.IsLocallyControlled &&
+                        value.HasConsumedServerState &&
                         value.IsPresentationReady);
                 if (network?.NetworkManager != null &&
                     network.NetworkManager.IsConnectedClient &&
@@ -252,9 +254,13 @@ namespace FPS.Networking.Acceptance
             Vector3 expectedPosition = replica.PresentedPosition;
             float expectedHealth = replica.PresentedHealth;
             int expectedMagazine = replica.PresentedMagazineAmmo;
+            bool hadServerState = authority.TryGetPlayerState(
+                expectedPlayerId, out NetcodePlayerState beforeState);
             evidence.Passed("reconnect.ready-to-disconnect",
                 disconnectedAtTick,
-                $"player={expectedPlayerId};tick={disconnectedAtTick}");
+                $"player={expectedPlayerId};tick={disconnectedAtTick};" +
+                $"clientMagazine={expectedMagazine};" +
+                $"serverMagazine={(hadServerState ? beforeState.MagazineAmmo : -1)}");
 
             UnbindMetrics();
             network.Shutdown();
@@ -305,8 +311,16 @@ namespace FPS.Networking.Acceptance
                 Vector3.Distance(replica.PresentedPosition,
                     expectedPosition) > 1.5f)
             {
+                bool hasServerState = authority.TryGetPlayerState(
+                    expectedPlayerId, out NetcodePlayerState afterState);
                 Abort(Issue100AcceptanceSteps.ReconnectRestore,
-                    "重连后的生命、弹药或位置没有恢复权威状态。");
+                    "重连后的生命、弹药或位置没有恢复权威状态。" +
+                    $" before=({expectedHealth:0.#},{expectedMagazine}," +
+                    $"{expectedPosition}) after=({replica.PresentedHealth:0.#}," +
+                    $"{replica.PresentedMagazineAmmo},{replica.PresentedPosition})" +
+                    $" authority=({(hasServerState ? afterState.Health : -1f):0.#}," +
+                    $"{(hasServerState ? afterState.MagazineAmmo : -1)}," +
+                    $"{(hasServerState ? afterState.Position : Vector3.zero)})");
                 yield break;
             }
             BindMetrics();
@@ -320,6 +334,25 @@ namespace FPS.Networking.Acceptance
             Vector3 origin = replica.PresentedPosition;
             yield return DriveFor(new Vector2(0f, 1f), 0.65f,
                 sprint: false, crouch: false, aiming: false);
+            // CityNew spawn points can face a nearby solid surface. Probe
+            // the other cardinal directions before treating a blocked path
+            // as a broken authoritative movement pipeline.
+            if (includeTraversalAssertions &&
+                Vector3.Distance(origin, replica.PresentedPosition) < 0.15f)
+            {
+                foreach (Vector2 direction in new[]
+                {
+                    new Vector2(0f, -1f), new Vector2(1f, 0f),
+                    new Vector2(-1f, 0f)
+                })
+                {
+                    yield return DriveFor(direction, 0.65f,
+                        sprint: false, crouch: false, aiming: false);
+                    if (Vector3.Distance(origin, replica.PresentedPosition) >=
+                        0.15f)
+                        break;
+                }
+            }
             if (includeTraversalAssertions &&
                 Vector3.Distance(origin, replica.PresentedPosition) < 0.15f)
             {
@@ -474,9 +507,22 @@ namespace FPS.Networking.Acceptance
             yield return PresentStep(Issue100AcceptanceSteps.Reload);
             int magazineBefore = replica.PresentedMagazineAmmo;
             input.SubmitPresentationAction(NetworkPresentationAction.Reload);
-            yield return new WaitForSecondsRealtime(1.6f);
+            yield return WaitUntil(() =>
+                authority.TryGetPlayerState(replica.PlayerId,
+                    out NetcodePlayerState state) &&
+                !state.Reloading &&
+                state.MagazineAmmo > magazineBefore, 6d);
+            if (!authority.TryGetPlayerState(replica.PlayerId,
+                    out NetcodePlayerState reloadedState) ||
+                reloadedState.Reloading ||
+                reloadedState.MagazineAmmo <= magazineBefore)
+            {
+                Abort(Issue100AcceptanceSteps.Reload,
+                    "服务器没有完成换弹并增加弹匣子弹。");
+                yield break;
+            }
             evidence.Passed(Issue100AcceptanceSteps.Reload, Tick(),
-                $"magazine={magazineBefore}->{replica.PresentedMagazineAmmo}");
+                $"magazine={magazineBefore}->{reloadedState.MagazineAmmo}");
         }
 
         private IEnumerator CompleteWave()

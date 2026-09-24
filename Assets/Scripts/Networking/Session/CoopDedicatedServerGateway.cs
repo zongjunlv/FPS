@@ -1,18 +1,24 @@
 using System;
 using System.Collections.Generic;
-using System.Security.Cryptography;
 using System.Text;
 using System.Threading.Tasks;
 using FPS.Networking.Netcode;
-using Unity.Services.Authentication;
 using UnityEngine;
-using UnityEngine.Networking;
+using System.IO;
 
 namespace FPS.Networking.Session
 {
     [Serializable]
     public sealed class CoopDedicatedServerSettings
     {
+        // 打包默认值位于 Resources；迁移服务器时可在 persistentDataPath 放置
+        // CoopDedicatedServerSettings.json 覆盖 brokerUrl / 证书指纹，无需重新打包。
+        // 示例：{"brokerUrl":"https://new.example.com",
+        //        "pinnedCertificateSha256":""}
+        // 空指纹表示使用系统 CA 校验；若配置 64 位十六进制证书指纹，换证时
+        // 必须同步更新。覆盖文件可以只写需更改的字段，其余继承打包默认值。
+        // 账号与房间数据仍必须由服务端数据库备份、迁移；本文件不承载数据。
+        public const string OverrideFileName = "CoopDedicatedServerSettings.json";
         public string brokerUrl = string.Empty;
         public string pinnedCertificateSha256 = string.Empty;
         public string applicationVersion = "0.1.0";
@@ -36,21 +42,65 @@ namespace FPS.Networking.Session
             }
             try
             {
-                settings = JsonUtility.FromJson<CoopDedicatedServerSettings>(
-                    asset.text);
-                if (settings == null ||
-                    !Uri.TryCreate(settings.brokerUrl, UriKind.Absolute,
-                        out Uri uri) || uri.Scheme != Uri.UriSchemeHttps ||
-                    NormalizeFingerprint(settings.pinnedCertificateSha256)
-                        .Length != 64)
+                string overridePath = Path.Combine(
+                    Application.persistentDataPath, OverrideFileName);
+                string overrideJson = File.Exists(overridePath)
+                    ? File.ReadAllText(overridePath)
+                    : null;
+                return TryParse(asset.text, overrideJson, out settings,
+                    out error);
+            }
+            catch (Exception exception) when (
+                exception is ArgumentException or FormatException or IOException or
+                    UnauthorizedAccessException)
+            {
+                settings = null;
+                error = "专用服务器配置无法读取：" + exception.Message;
+                return false;
+            }
+        }
+
+        public static bool TryParse(string bundledJson, string overrideJson,
+            out CoopDedicatedServerSettings settings, out string error)
+        {
+            try
+            {
+                if (overrideJson != null &&
+                    string.IsNullOrWhiteSpace(overrideJson))
                 {
                     settings = null;
-                    error = "专用服务器配置缺少 HTTPS 地址或证书指纹。";
+                    error = "外部服务器配置为空，请修正或移除覆盖文件。";
+                    return false;
+                }
+                settings = JsonUtility.FromJson<CoopDedicatedServerSettings>(
+                    bundledJson);
+                if (settings == null)
+                    throw new FormatException("打包配置为空。");
+                if (overrideJson != null)
+                    JsonUtility.FromJsonOverwrite(overrideJson, settings);
+                if (!Uri.TryCreate(settings.brokerUrl, UriKind.Absolute,
+                        out Uri uri) || uri.Scheme != Uri.UriSchemeHttps ||
+                    !string.IsNullOrEmpty(uri.UserInfo) ||
+                    !string.IsNullOrEmpty(uri.Query) ||
+                    !string.IsNullOrEmpty(uri.Fragment))
+                {
+                    settings = null;
+                    error = "账号与房间服务必须使用有效 HTTPS 地址。";
+                    return false;
+                }
+
+                string fingerprint = NormalizeFingerprint(
+                    settings.pinnedCertificateSha256);
+                if (!string.IsNullOrWhiteSpace(
+                        settings.pinnedCertificateSha256) &&
+                    fingerprint.Length != 64)
+                {
+                    settings = null;
+                    error = "证书指纹必须是完整的 SHA-256 值。";
                     return false;
                 }
                 settings.brokerUrl = settings.brokerUrl.TrimEnd('/');
-                settings.pinnedCertificateSha256 = NormalizeFingerprint(
-                    settings.pinnedCertificateSha256);
+                settings.pinnedCertificateSha256 = fingerprint;
                 settings.requestTimeoutSeconds = Mathf.Clamp(
                     settings.requestTimeoutSeconds, 5, 120);
                 _ = settings.Compatibility;
@@ -214,70 +264,21 @@ namespace FPS.Networking.Session
 
         private async Task<string> SendAsync(string path, string json)
         {
-            if (!AuthenticationService.Instance.IsAuthorized ||
-                string.IsNullOrWhiteSpace(
-                    AuthenticationService.Instance.AccessToken))
+            string token = SelfHostedAuthenticationGateway.AccessToken;
+            if (string.IsNullOrWhiteSpace(token))
                 throw new InvalidOperationException(
                     "账号登录已过期，请重新登录后再进入联机战斗。 ");
-            byte[] body = Encoding.UTF8.GetBytes(json);
-            using var request = new UnityWebRequest(
-                settings.brokerUrl + path, UnityWebRequest.kHttpVerbPOST)
+            try
             {
-                uploadHandler = new UploadHandlerRaw(body),
-                downloadHandler = new DownloadHandlerBuffer(),
-                certificateHandler = new PinnedCertificateHandler(
-                    settings.pinnedCertificateSha256),
-                timeout = settings.requestTimeoutSeconds,
-                disposeCertificateHandlerOnDispose = true
-            };
-            request.SetRequestHeader("Content-Type", "application/json");
-            request.SetRequestHeader("Authorization", "Bearer " +
-                AuthenticationService.Instance.AccessToken);
-            UnityWebRequestAsyncOperation operation = request.SendWebRequest();
-            while (!operation.isDone) await Task.Yield();
-            if (request.result != UnityWebRequest.Result.Success)
-            {
-                CoopBrokerError response = null;
-                try
-                {
-                    response = JsonUtility.FromJson<CoopBrokerError>(
-                        request.downloadHandler.text);
-                }
-                catch (ArgumentException)
-                {
-                    // Fall through to the transport message.
-                }
-                string message = response?.error;
-                if (string.IsNullOrWhiteSpace(message))
-                    message = string.IsNullOrWhiteSpace(request.error)
-                        ? "专用服务器分配失败。"
-                        : request.error;
-                throw new InvalidOperationException(message);
+                return await SelfHostedHttpClient.SendAsync("POST", path, json,
+                    token, settings);
             }
-            return request.downloadHandler.text;
-        }
-
-        private sealed class PinnedCertificateHandler : CertificateHandler
-        {
-            private readonly string expected;
-
-            public PinnedCertificateHandler(string fingerprint)
+            catch (SelfHostedHttpException exception)
             {
-                expected = CoopDedicatedServerSettings.NormalizeFingerprint(
-                    fingerprint);
-            }
-
-            protected override bool ValidateCertificate(byte[] certificateData)
-            {
-                if (certificateData == null || certificateData.Length == 0)
-                    return false;
-                using SHA256 sha = SHA256.Create();
-                string actual = BitConverter.ToString(
-                        sha.ComputeHash(certificateData))
-                    .Replace("-", string.Empty)
-                    .ToLowerInvariant();
-                return string.Equals(actual, expected,
-                    StringComparison.Ordinal);
+                throw new InvalidOperationException(
+                    string.IsNullOrWhiteSpace(exception.SafeMessage)
+                        ? "专用服务器分配失败，请稍后重试。"
+                        : exception.SafeMessage);
             }
         }
     }

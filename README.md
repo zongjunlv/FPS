@@ -24,13 +24,9 @@
 
 ## 下载客户端
 
-当前 Windows 客户端版本为 **v0.2.0 Windows x86_64**；macOS 客户端版本为 **v0.2.1 Universal**，同时支持 Apple Silicon 与 Intel Mac。
+当前客户端版本为 **v0.3.0**，包含自建账号、房间与战局分配接口。旧版 v0.2.x 客户端仍使用 Unity 云端账号/房间流程，不适用于当前服务端。
 
 - [前往 Releases 页面](https://github.com/zongjunlv/FPS/releases/latest)
-- [直接下载 Windows x86_64 客户端](https://github.com/zongjunlv/FPS/releases/download/v0.2.0/FPS-PVE-Demo-v0.2.0-Windows-x86_64.zip)
-- [直接下载 macOS 客户端](https://github.com/zongjunlv/FPS/releases/download/v0.2.1/FPS-PVE-Demo-v0.2.1-macOS-universal.zip)
-- Windows SHA-256：`1209bafe84db7fd05972c4421823f084c39c8f577e4f7b45c93752da2179ec13`
-- macOS SHA-256：`5030873105fd907d87cd6182ab5a0059c03c7fe173e96dc0db56c68064c9fb03`
 
 Windows 解压后运行 `FPS-PVE-Demo.exe`；请保留 EXE、`FPS-PVE-Demo_Data`、`UnityPlayer.dll` 和 `MonoBleedingEdge` 在同一目录。macOS 解压后运行 `FPS-PVE-Demo.app`；当前 macOS 客户端采用 ad-hoc 签名，尚未经过 Apple 公证，如果首次启动被 Gatekeeper 拦截，请在 Finder 中右键应用并选择“打开”。联机模式依赖网络服务，公开服务可能因维护临时不可用。
 
@@ -85,7 +81,7 @@ flowchart LR
 
 ## 联机架构
 
-联机模式不是本地 Host 冒充服务器。客户端负责输入、预测与表现，腾讯云上的 Linux Headless Dedicated Server 负责权威战局；匹配代理负责为房间分配独立服务器进程和短时连接票据。
+联机模式不是本地 Host 冒充服务器。客户端负责输入、预测与表现，Linux Headless Dedicated Server 负责权威战局；自建 HTTPS 控制服务负责账号、房间、战局分配和短时连接票据。当前面向单房间、最多两人的演示场景，服务地址和持久化数据路径均可配置，不绑定某台云主机。
 
 ```mermaid
 flowchart LR
@@ -95,12 +91,11 @@ flowchart LR
         Presentation[角色、敌人和 HUD 表现]
     end
 
-    Auth[Unity Authentication] --> UI
-    Lobby[Unity Multiplayer / Lobby] <--> UI
-    UI -->|HTTPS + 身份令牌| Broker[腾讯云 Match Broker]
+    UI <-->|HTTPS + 短期登录令牌| Broker[自建账号、房间与分配服务]
+    Broker <--> DB[(持久化 SQLite 数据库)]
     Broker -->|启动与分配| DGS[Linux Headless Dedicated Server]
     Prediction <-->|Unity Transport / UDP| DGS
-    DGS --> Kernel[30 Tick/s 权威仿真]
+    DGS --> Kernel[60 Tick/s 权威仿真]
     Kernel -->|权威快照与事件| Presentation
 ```
 
@@ -114,11 +109,14 @@ flowchart LR
 
 房间上限为两人，所有已加入玩家完成选角并准备后由房主开始。为便于功能验证，只有房主一人时也允许创建并启动联机战局。
 
+账号和房间持久化于服务端 SQLite，使用参数化路径及版本化 schema；迁移服务器时备份并恢复数据库、配置及认证密钥，再切换客户端 HTTPS 地址或域名。旧版 Unity Authentication 账号不会自动迁入新的账号库，需重新注册；正在运行中的战斗进程也不做跨机器热迁移。请选用 v0.3.0 或更新的客户端，旧版 v0.2.x 安装包不支持当前自建服务接口。
+
 更详细的权威规则和多进程验收边界见：
 
 - [权威战局仿真内核](docs/architecture/authoritative-simulation.md)
 - [服务器权威双人合作与网络诊断](docs/networking/issue-65.md)
 - [Dedicated Server + 双客户端多进程验收](docs/networking/issue-100.md)
+- [自建控制服务、部署与迁移](docs/networking/self-hosted-control-plane.md)
 
 ## 工程架构
 
@@ -140,7 +138,7 @@ FPS.Core / Combat / AI / Inventory / SaveGame
 | --- | --- |
 | 场景与资源 | Addressables、运行时工厂、对象池、资源内容校验 |
 | 战斗规则 | 统一伤害协议、Gameplay Effect、命中事件与表现解耦 |
-| 战局仿真 | 30 Tick/s 固定步进、命令序列、权威快照、确定性事件 |
+| 战局仿真 | 60 Tick/s 固定步进、命令序列、权威快照、确定性事件 |
 | 网络同步 | NGO、Unity Transport、客户端预测、校正、插值、重连 |
 | AI | FSM + Utility AI、NavMesh、空间查询、感知预算、Job/Burst |
 | 数据安全 | 存档版本校验、稳定 ID、SHA-256 完整性校验 |
@@ -174,11 +172,11 @@ FPS.Core / Combat / AI / Inventory / SaveGame
 | 渲染 | Universal Render Pipeline `17.5.0` |
 | 输入 | Input System `1.19.0` |
 | 导航 | AI Navigation `2.0.13`、NavMesh |
-| 联机 | Netcode for GameObjects `2.13.2`、Unity Transport、UGS Authentication / Multiplayer |
+| 联机 | Netcode for GameObjects `2.13.2`、Unity Transport、自建 HTTPS 账号与房间服务 |
 | 数据与资源 | Addressables `2.10.3`、JSON、ScriptableObject |
 | 性能 | Burst `1.8.29`、Collections / Entities `6.5.0`、ProfilerRecorder |
 | 测试 | Unity Test Framework `1.7.0`、Python 验收与报告门禁 |
-| 服务端 | Unity Linux Headless Dedicated Server、systemd、HTTPS Match Broker |
+| 服务端 | Unity Linux Headless Dedicated Server、systemd、Python HTTPS 控制服务、SQLite |
 
 ## 操作说明
 
@@ -206,7 +204,7 @@ FPS.Core / Combat / AI / Inventory / SaveGame
 - Unity `6000.5.3f1`；
 - macOS 或安装了对应 Build Support 的桌面平台；
 - Git LFS 不是必需项，资源均随仓库正常检出；
-- 联机模式需要可访问 Unity Services 与项目配置的远程匹配服务。
+- 联机模式需要可访问项目配置的自建 HTTPS 控制服务和 UDP 游戏端口；不再要求客户端访问 Unity Authentication / Multiplayer。
 
 ### 启动项目
 

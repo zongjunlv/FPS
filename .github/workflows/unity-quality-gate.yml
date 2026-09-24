@@ -29,6 +29,9 @@ jobs:
       - name: Validate Issue 64 performance report gate
         run: python3 ./scripts/performance/issue64_gate_test.py
 
+      - name: Test self-hosted account, room and match control plane
+        run: python3 -m unittest scripts/networking/fps_match_broker_test.py scripts/networking/fps_broker_tls_test.py scripts/networking/issue101_server_manager_test.py -q
+
       - name: Run Unity quality gate
         run: ./scripts/ci/run-unity-quality-gate.sh all
 

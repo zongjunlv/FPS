@@ -57,6 +57,8 @@ def main() -> int:
     parser.add_argument("--output", type=pathlib.Path,
                         default=pathlib.Path("artifacts/networking/issue101/remote-acceptance"))
     parser.add_argument("--timeout", type=int, default=300)
+    parser.add_argument("--host-override", default="",
+                        help="仅供 SSH UDP 诊断中继使用；不会改写 allocation")
     args = parser.parse_args()
 
     allocation = read_json(args.allocation.resolve())
@@ -111,7 +113,7 @@ def main() -> int:
                 "-issue100-timeout", str(args.timeout),
                 "-issue100-appearance", "character.quaternius.male-light",
                 "-issue65-role", "client",
-                "-issue65-address", str(allocation["host"]),
+                "-issue65-address", args.host_override or str(allocation["host"]),
                 "-issue65-port", str(allocation["port"]),
                 "-issue86-account", str(player["accountId"]),
                 "-issue86-ticket-file", str(connection_ticket),
@@ -182,7 +184,7 @@ def main() -> int:
         "generatedAtUtc": datetime.now(timezone.utc).isoformat(),
         "topology": "remote-dedicated-server-plus-two-independent-clients",
         "endpoint": {
-            "host": allocation.get("host"),
+            "host": args.host_override or allocation.get("host"),
             "port": allocation.get("port"),
             "matchId": allocation.get("matchId"),
         },

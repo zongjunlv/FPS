@@ -137,7 +137,7 @@ public sealed class CoopAccountView : MonoBehaviour
         authenticationGateOnly = configuredAuthenticationGateOnly;
         authenticationCompleted = configuredAuthenticationCompleted;
         automaticallyRefreshPublicRooms =
-            gateway is UnityAuthenticationGateway;
+            gateway is SelfHostedAuthenticationGateway;
         Controller = new CoopAccountController(gateway,
             allowDevelopmentAnonymous);
         Controller.Changed += Refresh;

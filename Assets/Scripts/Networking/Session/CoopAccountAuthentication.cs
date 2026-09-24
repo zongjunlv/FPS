@@ -162,11 +162,13 @@ namespace FPS.Networking.Session
             }
             catch (Exception exception)
             {
-                gateway.SignOut(true);
-                string message = exception is CoopAuthenticationException auth &&
-                                 auth.Failure == CoopAuthenticationFailure.SessionExpired
+                bool expired = exception is CoopAuthenticationException auth &&
+                               auth.Failure == CoopAuthenticationFailure.SessionExpired;
+                if (expired) gateway.SignOut(true);
+                // 网络暂时不可用时保留缓存令牌，允许下次启动再次恢复。
+                string message = expired
                     ? "登录会话已失效，请重新登录。"
-                    : "登录会话无法恢复，请重新登录。";
+                    : "暂时无法连接账号服务，可稍后重试恢复登录。";
                 SetState(CoopAccountState.SignedOut, message, message);
                 return false;
             }
@@ -309,7 +311,7 @@ namespace FPS.Networking.Session
                     CoopAuthenticationFailure.SessionExpired =>
                         "登录会话已失效，请重新登录。",
                     CoopAuthenticationFailure.ProviderUnavailable =>
-                        "账号项目尚未启用用户名密码登录，请联系开发者检查认证配置。",
+                        "账号服务尚未开放此登录方式，请联系管理员。",
                     CoopAuthenticationFailure.ServiceUnavailable =>
                         "账号服务暂时不可用，请稍后重试。",
                     _ => "账号操作失败，请稍后重试。"

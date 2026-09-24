@@ -122,7 +122,7 @@ namespace FPS.Networking.Session
                     System.StringComparison.Ordinal))
                 return false;
 
-            // During the battle phase a UGS lobby connection alone is not
+            // During the battle phase a control-plane room connection alone is not
             // playable. Keep the scene covered until NGO is connected instead
             // of exposing CityNew's legacy local Spider and solo controls.
             if (networkGameplayPhase &&

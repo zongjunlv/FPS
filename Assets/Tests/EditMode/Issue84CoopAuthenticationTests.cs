@@ -75,7 +75,7 @@ namespace FPS.Tests.Architecture
 
             Assert.That(result, Is.False);
             Assert.That(controller.LastFailure,
-                Does.Contain("未启用用户名密码登录"));
+                Does.Contain("账号服务尚未开放"));
         }
 
         [Test]
@@ -210,6 +210,22 @@ namespace FPS.Tests.Architecture
             Assert.That(controller.LastFailure, Does.Contain("失效"));
             Assert.That(gateway.SignOutCalls, Is.EqualTo(1));
             Assert.That(gateway.LastClearCredentials, Is.True);
+        }
+
+        [Test]
+        public async Task TemporaryNetworkFailureKeepsCachedSessionForLaterRetry()
+        {
+            var gateway = new FakeAuthenticationGateway
+            {
+                CachedSession = true,
+                RestoreHandler = () => throw new CoopAuthenticationException(
+                    CoopAuthenticationFailure.NetworkUnavailable)
+            };
+            var controller = new CoopAccountController(gateway);
+
+            Assert.That(await controller.RestoreAsync(), Is.False);
+            Assert.That(gateway.CachedSession, Is.True);
+            Assert.That(gateway.SignOutCalls, Is.Zero);
         }
 
         [Test]

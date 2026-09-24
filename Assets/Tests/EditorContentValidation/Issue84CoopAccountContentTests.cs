@@ -37,7 +37,8 @@ public sealed class Issue84CoopAccountContentTests
             Does.Contain("CoopAccountView.CreateAuthenticationGate"));
         Assert.That(bootstrap,
             Does.Contain("SetAuthenticationUnlocked(false)"));
-        Assert.That(bootstrap, Does.Contain("UnityAuthenticationGateway"));
+        Assert.That(bootstrap, Does.Contain("SelfHostedAuthenticationGateway"));
+        Assert.That(bootstrap, Does.Not.Contain("new UnityAuthenticationGateway"));
         Assert.That(bootstrap, Does.Contain("GameModeStage.CoopLogin"));
     }
 }

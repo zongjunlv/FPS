@@ -1,5 +1,5 @@
 [Unit]
-Description=FPS HTTPS Match Broker
+Description=FPS Self-Hosted Account, Room and Match Service
 Wants=network-online.target
 After=network-online.target
 
@@ -13,9 +13,9 @@ EnvironmentFile=/etc/fps/broker.conf
 ExecStart=/usr/bin/python3 /srv/fps/current/tools/fps_match_broker.py \
   --listen 0.0.0.0 \
   --port ${FPS_BROKER_PORT} \
-  --cert /srv/fps/data/tls/broker-cert.pem \
-  --key /srv/fps/data/tls/broker-key.pem \
-  --project-id ${FPS_UNITY_PROJECT_ID} \
+  --cert ${FPS_BROKER_CERT} \
+  --key ${FPS_BROKER_KEY} \
+  --database ${FPS_CONTROL_DATABASE} \
   --public-host ${FPS_PUBLIC_HOST} \
   --game-port ${FPS_SERVER_PORT} \
   --binary /srv/fps/current/FPSDedicatedServer.x86_64 \

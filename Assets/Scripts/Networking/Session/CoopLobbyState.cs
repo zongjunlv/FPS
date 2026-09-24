@@ -66,7 +66,7 @@ namespace FPS.Networking.Session
     }
 
     /// <summary>
-    /// Deterministic server-side room rules independent from the UGS adapter.
+    /// Deterministic room rules independent from the transport adapter.
     /// </summary>
     public sealed class CoopLobbyRoster
     {

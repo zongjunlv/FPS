@@ -68,7 +68,7 @@ public sealed class GameModeSceneBootstrap : MonoBehaviour
             {
                 entry.SetAuthenticationUnlocked(false);
                 CoopAccountView.CreateAuthenticationGate(Flow,
-                    new UnityAuthenticationGateway(),
+                    new SelfHostedAuthenticationGateway(),
                     () => entry.SetAuthenticationUnlocked(true));
             }
         }
@@ -85,8 +85,8 @@ public sealed class GameModeSceneBootstrap : MonoBehaviour
                 Resources.Load<PlayerAppearanceCatalog>(
                     PlayerAppearanceCatalog.ResourcesPath);
             View = CoopAccountView.Create(Flow,
-                new UnityAuthenticationGateway(),
-                Debug.isDebugBuild || Application.isEditor,
+                new SelfHostedAuthenticationGateway(),
+                false,
                 coopSession,
                 appearances);
         }
