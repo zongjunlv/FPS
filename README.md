@@ -27,6 +27,10 @@
 当前客户端版本为 **v0.3.0**，包含自建账号、房间与战局分配接口。旧版 v0.2.x 客户端仍使用 Unity 云端账号/房间流程，不适用于当前服务端。
 
 - [前往 Releases 页面](https://github.com/zongjunlv/FPS/releases/latest)
+- [直接下载 macOS Universal 客户端](https://github.com/zongjunlv/FPS/releases/download/v0.3.0/FPS-PVE-Demo-v0.3.0-macOS-universal.zip)
+- [直接下载 Windows x86_64 客户端](https://github.com/zongjunlv/FPS/releases/download/v0.3.0/FPS-PVE-Demo-v0.3.0-Windows-x86_64.zip)
+- macOS SHA-256：`a521fafde5597db63a2a797f071a97787b1dbd92ce59d136fe8ff608b29a957d`
+- Windows SHA-256：`c2caa1c7c17af0cdf04f920efce2e4b7bf6263054e35fa080c7ecc1a808c62b3`
 
 Windows 解压后运行 `FPS-PVE-Demo.exe`；请保留 EXE、`FPS-PVE-Demo_Data`、`UnityPlayer.dll` 和 `MonoBleedingEdge` 在同一目录。macOS 解压后运行 `FPS-PVE-Demo.app`；当前 macOS 客户端采用 ad-hoc 签名，尚未经过 Apple 公证，如果首次启动被 Gatekeeper 拦截，请在 Finder 中右键应用并选择“打开”。联机模式依赖网络服务，公开服务可能因维护临时不可用。
 
