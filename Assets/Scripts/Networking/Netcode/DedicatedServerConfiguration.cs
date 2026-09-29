@@ -29,7 +29,7 @@ namespace FPS.Networking.Netcode
         public int MaximumPlayers = DefaultMaximumPlayers;
         public int Seed = DefaultSeed;
         public string Version = "development";
-        public string ProtocolVersion = "1";
+        public string ProtocolVersion = CoopWireProtocol.CompatibilityId;
         public string ContentVersion = "citynew-v1";
         public uint TickRate = DefaultTickRate;
         public int IdleTimeoutSeconds = DefaultIdleTimeoutSeconds;
@@ -118,7 +118,7 @@ namespace FPS.Networking.Netcode
             configuration.Version = version;
 
             configuration.ProtocolVersion = Value(options,
-                "-server-protocol-version", "1").Trim();
+                "-server-protocol-version", CoopWireProtocol.CompatibilityId).Trim();
             if (!IsIdentifier(configuration.ProtocolVersion, 1, 64))
             {
                 error = "服务器协议版本需要包含 1—64 个字母、数字、点、短横线或下划线。";

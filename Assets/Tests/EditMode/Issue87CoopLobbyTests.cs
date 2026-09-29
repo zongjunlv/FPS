@@ -218,6 +218,21 @@ namespace FPS.Tests.Architecture
                 "专用服务器连接失败后必须保持遮罩并引导玩家退出，不能回退单机。");
         }
 
+        [Test]
+        public void ReconnectGateCannotCoverReturnedLobbyScene()
+        {
+            Assert.That(CoopReconnectPresentationGate.ShouldBlockForState(
+                CoopSessionState.Failed,
+                true,
+                CoopSessionController.PhaseBattle,
+                false,
+                false,
+                false,
+                false,
+                isBattleScene: false), Is.False,
+                "返回登录/房间场景后，幸存的失败战局状态不能遮挡大厅。");
+        }
+
         private static CoopLobbyRoster ReadyRoom()
         {
             var room = new CoopLobbyRoster(Appearances);

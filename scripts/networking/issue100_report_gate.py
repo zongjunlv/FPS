@@ -45,7 +45,8 @@ REQUIRED_STEPS = {
 }
 
 
-def validate(report: dict[str, Any], require_video: bool = False) -> list[str]:
+def validate(report: dict[str, Any], require_video: bool = False, *,
+             require_full_matrix: bool = True) -> list[str]:
     errors: list[str] = []
     if report.get("schemaVersion") != SCHEMA_VERSION:
         errors.append("schemaVersion 不匹配")
@@ -71,7 +72,7 @@ def validate(report: dict[str, Any], require_video: bool = False) -> list[str]:
         for item in scenarios
         if isinstance(item, dict)
     }
-    if observed != REQUIRED_SCENARIOS:
+    if require_full_matrix and observed != REQUIRED_SCENARIOS:
         errors.append("必须精确包含正常、80ms、150ms 和 80ms+5% 丢包")
 
     for scenario in scenarios:
@@ -85,8 +86,9 @@ def validate(report: dict[str, Any], require_video: bool = False) -> list[str]:
         for item in report.get("flow", [])
         if isinstance(item, dict) and item.get("state") == "passed"
     }
-    for step in sorted(REQUIRED_STEPS - passed_steps):
-        errors.append(f"流程缺少通过证据：{step}")
+    if require_full_matrix:
+        for step in sorted(REQUIRED_STEPS - passed_steps):
+            errors.append(f"流程缺少通过证据：{step}")
     for item in report.get("flow", []):
         if isinstance(item, dict) and item.get("state") == "failed":
             errors.append(f"流程步骤失败：{item.get('stepId', 'unknown')}")
@@ -172,6 +174,14 @@ def _validate_metrics(stable_id: str, metrics: dict[str, Any], errors: list[str]
         errors.append(prefix + "持续时间为空")
     if metrics["hitFeedbackSampleCount"] < 20:
         errors.append(prefix + "射击反馈样本少于 20")
+    # A configured label is not evidence that UTP's simulator was enabled.
+    # Release builds can expose the component while its transport adapter is
+    # compiled out. This conservative sanity floor catches an unmodified
+    # loopback run (14-16ms) claiming an 80/150ms pressure scenario. It does
+    # not establish exact jitter/loss and does not relax any existing budget.
+    if (configured_rtt > 0 and
+            metrics["meanTransportRttMilliseconds"] < configured_rtt / 2):
+        errors.append(prefix + "压力延迟证据无效：实测 RTT 低于配置的一半，不能仅凭档位标签判通过")
     observed_rtt = max(
         configured_rtt,
         metrics["meanTransportRttMilliseconds"],
@@ -204,12 +214,24 @@ def _validate_metrics(stable_id: str, metrics: dict[str, Any], errors: list[str]
 
 
 def to_markdown(report: dict[str, Any], errors: Iterable[str]) -> str:
+    def metric_text(metrics: dict[str, Any], field: str, precision: int,
+                    suffix: str = "", factor: int = 1) -> str:
+        value = metrics.get(field)
+        if not isinstance(value, (int, float)) or isinstance(value, bool):
+            return "未采集"
+        return f"{value * factor:.{precision}f}{suffix}"
+
     failures = list(errors)
     metadata = report.get("metadata") or {}
+    diagnostic = str((report.get("gate") or {}).get("outcome", "")).startswith("Diagnostic")
+    conclusion = ("单场景诊断检查失败；完整验收未完成（Incomplete）" if failures
+                  else "单场景执行完成；完整验收未完成（Incomplete）") if diagnostic else (
+                      "通过" if not failures else "失败")
     lines = [
-        "# Issue 100 真实多进程验收报告",
+        "# Issue 100 真实多进程单场景诊断报告" if diagnostic else "# Issue 100 真实多进程验收报告",
         "",
-        f"- 结论：**{'通过' if not failures else '失败'}**",
+        f"- 结论：**{conclusion}**",
+        *(["- 验收范围：未执行完整四档门禁；本报告不构成正式验收通过证据。"] if diagnostic else []),
         "- 拓扑：真实 Dedicated Server + 两个独立 Player 进程",
         f"- Commit：`{metadata.get('commit', '')}`",
         f"- 构建哈希：`{metadata.get('buildHash', '')}`",
@@ -227,14 +249,15 @@ def to_markdown(report: dict[str, Any], errors: Iterable[str]) -> str:
             f"| {scenario.get('stableId')} | "
             f"{scenario.get('roundTripLatencyMilliseconds')}ms / "
             f"{scenario.get('packetLossBasisPoints', 0) / 100:.0f}% | "
-            f"{metrics.get('meanTransportRttMilliseconds', 0):.1f}ms | "
-            f"{metrics.get('p95HitFeedbackMilliseconds', 0):.1f}ms | "
-            f"{metrics.get('correctionsPerMinute', 0):.1f} | "
-            f"{metrics.get('stateDivergenceRate', 0) * 100:.2f}% | "
-            f"{metrics.get('uplinkBytesPerSecond', 0):.0f} / "
-            f"{metrics.get('downlinkBytesPerSecond', 0):.0f} |"
+            f"{metric_text(metrics, 'meanTransportRttMilliseconds', 1, 'ms')} | "
+            f"{metric_text(metrics, 'p95HitFeedbackMilliseconds', 1, 'ms')} | "
+            f"{metric_text(metrics, 'correctionsPerMinute', 1)} | "
+            f"{metric_text(metrics, 'stateDivergenceRate', 2, '%', 100)} | "
+            f"{metric_text(metrics, 'uplinkBytesPerSecond', 0)} / "
+            f"{metric_text(metrics, 'downlinkBytesPerSecond', 0)} |"
         )
-    lines.extend(["", "## 完整流程证据", "", "| 步骤 | 角色 | 场景 | Tick | 结果 |", "|---|---|---|---:|---|"])
+    lines.extend(["", "## 本次流程证据" if diagnostic else "## 完整流程证据", "",
+                  "| 步骤 | 角色 | 场景 | Tick | 结果 |", "|---|---|---|---:|---|"])
     for item in report.get("flow", []):
         if item.get("state") != "passed":
             continue
@@ -242,8 +265,10 @@ def to_markdown(report: dict[str, Any], errors: Iterable[str]) -> str:
             f"| {item.get('stepId')} | {item.get('role')} | "
             f"{item.get('scenario')} | {item.get('authoritativeTick', 0)} | 通过 |"
         )
-    lines.extend(["", "## 门禁失败原因", ""])
-    lines.extend([f"- `{failure}`" for failure in failures] or ["- 无；全部硬门禁通过。"])
+    lines.extend(["", "## 单场景诊断检查" if diagnostic else "## 门禁失败原因", ""])
+    no_failures = ("- 该档已执行检查未发现异常；未执行完整四档门禁。" if diagnostic
+                   else "- 无；全部硬门禁通过。")
+    lines.extend([f"- `{failure}`" for failure in failures] or [no_failures])
     video = (report.get("artifacts") or {}).get("videoPath")
     if video:
         lines.extend(["", "## 连续演示录像", "", f"- `{video}`"])

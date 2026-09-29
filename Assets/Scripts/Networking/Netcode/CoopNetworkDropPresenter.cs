@@ -3,106 +3,113 @@ using UnityEngine;
 
 namespace FPS.Networking.Netcode
 {
-    /// <summary>Client-only pooled views for authoritative world drops.</summary>
+    /// <summary>
+    /// Pure 3D package views of authoritative drops. No local pickup trigger,
+    /// colliders, inventory settlement or camera-facing billboard is installed.
+    /// </summary>
     [DisallowMultipleComponent]
     public sealed class CoopNetworkDropPresenter : MonoBehaviour
     {
         private readonly Dictionary<int, GameObject> views = new();
+        private readonly Dictionary<int, string> itemIds = new();
+        private readonly HashSet<int> active = new();
+        private readonly List<int> removed = new();
         private NetworkCoopSessionAuthority authority;
-        private Camera presentationCamera;
-        private Sprite healthIcon;
-        private Sprite armorIcon;
-        private Sprite ammoIcon;
+        private NetworkCoopSessionAuthority presentedAuthority;
+        private int presentedRunGeneration = -1;
 
         public int ViewCount => views.Count;
-
-        private void Awake()
-        {
-            healthIcon = Resources.Load<Sprite>("UI/Icons/health");
-            armorIcon = Resources.Load<Sprite>("UI/Icons/armor");
-            ammoIcon = Resources.Load<Sprite>("UI/Icons/ammo");
-        }
 
         private void Update()
         {
             if (authority == null)
                 authority = FindFirstObjectByType<NetworkCoopSessionAuthority>();
-            if (authority == null) return;
-            if (!authority.IsReplicatedSnapshotComplete)
+            if (authority == null || !authority.IsReplicatedSnapshotComplete)
             {
-                foreach (GameObject view in views.Values)
-                    if (view != null) view.SetActive(false);
+                HideViews();
                 return;
             }
-
-            var active = new HashSet<int>();
-            for (int index = 0; index < authority.ReplicatedWorldDropCount;
-                 index++)
+            if (presentedAuthority != authority ||
+                presentedRunGeneration != authority.WorldState.RunGeneration)
             {
-                NetcodeWorldDropState state =
-                    authority.GetReplicatedWorldDrop(index);
-                active.Add(state.DropId);
-                if (!views.TryGetValue(state.DropId, out GameObject view) ||
-                    view == null)
-                {
-                    view = CreateView(state.DropId);
-                    views[state.DropId] = view;
-                }
-                view.SetActive(state.Available);
-                if (!state.Available) continue;
-                float bob = Mathf.Sin(Time.unscaledTime * 2.5f +
-                                      state.DropId) * 0.07f;
-                view.transform.position = state.Position +
-                    Vector3.up * (0.48f + bob);
-                presentationCamera ??= Camera.main;
-                if (presentationCamera != null)
-                    view.transform.rotation =
-                        presentationCamera.transform.rotation;
-                ApplyIcon(view, state.ItemId.ToString());
+                ClearViews();
+                presentedAuthority = authority;
+                presentedRunGeneration = authority.WorldState.RunGeneration;
             }
 
-            foreach (KeyValuePair<int, GameObject> pair in views)
-                if (!active.Contains(pair.Key) && pair.Value != null)
-                    pair.Value.SetActive(false);
+            active.Clear();
+            for (int index = 0; index < authority.ReplicatedWorldDropCount; index++)
+            {
+                NetcodeWorldDropState state = authority.GetReplicatedWorldDrop(index);
+                if (!state.Available || state.Quantity <= 0) continue;
+                active.Add(state.DropId);
+                string itemId = state.ItemId.ToString();
+                if (views.TryGetValue(state.DropId, out GameObject previous) &&
+                    previous != null && itemIds[state.DropId] != itemId)
+                    ReleaseView(state.DropId);
+                if (!views.TryGetValue(state.DropId, out GameObject view) || view == null)
+                {
+                    view = CreateView(state.DropId, itemId);
+                    if (view == null) continue; // Composition has not registered yet.
+                    views[state.DropId] = view;
+                    itemIds[state.DropId] = itemId;
+                }
+                view.SetActive(true);
+                // The replicated coordinate is the ground anchor, not a UI icon
+                // center. Match the single-player package's half-height.
+                view.transform.position = state.Position + Vector3.up * 0.22f;
+                view.transform.rotation = Quaternion.identity;
+            }
+
+            removed.Clear();
+            foreach (int id in views.Keys)
+                if (!active.Contains(id)) removed.Add(id);
+            foreach (int id in removed) ReleaseView(id);
         }
 
-        private GameObject CreateView(int dropId)
+        private GameObject CreateView(int dropId, string itemId)
         {
             var view = new GameObject($"Network Drop {dropId}");
-            view.name = $"Network Drop {dropId}";
             view.transform.SetParent(transform, false);
-            view.transform.localScale = Vector3.one * 0.52f;
-            SpriteRenderer renderer = view.AddComponent<SpriteRenderer>();
-            renderer.sortingOrder = 32;
-            return view;
+            GameObject package = CoopEconomyPresentationRegistry.CreateDrop(
+                view.transform, itemId);
+            if (package != null) return view;
+            Destroy(view);
+            return null;
         }
 
-        private void ApplyIcon(GameObject view, string itemId)
+        private void ReleaseView(int id)
         {
-            SpriteRenderer renderer = view.GetComponent<SpriteRenderer>();
-            if (renderer == null) return;
-            renderer.sprite = itemId switch
+            if (views.TryGetValue(id, out GameObject view) && view != null)
             {
-                "medical_kit" or "medkit" => healthIcon,
-                "armor_pack" or "armor_plate" => armorIcon,
-                "rifle_ammo" or "handgun_ammo" => ammoIcon,
-                _ => ammoIcon
-            };
-            renderer.color = itemId switch
-            {
-                "medical_kit" or "medkit" => new Color(0.95f, 0.2f, 0.2f),
-                "armor_pack" or "armor_plate" => new Color(0.15f, 0.65f, 1f),
-                "rifle_ammo" => new Color(1f, 0.72f, 0.15f),
-                "handgun_ammo" => new Color(0.75f, 0.75f, 0.75f),
-                _ => new Color(0.2f, 1f, 0.7f)
-            };
+                view.SetActive(false);
+                Destroy(view);
+            }
+            views.Remove(id);
+            itemIds.Remove(id);
         }
 
-        private void OnDestroy()
+        private void HideViews()
         {
             foreach (GameObject view in views.Values)
-                if (view != null) Destroy(view);
-            views.Clear();
+                if (view != null) view.SetActive(false);
         }
+
+        private void ClearViews()
+        {
+            foreach (GameObject view in views.Values)
+                if (view != null)
+                {
+                    view.SetActive(false);
+                    Destroy(view);
+                }
+            views.Clear();
+            itemIds.Clear();
+            active.Clear();
+            removed.Clear();
+        }
+
+        private void OnDisable() => HideViews();
+        private void OnDestroy() => ClearViews();
     }
 }

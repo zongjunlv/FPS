@@ -70,10 +70,7 @@ public sealed class WorldItemFactory : MonoBehaviour
         0.85f, 1.35f, 1.9f, 2.4f
     };
 
-    private readonly Dictionary<ItemEffectType, Material> bodyMaterials =
-        new();
-    private readonly Dictionary<ItemEffectType, Material> markMaterials =
-        new();
+    private readonly WorldItemVisualFactory visuals = new();
     private readonly List<WorldItemPickup> committedPickups = new();
     private readonly RaycastHit[] groundHits = new RaycastHit[24];
     private readonly Collider[] overlapHits = new Collider[24];
@@ -171,21 +168,7 @@ public sealed class WorldItemFactory : MonoBehaviour
 
     private void OnDestroy()
     {
-        foreach (Material material in bodyMaterials.Values)
-        {
-            if (material != null)
-            {
-                Destroy(material);
-            }
-        }
-
-        foreach (Material material in markMaterials.Values)
-        {
-            if (material != null)
-            {
-                Destroy(material);
-            }
-        }
+        visuals.Dispose();
     }
 
     private bool TryFindDropPosition(out Vector3 position)
@@ -450,125 +433,19 @@ public sealed class WorldItemFactory : MonoBehaviour
         WorldItemSource source,
         int spawnId)
     {
-        GameObject worldObject = GameObject.CreatePrimitive(
-            PrimitiveType.Cube);
+        GameObject worldObject = visuals.Create(
+            $"Dropped_{definition.StableId}_{spawnId}", null,
+            definition.EffectType, includeBodyCollider: true);
         worldObject.SetActive(false);
         worldObject.name = $"Dropped_{definition.StableId}_{spawnId}";
         worldObject.transform.position = position;
         worldObject.transform.rotation = Quaternion.LookRotation(
             -ResolveHorizontalForward(),
             Vector3.up);
-        worldObject.transform.localScale = new Vector3(0.7f, 0.42f, 0.5f);
-        Renderer body = worldObject.GetComponent<Renderer>();
-        body.sharedMaterial = GetBodyMaterial(definition.EffectType);
-        CreateMark(worldObject.transform, Vector3.forward * 0.52f,
-            definition.EffectType);
-        CreateMark(worldObject.transform, Vector3.back * 0.52f,
-            definition.EffectType);
         WorldItemPickup pickup = worldObject.AddComponent<WorldItemPickup>();
         pickup.Configure(definition, quantity);
         pickup.ConfigureSpawnMetadata(spawnId, source);
         return worldObject;
     }
 
-    private void CreateMark(
-        Transform parent,
-        Vector3 position,
-        ItemEffectType effectType)
-    {
-        CreateMarkBar(parent, position,
-            new Vector3(0.28f, 0.08f, 0.035f), effectType);
-        CreateMarkBar(parent, position,
-            new Vector3(0.08f, 0.28f, 0.035f), effectType);
-    }
-
-    private void CreateMarkBar(
-        Transform parent,
-        Vector3 position,
-        Vector3 scale,
-        ItemEffectType effectType)
-    {
-        GameObject bar = GameObject.CreatePrimitive(PrimitiveType.Cube);
-        bar.name = "ItemMark";
-        bar.transform.SetParent(parent, false);
-        bar.transform.localPosition = position;
-        bar.transform.localScale = scale;
-        Collider collider = bar.GetComponent<Collider>();
-
-        if (collider != null)
-        {
-            Destroy(collider);
-        }
-
-        bar.GetComponent<Renderer>().sharedMaterial =
-            GetMarkMaterial(effectType);
-    }
-
-    private Material GetBodyMaterial(ItemEffectType effectType)
-    {
-        if (bodyMaterials.TryGetValue(effectType, out Material material))
-        {
-            return material;
-        }
-
-        material = CreateMaterial(
-            "Universal Render Pipeline/Lit",
-            GetBodyColor(effectType));
-        bodyMaterials.Add(effectType, material);
-        return material;
-    }
-
-    private Material GetMarkMaterial(ItemEffectType effectType)
-    {
-        if (markMaterials.TryGetValue(effectType, out Material material))
-        {
-            return material;
-        }
-
-        material = CreateMaterial(
-            "Universal Render Pipeline/Unlit",
-            GetMarkColor(effectType));
-        markMaterials.Add(effectType, material);
-        return material;
-    }
-
-    private static Material CreateMaterial(string shaderName, Color color)
-    {
-        Shader shader = Shader.Find(shaderName);
-        shader ??= Shader.Find(
-            shaderName.EndsWith("Unlit", StringComparison.Ordinal)
-                ? "Unlit/Color"
-                : "Standard");
-        return shader != null
-            ? new Material(shader) { color = color }
-            : null;
-    }
-
-    private static Color GetBodyColor(ItemEffectType effectType)
-    {
-        return effectType switch
-        {
-            ItemEffectType.RestoreArmor =>
-                new Color(0.12f, 0.24f, 0.35f, 1f),
-            ItemEffectType.AddRifleAmmo =>
-                new Color(0.25f, 0.28f, 0.18f, 1f),
-            ItemEffectType.AddHandgunAmmo =>
-                new Color(0.32f, 0.24f, 0.14f, 1f),
-            _ => new Color(0.86f, 0.89f, 0.88f, 1f)
-        };
-    }
-
-    private static Color GetMarkColor(ItemEffectType effectType)
-    {
-        return effectType switch
-        {
-            ItemEffectType.RestoreArmor =>
-                new Color(0.28f, 0.62f, 1f, 1f),
-            ItemEffectType.AddRifleAmmo =>
-                new Color(0.75f, 0.9f, 0.3f, 1f),
-            ItemEffectType.AddHandgunAmmo =>
-                new Color(1f, 0.7f, 0.22f, 1f),
-            _ => new Color(0.86f, 0.12f, 0.12f, 1f)
-        };
-    }
 }

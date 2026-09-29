@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using FPS.Networking.Domain;
 using Unity.Collections;
 using Unity.Netcode;
@@ -15,6 +16,9 @@ namespace FPS.Networking.Netcode
     [RequireComponent(typeof(NetworkObject))]
     public sealed class NetworkPlayerReplica : NetworkBehaviour
     {
+        private static readonly bool TraceEnabled = string.Equals(
+            Environment.GetEnvironmentVariable("FPS_NETTRACE"), "1",
+            StringComparison.Ordinal);
         [SerializeField] private int playerId = 1;
         [SerializeField] private NetworkCoopSessionAuthority session;
         [SerializeField] private bool applyPositionToTransform = true;
@@ -31,6 +35,11 @@ namespace FPS.Networking.Netcode
                 NetworkVariableWritePermission.Server);
 
         private LocalPredictionBuffer prediction;
+        private readonly CoopPlayerMovementCollision predictionCollision = new();
+        private Vector3 predictionPresentationOffset;
+        private const float PredictionPresentationTimeConstantSeconds = 0.08f;
+        private int predictionTraceGeneration = -1;
+        private int predictionTraceCount;
         private RemoteSnapshotInterpolator interpolation;
         private uint nextSequence = 1;
         private ulong nonceSalt = 0x65C00FUL;
@@ -40,9 +49,15 @@ namespace FPS.Networking.Netcode
         private long lastConsumedServerTick = -1;
         private long lastPresentationEventSequence;
         private long lastShotEventSequence;
+        private readonly SortedSet<long> consumedShotSequences = new();
+        private long retiredShotSequence;
+        private long lastAmmoShotSequence;
+        private bool lastAmmoFromSnapshot;
         private bool presentationBaselineInitialized;
         private bool shotBaselineInitialized;
-        private double estimatedServerTick;
+        private int lastClockRevision;
+        private int lastRunGeneration;
+        private long lastAmmoServerTick = -1;
         private bool ownerTestHook;
         private string currentAppearanceId =
             NetworkPresentationIds.DefaultAppearance;
@@ -52,6 +67,9 @@ namespace FPS.Networking.Netcode
         private Vector3 localShotOrigin;
         private bool hasLocalShotOrigin;
         private bool usePredictedShotOrigin;
+        private Vector3 localShotDirection;
+        private long localShotViewTick;
+        private bool hasLocalShotFrame;
         private const float PredictedShotOriginHeight = 1.25f;
         private readonly List<NetcodePresentationEvent>
             pendingPresentationEvents = new();
@@ -81,6 +99,10 @@ namespace FPS.Networking.Netcode
         public PredictionCorrection LastPredictionCorrection { get; private set; }
         public RemoteInterpolationSample LastRemoteSample { get; private set; }
         public int PendingPredictionCount => prediction?.PendingCommands.Count ?? 0;
+        public bool HasPredictionCapacity => EnsurePresentationBuffers() &&
+            lastClockRevision == session.ClockRevision && prediction.HasCapacity;
+        public double EstimatedServerTick => session?.EstimatedServerTick ?? 0d;
+        public double PresentationTick => session?.PresentationTick ?? 0d;
         public NetworkCoopSessionAuthority Session => session;
         public float PresentationSprintSpeed => session?.Rules == null
             ? 6f
@@ -97,6 +119,7 @@ namespace FPS.Networking.Netcode
         public float PresentedArmor { get; private set; }
         public float PresentedMaximumArmor { get; private set; }
         public uint PresentedAcknowledgedSequence { get; private set; }
+        public uint PresentedAmmoAcknowledgedSequence { get; private set; }
         public bool PresentedReloading { get; private set; }
         public bool PresentedSwitching { get; private set; }
         public string CombatWeaponId { get; private set; } =
@@ -144,12 +167,12 @@ namespace FPS.Networking.Netcode
                 return;
             }
 
-            estimatedServerTick = Math.Max(
-                estimatedServerTick + Time.unscaledDeltaTime *
-                    (session.Rules?.TickRate ?? 60),
-                state.ServerTick);
+            // The interpolator's public API retains its two-tick default for
+            // fixtures. Runtime uses the shared, RTT-aware presentation clock.
+            if (IsLocallyControlled && prediction != null)
+                AdvancePredictionPresentation(Time.unscaledDeltaTime);
             ConsumeServerState(state, IsLocallyControlled,
-                estimatedServerTick);
+                session.PresentationTick + 2d);
         }
 
         public void Bind(
@@ -280,6 +303,10 @@ namespace FPS.Networking.Netcode
                 throw new InvalidOperationException(
                     "The replicated session rules are not ready yet.");
             }
+            if (!prediction.HasCapacity ||
+                lastClockRevision != session.ClockRevision)
+                throw new InvalidOperationException(
+                    "Prediction awaits acknowledgement or a complete clock-epoch snapshot.");
             uint sequence = nextSequence++;
             ulong nonce = NextNonce(sequence, clientTick);
             NetVector3 current = prediction.PredictedPosition;
@@ -301,7 +328,8 @@ namespace FPS.Networking.Netcode
                 ResolveMovementSpeedMultiplier();
             NetVector3 predicted = prediction.Predict(provisional);
             PlayerMovementState movement = prediction.PredictedMovement;
-            PresentedPosition = NetcodeConversions.ToUnity(predicted);
+            PresentedPosition = NetcodeConversions.ToUnity(predicted) +
+                predictionPresentationOffset;
             PresentedAimYaw = aimYawDegrees;
             PresentedAimPitch = aimPitchDegrees;
             PresentedVelocity = NetcodeConversions.ToUnity(movement.Velocity);
@@ -326,6 +354,12 @@ namespace FPS.Networking.Netcode
                 localGameplayWeaponId,
                 ResolveShotOrigin(predicted)));
             payload.AimingHeld = aimingHeld;
+            if (fire && hasLocalShotFrame)
+            {
+                payload.ShotDirection = localShotDirection;
+                payload.ShotViewTick = localShotViewTick;
+                hasLocalShotFrame = false;
+            }
             PresentedSprinting = sprintHeld && !crouchRequested &&
                 moveZ > 0.1f;
             PresentedAiming = aimingHeld && !PresentedSprinting;
@@ -347,6 +381,24 @@ namespace FPS.Networking.Netcode
             usePredictedShotOrigin = false;
         }
 
+        public void ConfigureLocalShotFrame(Vector3 direction, long viewTick)
+        {
+            if (!float.IsNaN(direction.sqrMagnitude) &&
+                !float.IsInfinity(direction.sqrMagnitude) &&
+                direction.sqrMagnitude > 0.000001f && viewTick >= 0)
+            {
+                localShotDirection = direction.normalized;
+                localShotViewTick = viewTick;
+                hasLocalShotFrame = true;
+            }
+            else
+            {
+                hasLocalShotFrame = false;
+            }
+        }
+
+        public void DiscardLocalShotFrame() => hasLocalShotFrame = false;
+
         /// <summary>
         /// Headless automation has no rendered weapon muzzle. Use the same
         /// predicted player pose plus the standard first-person eye height as
@@ -364,6 +416,7 @@ namespace FPS.Networking.Netcode
                 : NetworkPresentationIds.RifleGameplay;
             hasLocalShotOrigin = false;
             usePredictedShotOrigin = true;
+            hasLocalShotFrame = false;
         }
 
         private NetVector3 ResolveShotOrigin(NetVector3 predicted)
@@ -436,6 +489,23 @@ namespace FPS.Networking.Netcode
 
             if (fire)
             {
+                if (TraceEnabled)
+                {
+                    Debug.Log(string.Format(CultureInfo.InvariantCulture,
+                        "[NETTRACE-v1] role=client kind=shotSubmit " +
+                        "utcMs={0} monoMs={1:F1} player={2} seq={3} " +
+                        "clientTick={4} worldTick={5} connected={6} " +
+                        "listening={7} spawned={8}",
+                        DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                        Time.realtimeSinceStartupAsDouble * 1000d,
+                        playerId, payload.Sequence, payload.ClientTick,
+                        session.WorldState.ServerTick,
+                        NetworkManager != null &&
+                        NetworkManager.IsConnectedClient ? 1 : 0,
+                        NetworkManager != null &&
+                        NetworkManager.IsListening ? 1 : 0,
+                        IsSpawned ? 1 : 0));
+                }
                 session.SubmitShotRpc(payload);
             }
             else if (jumpPressed)
@@ -618,9 +688,11 @@ namespace FPS.Networking.Netcode
                         MaximumPredictionError,
                         LastPredictionCorrection.ErrorDistance);
                     if (LastPredictionCorrection.WasCorrected)
+                    {
                         PredictionCorrectionCount++;
-                    PresentedPosition = NetcodeConversions.ToUnity(
-                        LastPredictionCorrection.AppliedPosition);
+                        TracePredictionCorrection(state);
+                    }
+                    ReconcilePredictionPresentation(LastPredictionCorrection);
                     PlayerMovementState movement = prediction.PredictedMovement;
                     PresentedAimYaw = (float)movement.AimYawDegrees;
                     PresentedAimPitch = (float)movement.AimPitchDegrees;
@@ -693,17 +765,24 @@ namespace FPS.Networking.Netcode
         public void ResetPresentation()
         {
             prediction = null;
+            predictionPresentationOffset = Vector3.zero;
             interpolation = null;
             LastPredictionCorrection = default;
             LastRemoteSample = default;
             lastConsumedServerTick = -1;
-            estimatedServerTick = 0d;
+            lastClockRevision = 0;
+            lastRunGeneration = 0;
+            lastAmmoServerTick = -1;
             nextSequence = 1;
             nextPresentationSequence = 1;
             nextEconomySequence = 1;
             nextMissionSequence = 1;
             lastPresentationEventSequence = 0;
             lastShotEventSequence = 0;
+            consumedShotSequences.Clear();
+            retiredShotSequence = 0;
+            lastAmmoShotSequence = 0;
+            lastAmmoFromSnapshot = false;
             presentationBaselineInitialized = false;
             shotBaselineInitialized = false;
             pendingPresentationEvents.Clear();
@@ -725,12 +804,16 @@ namespace FPS.Networking.Netcode
             PresentedArmor = 0f;
             PresentedMaximumArmor = 0f;
             PresentedAcknowledgedSequence = 0;
+            PresentedAmmoAcknowledgedSequence = 0;
             PresentedReloading = false;
             PresentedSwitching = false;
             CombatWeaponId = NetworkPresentationIds.RifleGameplay;
             localGameplayWeaponId = NetworkPresentationIds.RifleGameplay;
             hasLocalShotOrigin = false;
             usePredictedShotOrigin = false;
+            hasLocalShotFrame = false;
+            localShotDirection = Vector3.zero;
+            localShotViewTick = 0;
             PredictionSampleCount = 0;
             PredictionCorrectionCount = 0;
             MaximumPredictionError = 0d;
@@ -758,6 +841,70 @@ namespace FPS.Networking.Netcode
             {
                 session = FindFirstObjectByType<NetworkCoopSessionAuthority>();
             }
+        }
+
+        private void TracePredictionCorrection(NetcodePlayerState state)
+        {
+            if (!TraceEnabled) return;
+            int generation = session.WorldState.RunGeneration;
+            if (generation != predictionTraceGeneration)
+            {
+                predictionTraceGeneration = generation;
+                predictionTraceCount = 0;
+            }
+            if (predictionTraceCount >= CoopMovementTrace.MaximumSamplesPerPlayerRun)
+                return;
+            PredictionReconciliationDiagnostic value =
+                prediction.LastReconciliationDiagnostic;
+            PlayerInputCommand command = value.LastPendingCommand;
+            Debug.Log(string.Format(CultureInfo.InvariantCulture,
+                "[NETTRACE-v1] role=client kind=predictionCorrection utcMs={0} monoMs={1:F1} run={2} player={3} diagnosticIndex={4} serverTick={5} ack={6} lastAcceptedTick={7} previousAcceptedTick={8} lastPredictedTick={9} replayTick={10} pendingBefore={11} pendingAfter={12} correction={13} error={14:F6} speedMultiplier={15:F6} hasPending={16} cmdSeq={17} cmdTick={18} moveX={19:F6} moveZ={20:F6} sprint={21} crouch={22} jump={23} claimX={24:F6} claimY={25:F6} claimZ={26:F6} {27} {28} {29}",
+                DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                Time.realtimeSinceStartupAsDouble * 1000d,
+                generation, playerId, ++predictionTraceCount, state.ServerTick,
+                state.AcknowledgedSequence, state.LastAcceptedClientTick,
+                value.PreviousAcceptedTick, value.PreviousPredictedTick,
+                value.ReplayTick, value.PendingBefore, value.PendingAfter,
+                LastPredictionCorrection.Kind, LastPredictionCorrection.ErrorDistance,
+                value.SpeedMultiplier, value.HasPendingCommand ? 1 : 0,
+                command.Sequence, command.ClientTick, command.MoveX, command.MoveZ,
+                command.SprintHeld ? 1 : 0, command.CrouchRequested ? 1 : 0,
+                command.JumpPressed ? 1 : 0, command.ClaimedPosition.X,
+                command.ClaimedPosition.Y, command.ClaimedPosition.Z,
+                CoopMovementTrace.MovementFields("before", value.Before),
+                CoopMovementTrace.MovementFields("replay", value.Replay),
+                CoopMovementTrace.MovementFields("authoritative", value.Authoritative.Movement)));
+        }
+
+        private void AdvancePredictionPresentation(float elapsedSeconds)
+        {
+            // A render-only, bounded offset. Never feed this value into
+            // prediction, input claims, or acknowledgement replay.
+            predictionPresentationOffset *= Mathf.Exp(
+                -Mathf.Max(0f, elapsedSeconds) /
+                PredictionPresentationTimeConstantSeconds);
+            if (predictionPresentationOffset.sqrMagnitude < 0.00000001f)
+                predictionPresentationOffset = Vector3.zero;
+            PresentedPosition = NetcodeConversions.ToUnity(
+                prediction.PredictedPosition) + predictionPresentationOffset;
+        }
+
+        private void ReconcilePredictionPresentation(PredictionCorrection correction)
+        {
+            Vector3 physical = NetcodeConversions.ToUnity(
+                correction.ReplayTargetPosition);
+            Vector3 visualBefore = NetcodeConversions.ToUnity(
+                correction.PositionBeforeCorrection) + predictionPresentationOffset;
+            predictionPresentationOffset = correction.Kind switch
+            {
+                PredictionCorrectionKind.Snap => Vector3.zero,
+                PredictionCorrectionKind.Smooth => (visualBefore - physical) * 0.5f,
+                _ => visualBefore - physical
+            };
+            predictionPresentationOffset = Vector3.ClampMagnitude(
+                predictionPresentationOffset,
+                (float)session.Rules.PredictionSnapThreshold);
+            PresentedPosition = physical + predictionPresentationOffset;
         }
 
         private bool EnsurePresentationBuffers()
@@ -790,7 +937,8 @@ namespace FPS.Networking.Netcode
                 prediction = new LocalPredictionBuffer(
                     rules,
                     playerId,
-                    initial);
+                    initial,
+                    predictionCollision.Resolve);
                 if (hasState)
                 {
                     prediction.Reconcile(state.ToDomain());
@@ -805,7 +953,45 @@ namespace FPS.Networking.Netcode
             }
 
             interpolation ??= new RemoteSnapshotInterpolator();
+            SynchronizeClockRevision();
             return true;
+        }
+
+        private void SynchronizeClockRevision()
+        {
+            int revision = session.ClockRevision;
+            if (revision == lastClockRevision) return;
+            int generation = session.WorldState.RunGeneration;
+            if (lastClockRevision != 0)
+            {
+                // World metadata may precede its player list in a replication
+                // update. Do not consume a new clock epoch using an old pose.
+                if (!session.IsReplicatedSnapshotComplete ||
+                    !session.TryGetPlayerState(playerId,
+                        out NetcodePlayerState state) ||
+                    state.ServerTick != session.WorldState.ServerTick)
+                    return;
+                prediction.ResetToAuthoritative(state.ToDomain());
+                predictionPresentationOffset = Vector3.zero;
+                interpolation = new RemoteSnapshotInterpolator();
+                lastConsumedServerTick = -1;
+                if (generation != lastRunGeneration)
+                {
+                    lastAmmoServerTick = -1;
+                    PresentedAmmoAcknowledgedSequence = 0;
+                    lastAmmoShotSequence = 0;
+                    lastAmmoFromSnapshot = false;
+                    consumedShotSequences.Clear();
+                    retiredShotSequence = 0;
+                    lastShotEventSequence = state.LastShotEventSequence;
+                }
+                nextSequence = Math.Max(nextSequence,
+                    state.AcknowledgedSequence + 1);
+                PresentedPosition = state.Position;
+                ApplyPresentedPose();
+            }
+            lastClockRevision = revision;
+            lastRunGeneration = generation;
         }
 
         private void RequireLocalOwner()
@@ -880,8 +1066,18 @@ namespace FPS.Networking.Netcode
             ApplyWeapon(state.WeaponId.ToString());
             PresentedSprinting = state.Sprinting;
             PresentedAiming = state.Aiming;
-            PresentedMagazineAmmo = state.MagazineAmmo;
-            PresentedReserveAmmo = state.ReserveAmmo;
+            if (state.ServerTick >= lastAmmoServerTick)
+            {
+                PresentedMagazineAmmo = state.MagazineAmmo;
+                PresentedReserveAmmo = state.ReserveAmmo;
+                PresentedAmmoAcknowledgedSequence = state.AcknowledgedSequence;
+                lastAmmoServerTick = state.ServerTick;
+                lastAmmoFromSnapshot = true;
+                CombatWeaponId = state.CombatWeaponId.IsEmpty
+                    ? NetworkPresentationIds.ToGameplayWeaponId(
+                        state.WeaponId.ToString())
+                    : state.CombatWeaponId.ToString();
+            }
             PresentedHealth = state.Health;
             PresentedMaximumHealth = state.MaximumHealth;
             PresentedArmor = state.Armor;
@@ -890,10 +1086,6 @@ namespace FPS.Networking.Netcode
             PresentedReloading = state.Reloading;
             PresentedSwitching = state.Switching;
             PresentedLifeState = state.LifeState;
-            CombatWeaponId = state.CombatWeaponId.IsEmpty
-                ? NetworkPresentationIds.ToGameplayWeaponId(
-                    state.WeaponId.ToString())
-                : state.CombatWeaponId.ToString();
             nextPresentationSequence = Math.Max(
                 nextPresentationSequence,
                 state.AcknowledgedPresentationCommandSequence + 1);
@@ -935,6 +1127,63 @@ namespace FPS.Networking.Netcode
                 value.Sequence <= lastShotEventSequence)
                 return false;
             lastShotEventSequence = value.Sequence;
+            return ApplyUniqueShotFeedback(value);
+        }
+
+        /// <summary>
+        /// The lossy fast path does not advance the reliable journal cursor:
+        /// a later UDP packet must not hide an earlier shot's eventual ACK.
+        /// </summary>
+        public bool ConsumeFastShotFeedbackEvent(NetcodeShotFeedbackEvent value)
+        {
+            if (!shotBaselineInitialized || session == null ||
+                lastRunGeneration != session.WorldState.RunGeneration ||
+                value.ShooterPlayerId != playerId ||
+                value.Sequence <= lastShotEventSequence)
+                return false;
+            return ApplyUniqueShotFeedback(value);
+        }
+
+        private bool ApplyUniqueShotFeedback(NetcodeShotFeedbackEvent value)
+        {
+            if (value.Sequence <= retiredShotSequence ||
+                !consumedShotSequences.Add(value.Sequence))
+                return false;
+            // The reliable journal retains 96 events. A 128-entry identity
+            // window is bounded and covers duplicates from both paths.
+            while (consumedShotSequences.Count > 128)
+            {
+                retiredShotSequence = consumedShotSequences.Min;
+                consumedShotSequences.Remove(retiredShotSequence);
+            }
+            if (value.HasAmmoState &&
+                (value.ServerTick > lastAmmoServerTick ||
+                 value.ServerTick == lastAmmoServerTick &&
+                 !lastAmmoFromSnapshot &&
+                 value.Sequence >= lastAmmoShotSequence))
+            {
+                PresentedMagazineAmmo = value.MagazineAmmo;
+                PresentedReserveAmmo = value.ReserveAmmo;
+                PresentedAmmoAcknowledgedSequence = value.AmmoAcknowledgedSequence;
+                CombatWeaponId = value.AmmoWeaponId.ToString();
+                lastAmmoServerTick = value.ServerTick;
+                lastAmmoShotSequence = value.Sequence;
+                lastAmmoFromSnapshot = false;
+            }
+            if (TraceEnabled)
+            {
+                Debug.Log(string.Format(CultureInfo.InvariantCulture,
+                    "[NETTRACE-v1] role=client kind=shotAck " +
+                    "utcMs={0} monoMs={1:F1} player={2} seq={3} " +
+                    "serverTick={4} target={5} result={6} damage={7:F2} " +
+                    "accepted={8} rejection={9} magazine={10} reserve={11}",
+                    DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                    Time.realtimeSinceStartupAsDouble * 1000d,
+                    playerId, value.ShotCommandSequence, value.ServerTick,
+                    value.TargetId, value.Kind, value.AppliedDamage,
+                    value.Accepted ? 1 : 0, value.RejectionReason,
+                    value.MagazineAmmo, value.ReserveAmmo));
+            }
             ShotFeedbackReceived?.Invoke(value);
             return true;
         }

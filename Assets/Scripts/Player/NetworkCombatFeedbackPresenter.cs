@@ -16,6 +16,7 @@ public sealed class NetworkCombatFeedbackPresenter : MonoBehaviour
 
     public int PresentedShotCount { get; private set; }
     public int PresentedHitCount { get; private set; }
+    public int RejectedShotCount { get; private set; }
     public NetcodeShotFeedbackEvent LastEvent { get; private set; }
 
     public void Configure(
@@ -39,8 +40,13 @@ public sealed class NetworkCombatFeedbackPresenter : MonoBehaviour
 
     public void Present(NetcodeShotFeedbackEvent value)
     {
-        PresentedShotCount++;
         LastEvent = value;
+        if (!value.Accepted)
+        {
+            RejectedShotCount++;
+            return; // Replica already consumed the authoritative ammo/ACK; never render a rejected shot twice.
+        }
+        PresentedShotCount++;
         GameObject target = ResolveTarget(value.TargetId);
         bool killed = value.Kind == ShotResolutionKind.Killed;
         HitRegion region = value.HitRegion == AuthoritativeHitRegion.Head

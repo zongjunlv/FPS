@@ -30,7 +30,7 @@ COMPILATION_PATTERNS = (
     r"error CS\d{4}",
     r"scripts have compiler errors",
     r"script compilation failed",
-    r"compilation failed",
+    r"(?m)^Compilation failed(?:\s|:)",
 )
 CATEGORY_EXIT_CODES = {
     "passed": 0,

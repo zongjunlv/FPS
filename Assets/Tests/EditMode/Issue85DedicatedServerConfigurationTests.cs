@@ -20,7 +20,8 @@ namespace FPS.Tests.Architecture
             Assert.That(configuration.TickRate, Is.EqualTo(60));
             Assert.That(configuration.Seed, Is.EqualTo(18018));
             Assert.That(configuration.Version, Is.EqualTo("1.2.3"));
-            Assert.That(configuration.ProtocolVersion, Is.EqualTo("1"));
+            Assert.That(configuration.ProtocolVersion,
+                Is.EqualTo(CoopWireProtocol.CompatibilityId));
             Assert.That(configuration.ContentVersion,
                 Is.EqualTo("citynew-v1"));
             Assert.That(configuration.IdleTimeoutSeconds, Is.EqualTo(120));

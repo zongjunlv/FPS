@@ -22,7 +22,7 @@ namespace FPS.Networking.Session
         public string brokerUrl = string.Empty;
         public string pinnedCertificateSha256 = string.Empty;
         public string applicationVersion = "0.1.0";
-        public string protocolVersion = "1";
+        public string protocolVersion = CoopWireProtocol.CompatibilityId;
         public string contentVersion = "citynew-v1";
         public int requestTimeoutSeconds = 100;
 

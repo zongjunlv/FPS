@@ -1,8 +1,10 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using FPS.Networking.Domain;
 using Unity.Netcode;
+using Unity.Netcode.Transports.UTP;
 using UnityEngine;
 using UnityEngine.AI;
 
@@ -19,6 +21,16 @@ namespace FPS.Networking.Netcode
         private const int MaximumReplicatedEvents = 64;
         private const int MaximumPresentationEvents = 64;
         private const int MaximumShotEvents = 96;
+        private const int MaximumBufferedFutureInputTicks = 4;
+        private const float EnemyStartSampleRadius = 0.5f;
+        private const double EnemyTraceIntervalSeconds = 0.2d;
+        private const double EnemyTraceJumpIntervalSeconds = 0.1d;
+        private const float EnemyTraceVerticalJumpMeters = 0.75f;
+        private const double WorldApplyTraceIntervalSeconds = 0.2d;
+        private const double WorldApplyGapWarningSeconds = 0.1d;
+        private static readonly bool EnemyTraceEnabled = string.Equals(
+            Environment.GetEnvironmentVariable("FPS_NETTRACE"), "1",
+            StringComparison.Ordinal);
 
         [SerializeField] private bool autoSimulate = true;
 
@@ -67,7 +79,7 @@ namespace FPS.Networking.Netcode
 
         private readonly Dictionary<ulong, int> playerByClient = new();
         private readonly Dictionary<int, ulong> clientByPlayer = new();
-        private readonly List<PlayerInputCommand> pendingCommands = new();
+        private readonly BoundedInputCommandBuffer pendingCommands = new();
         private readonly List<AuthoritativeEconomyCommand>
             pendingEconomyCommands = new();
         private readonly List<AuthoritativeMissionCommand>
@@ -80,6 +92,8 @@ namespace FPS.Networking.Netcode
             offlinePresentationEvents = new();
         private readonly List<NetcodeShotFeedbackEvent> offlineShotEvents =
             new();
+        private readonly List<AuthoritativeEvent> pendingSnapshotEvents = new();
+        private int snapshotPublicationBudget;
         private AuthoritativeCoopSimulation simulation;
         private AuthoritativeTickResult lastResult;
         private AuthoritativeWorldSnapshot lastSnapshot;
@@ -87,6 +101,15 @@ namespace FPS.Networking.Netcode
         private bool testServerAuthority;
         private long nextPresentationEventSequence;
         private long nextShotEventSequence;
+        private readonly List<FastShotCopy> pendingFastShotCopies = new();
+
+        private struct FastShotCopy
+        {
+            public NetcodeShotFeedbackEvent Value;
+            public long NextTick;
+            public int RemainingCopies;
+            public int Generation;
+        }
         private CoopServerRules configuredRules;
         private CoopPlayerSpawn[] configuredPlayers = Array.Empty<CoopPlayerSpawn>();
         private CoopTargetSpawn[] configuredTargets = Array.Empty<CoopTargetSpawn>();
@@ -97,12 +120,80 @@ namespace FPS.Networking.Netcode
         private int runGeneration = 1;
         private readonly Collider[] standingOverlaps = new Collider[16];
         private readonly RaycastHit[] shotObstructionHits = new RaycastHit[32];
-        private readonly RaycastHit[] playerMovementHits = new RaycastHit[24];
+        private readonly CoopPlayerMovementCollision playerMovementCollision = new();
+        private readonly Dictionary<int, int> movementDiagnosticCounts = new();
         private NavMeshPath enemyPath;
         private readonly Vector3[] enemyPathCorners = new Vector3[32];
+        private readonly Dictionary<(int id, int generation), EnemyTraceSample>
+            enemyTraceSamples = new();
+        private bool worldApplyTraceSubscribed;
+        private bool hasPreviousWorldApply;
+        private double previousWorldApplyAt;
+        private double worldApplyWindowStartAt;
+        private int worldApplyCount;
+        private double worldApplyMaxGapMs;
+        private long worldApplyMaxTickDelta;
+        private ClientServerClock clientClock;
+        private int clientClockTickRate;
+
+        private struct EnemyTraceSample
+        {
+            public float PreviousY;
+            public double LastLoggedAt;
+            public double LastJumpLoggedAt;
+            public bool HasPrevious;
+            public bool HasJumpLog;
+        }
 
         public event Action<AuthoritativeTickResult> ServerTickCompleted;
         public event Action<ulong, int> UnauthorizedCommandRejected;
+
+        public double EstimatedServerTick => RefreshClientClock()?.Estimate(
+            Time.realtimeSinceStartupAsDouble) ?? WorldState.ServerTick;
+        public double PresentationTick => RefreshClientClock()?.PresentationTick(
+            Time.realtimeSinceStartupAsDouble) ?? WorldState.ServerTick;
+        public int ClockRevision => RefreshClientClock()?.Revision ?? 0;
+        public bool ClientClockHealthy => RefreshClientClock()?.IsHealthy(
+            Time.realtimeSinceStartupAsDouble) ?? false;
+        public int PendingInputCommandCount => pendingCommands.Count;
+        public int InputBufferOverflowCount { get; private set; }
+        public int PendingFastShotCopyCount => pendingFastShotCopies.Count;
+
+        public bool TryGetNextClientInputTick(long previousInputTick,
+            out long inputTick)
+        {
+            ClientServerClock clock = RefreshClientClock();
+            inputTick = previousInputTick;
+            return clock != null && clock.TryGetNextInputTick(
+                Time.realtimeSinceStartupAsDouble,
+                previousInputTick, out inputTick);
+        }
+
+        private ClientServerClock RefreshClientClock()
+        {
+            CoopServerRules rules = Rules;
+            if (rules == null) return null;
+            if (clientClock == null || clientClockTickRate != rules.TickRate)
+            {
+                clientClockTickRate = rules.TickRate;
+                clientClock = new ClientServerClock(clientClockTickRate);
+            }
+            ObserveClientClock(WorldState);
+            return clientClock;
+        }
+
+        private void ObserveClientClock(NetcodeWorldState snapshot)
+        {
+            if (clientClock == null || snapshot.RunGeneration <= 0) return;
+            double roundTripSeconds = 0d;
+            if (NetworkManager != null && NetworkManager.IsConnectedClient &&
+                NetworkManager.NetworkConfig.NetworkTransport is
+                    UnityTransport transport)
+                roundTripSeconds = transport.GetCurrentRtt(
+                    Unity.Netcode.NetworkManager.ServerClientId) / 1000d;
+            clientClock.Observe(snapshot.ServerTick, snapshot.RunGeneration,
+                Time.realtimeSinceStartupAsDouble, roundTripSeconds);
+        }
 
         public bool AutoSimulate
         {
@@ -161,11 +252,86 @@ namespace FPS.Networking.Netcode
         public override void OnNetworkSpawn()
         {
             base.OnNetworkSpawn();
+            if (IsClient && !IsServer)
+            {
+                ResetWorldApplyTrace();
+                worldState.OnValueChanged += OnWorldStateApplied;
+                worldApplyTraceSubscribed = true;
+                RefreshClientClock();
+                double now = Time.realtimeSinceStartupAsDouble;
+                if (EnemyTraceEnabled) Debug.Log(string.Format(CultureInfo.InvariantCulture,
+                    "[NETTRACE-v1] role=client kind=worldApplyBaseline utcMs={0} monoMs={1:F1} tick={2}",
+                    DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                    now * 1000d, worldState.Value.ServerTick));
+            }
             if (IsServer && simulation != null)
             {
                 PublishSnapshot(simulation.CaptureSnapshot(),
                     Array.Empty<AuthoritativeEvent>());
             }
+        }
+
+        public override void OnNetworkDespawn()
+        {
+            if (worldApplyTraceSubscribed)
+            {
+                worldState.OnValueChanged -= OnWorldStateApplied;
+                worldApplyTraceSubscribed = false;
+                ResetWorldApplyTrace();
+            }
+            clientClock = null;
+            clientClockTickRate = 0;
+            base.OnNetworkDespawn();
+        }
+
+        private void ResetWorldApplyTrace()
+        {
+            hasPreviousWorldApply = false;
+            previousWorldApplyAt = 0d;
+            worldApplyWindowStartAt = Time.realtimeSinceStartupAsDouble;
+            worldApplyCount = 0;
+            worldApplyMaxGapMs = 0d;
+            worldApplyMaxTickDelta = 0;
+        }
+
+        // NGO invokes this on its main-thread state application path. It is
+        // not a UDP socket receive timestamp or a count of transport packets.
+        private void OnWorldStateApplied(
+            NetcodeWorldState previous,
+            NetcodeWorldState current)
+        {
+            ObserveClientClock(current);
+            if (!EnemyTraceEnabled) return;
+            double now = Time.realtimeSinceStartupAsDouble;
+            double gapMs = hasPreviousWorldApply
+                ? (now - previousWorldApplyAt) * 1000d
+                : -1d;
+            long tickDelta = current.ServerTick - previous.ServerTick;
+            previousWorldApplyAt = now;
+            hasPreviousWorldApply = true;
+            worldApplyCount++;
+            if (gapMs > worldApplyMaxGapMs)
+                worldApplyMaxGapMs = gapMs;
+            if (tickDelta > worldApplyMaxTickDelta)
+                worldApplyMaxTickDelta = tickDelta;
+
+            bool gapWarning = gapMs >=
+                WorldApplyGapWarningSeconds * 1000d;
+            if (!gapWarning && now - worldApplyWindowStartAt <
+                WorldApplyTraceIntervalSeconds)
+                return;
+
+            Debug.Log(string.Format(CultureInfo.InvariantCulture,
+                "[NETTRACE-v1] role=client kind=worldApply utcMs={0} monoMs={1:F1} oldTick={2} newTick={3} tickDelta={4} arrivalGapMs={5:F1} appliedChanges={6} maxGapMs={7:F1} maxTickDelta={8} reason={9}",
+                DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                now * 1000d, previous.ServerTick, current.ServerTick,
+                tickDelta, gapMs, worldApplyCount,
+                worldApplyMaxGapMs, worldApplyMaxTickDelta,
+                gapWarning ? "gap" : "summary"));
+            worldApplyCount = 0;
+            worldApplyMaxGapMs = 0d;
+            worldApplyMaxTickDelta = 0;
+            worldApplyWindowStartAt = now;
         }
 
         private void Update()
@@ -214,6 +380,8 @@ namespace FPS.Networking.Netcode
             simulation.SetStandingClearanceValidator(HasStandingClearance);
             simulation.SetShotObstructionResolver(ResolveShotObstruction);
             simulation.SetPlayerMovementResolver(ResolvePlayerMovement);
+            if (EnemyTraceEnabled)
+                simulation.CommandRejectionDiagnosed += TraceCommandRejection;
             simulation.SetEnemyMovementResolver(ResolveEnemyMovement);
             NetcodeRulesState replicatedRules =
                 NetcodeRulesState.FromDomain(rules);
@@ -232,9 +400,17 @@ namespace FPS.Networking.Netcode
             playerPresentation.Clear();
             offlinePresentationEvents.Clear();
             offlineShotEvents.Clear();
+            pendingFastShotCopies.Clear();
             nextPresentationEventSequence = 0;
             nextShotEventSequence = 0;
+            enemyTraceSamples.Clear();
+            movementDiagnosticCounts.Clear();
+            clientClock = null;
+            clientClockTickRate = 0;
+            InputBufferOverflowCount = 0;
             accumulatedSeconds = 0d;
+            snapshotPublicationBudget = 0;
+            pendingSnapshotEvents.Clear();
             lastResult = null;
             lastSnapshot = simulation.CaptureSnapshot();
             for (int index = 0; index < lastSnapshot.Players.Count; index++)
@@ -242,11 +418,7 @@ namespace FPS.Networking.Netcode
                 int playerId = lastSnapshot.Players[index].PlayerId;
                 playerPresentation[playerId] = ServerPresentationState.Default;
             }
-            if (IsSpawned && IsServer)
-            {
-                PublishSnapshot(lastSnapshot,
-                    Array.Empty<AuthoritativeEvent>());
-            }
+            PublishSnapshot(lastSnapshot, Array.Empty<AuthoritativeEvent>());
         }
 
         public void RegisterPlayerClient(
@@ -381,8 +553,34 @@ namespace FPS.Networking.Netcode
             NetcodePlayerCommand payload,
             RpcParams rpcParams = default)
         {
-            TryQueueCommand(rpcParams.Receive.SenderClientId, payload,
+            ulong senderClientId = rpcParams.Receive.SenderClientId;
+            bool queued = TryQueueCommand(senderClientId, payload,
                 forceFire: true);
+            if (EnemyTraceEnabled && IsServer)
+            {
+                double now = Time.realtimeSinceStartupAsDouble;
+                Debug.Log(string.Format(CultureInfo.InvariantCulture,
+                    "[NETTRACE-v1] role=server kind=shotReceive " +
+                    "utcMs={0} monoMs={1:F1} tick={2} sender={3} " +
+                    "player={4} seq={5} queued={6}",
+                    DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                    now * 1000d, worldState.Value.ServerTick,
+                    senderClientId, payload.PlayerId, payload.Sequence,
+                    queued ? 1 : 0));
+            }
+        }
+
+        [Rpc(SendTo.ClientsAndHost, InvokePermission = RpcInvokePermission.Server,
+            Delivery = RpcDelivery.Unreliable)]
+        private void ShotFeedbackFastRpc(NetcodeShotFeedbackEvent value, int generation)
+        {
+            if (generation != WorldState.RunGeneration || NetworkManager == null ||
+                !NetworkManager.IsClient)
+                return;
+            NetworkPlayerReplica replica = NetworkManager.LocalClient?.PlayerObject?
+                .GetComponent<NetworkPlayerReplica>();
+            if (replica != null && replica.Session == this)
+                replica.ConsumeFastShotFeedbackEvent(value);
         }
 
         [Rpc(SendTo.Server, InvokePermission = RpcInvokePermission.Everyone,
@@ -444,7 +642,25 @@ namespace FPS.Networking.Netcode
                 return false;
             }
 
-            pendingCommands.Add(payload.ToDomain(forceFire));
+            PlayerInputCommand command = payload.ToDomain(forceFire);
+            long nextServerTick = LastAuthoritativeSnapshot.Tick + 1;
+            if (command.ClientTick > nextServerTick +
+                    simulation.Rules.MaximumFutureCommandTicks +
+                    MaximumBufferedFutureInputTicks)
+            {
+                if (command.Fire)
+                    PublishShotFeedback(simulation.CaptureSnapshot(), command,
+                        default, CommandRejectionReason.TimestampInFuture);
+                return false;
+            }
+            if (!pendingCommands.TryEnqueue(command))
+            {
+                InputBufferOverflowCount++;
+                if (command.Fire)
+                    PublishShotFeedback(simulation.CaptureSnapshot(), command,
+                        default, CommandRejectionReason.InputBufferFull);
+                return false;
+            }
             pendingPresentationInputs[(payload.PlayerId, payload.Sequence)] =
                 payload;
             return true;
@@ -580,8 +796,9 @@ namespace FPS.Networking.Netcode
                     "ConfigureServer must be called before ticking.");
             }
 
-            PlayerInputCommand[] commands = pendingCommands.ToArray();
-            pendingCommands.Clear();
+            PlayerInputCommand[] commands = pendingCommands.DrainTick(
+                LastAuthoritativeSnapshot.Tick + 1 +
+                simulation.Rules.MaximumFutureCommandTicks);
             AuthoritativeEconomyCommand[] economyCommands =
                 pendingEconomyCommands.ToArray();
             pendingEconomyCommands.Clear();
@@ -592,9 +809,12 @@ namespace FPS.Networking.Netcode
                 commands, economyCommands, missionCommands);
             ApplyAcceptedPresentationInputs(lastResult.Commands);
             PublishShotEvents(lastResult);
-            pendingPresentationInputs.Clear();
+            PublishPendingFastShotCopies(lastResult.Tick);
+            foreach (PlayerInputCommand command in commands)
+                pendingPresentationInputs.Remove((command.PlayerId,
+                    command.Sequence));
             lastSnapshot = lastResult.Snapshot;
-            PublishSnapshot(lastResult.Snapshot, lastResult.Events);
+            PublishSimulationSnapshot(lastResult.Snapshot, lastResult.Events);
             ServerTickCompleted?.Invoke(lastResult);
             return lastResult;
         }
@@ -624,11 +844,18 @@ namespace FPS.Networking.Netcode
             simulation.SetStandingClearanceValidator(HasStandingClearance);
             simulation.SetShotObstructionResolver(ResolveShotObstruction);
             simulation.SetPlayerMovementResolver(ResolvePlayerMovement);
+            if (EnemyTraceEnabled)
+                simulation.CommandRejectionDiagnosed += TraceCommandRejection;
             simulation.SetEnemyMovementResolver(ResolveEnemyMovement);
             pendingCommands.Clear();
             pendingEconomyCommands.Clear();
             pendingMissionCommands.Clear();
             pendingPresentationInputs.Clear();
+            enemyTraceSamples.Clear();
+            movementDiagnosticCounts.Clear();
+            pendingFastShotCopies.Clear();
+            snapshotPublicationBudget = 0;
+            pendingSnapshotEvents.Clear();
             if (IsSpawned && IsServer) authorityEvents.Clear();
             lastResult = null;
             lastSnapshot = simulation.CaptureSnapshot();
@@ -734,104 +961,10 @@ namespace FPS.Networking.Netcode
         }
 
         private PlayerMovementState ResolvePlayerMovement(
-            int _,
+            int playerId,
             PlayerMovementState current,
             PlayerMovementState desired)
-        {
-            Vector3 from = NetcodeConversions.ToUnity(current.Position);
-            Vector3 to = NetcodeConversions.ToUnity(desired.Position);
-            Vector3 horizontal = new(to.x - from.x, 0f, to.z - from.z);
-            if (horizontal.sqrMagnitude <= 0.00000001f)
-                return desired;
-
-            Vector3 resolvedHorizontal = ResolveCapsuleDisplacement(
-                from, horizontal);
-            Vector3 resolvedPosition = from + resolvedHorizontal;
-            resolvedPosition.y = to.y;
-            return new PlayerMovementState(
-                NetcodeConversions.ToDomain(resolvedPosition),
-                desired.Velocity,
-                desired.AimYawDegrees,
-                desired.AimPitchDegrees,
-                desired.Stance,
-                desired.Grounded,
-                desired.LastJumpTick,
-                desired.GroundHeight);
-        }
-
-        private Vector3 ResolveCapsuleDisplacement(
-            Vector3 origin,
-            Vector3 requestedDisplacement)
-        {
-            const float radius = 0.28f;
-            const float height = 1.8f;
-            const float skin = 0.03f;
-            Vector3 resolved = Vector3.zero;
-            Vector3 remaining = requestedDisplacement;
-
-            // Resolve the initial impact and one secondary corner impact.
-            // A hard clamp makes a player stick to walls whenever input has
-            // even a small component into the surface; projecting the
-            // remainder onto the contact plane gives standard FPS wall slide.
-            for (int pass = 0; pass < 2; pass++)
-            {
-                float distance = remaining.magnitude;
-                if (distance <= 0.0001f) break;
-                Vector3 direction = remaining / distance;
-                Vector3 cursor = origin + resolved;
-                Vector3 bottom = cursor + Vector3.up * (radius + skin);
-                Vector3 top = cursor +
-                    Vector3.up * (height - radius - skin);
-                int count = Physics.CapsuleCastNonAlloc(
-                    bottom,
-                    top,
-                    radius,
-                    direction,
-                    playerMovementHits,
-                    distance + skin,
-                    Physics.DefaultRaycastLayers,
-                    QueryTriggerInteraction.Ignore);
-                RaycastHit? nearest = null;
-                for (int index = 0; index < count; index++)
-                {
-                    RaycastHit hit = playerMovementHits[index];
-                    if (!IsWorldMovementObstacle(hit.collider)) continue;
-                    if (nearest == null ||
-                        hit.distance < nearest.Value.distance)
-                        nearest = hit;
-                }
-                if (nearest == null)
-                {
-                    resolved += remaining;
-                    break;
-                }
-
-                float allowed = Mathf.Max(0f,
-                    nearest.Value.distance - skin);
-                Vector3 advanced = direction *
-                    Mathf.Min(distance, allowed);
-                resolved += advanced;
-                remaining -= advanced;
-
-                Vector3 surfaceNormal = nearest.Value.normal;
-                surfaceNormal.y = 0f;
-                if (surfaceNormal.sqrMagnitude <= 0.0001f) break;
-                surfaceNormal.Normalize();
-                remaining = Vector3.ProjectOnPlane(
-                    remaining, surfaceNormal);
-            }
-            return resolved;
-        }
-
-        private static bool IsWorldMovementObstacle(Collider candidate)
-        {
-            if (candidate == null) return false;
-            if (candidate.GetComponentInParent<NetworkPlayerReplica>() != null)
-                return false;
-            if (candidate.GetComponentInParent<CharacterController>() != null)
-                return false;
-            return true;
-        }
+            => playerMovementCollision.Resolve(playerId, current, desired);
 
         private NetVector3 ResolveEnemyMovement(
             int _,
@@ -842,8 +975,12 @@ namespace FPS.Networking.Netcode
             enemyPath ??= new NavMeshPath();
             Vector3 start = NetcodeConversions.ToUnity(current);
             Vector3 end = NetcodeConversions.ToUnity(destination);
+            // Start projection is only a small foot/root correction, not an
+            // extra movement allowance. A broad 2m query can pick an unrelated
+            // roof over a ground-nav gap and teleport there before path travel
+            // is applied. Keep normal height changes on the actual NavMesh path.
             if (!NavMesh.SamplePosition(start, out NavMeshHit startHit,
-                    2f, NavMesh.AllAreas) ||
+                    EnemyStartSampleRadius, NavMesh.AllAreas) ||
                 !NavMesh.SamplePosition(end, out NavMeshHit endHit,
                     4f, NavMesh.AllAreas))
                 return AdvanceEnemyFallback(current, destination,
@@ -1052,10 +1189,16 @@ namespace FPS.Networking.Netcode
             return destination.Count;
         }
 
-        public NetcodeTargetState GetReplicatedTarget(int index) => IsSpawned
-            ? targetStates[index]
-            : NetcodeTargetState.FromDomain(
-                LastAuthoritativeSnapshot.Targets[index]);
+        public NetcodeTargetState GetReplicatedTarget(int index)
+        {
+            if (IsSpawned) return targetStates[index];
+            NetcodeTargetState state = NetcodeTargetState.FromDomain(
+                LastAuthoritativeSnapshot.Targets[index],
+                LastAuthoritativeSnapshot.Tick, runGeneration);
+            if (runGeneration > 1)
+                state.SpawnGeneration += (runGeneration - 1) * 1000;
+            return state;
+        }
         public NetcodeAuthorityEvent GetReplicatedEvent(int index) =>
             authorityEvents[index];
 
@@ -1127,6 +1270,7 @@ namespace FPS.Networking.Netcode
             playerPresentation.Clear();
             offlinePresentationEvents.Clear();
             offlineShotEvents.Clear();
+            pendingFastShotCopies.Clear();
             simulation = null;
             lastResult = null;
             lastSnapshot = null;
@@ -1139,7 +1283,11 @@ namespace FPS.Networking.Netcode
             configuredTargets = Array.Empty<CoopTargetSpawn>();
             configuredMission = null;
             configuredRequiredKills = 0;
+            enemyTraceSamples.Clear();
             runGeneration = 1;
+            clientClock = null;
+            clientClockTickRate = 0;
+            InputBufferOverflowCount = 0;
         }
 
         private bool CanServerWrite => IsServer || testServerAuthority ||
@@ -1157,7 +1305,7 @@ namespace FPS.Networking.Netcode
 
         private void ClearPendingCommands(int playerId)
         {
-            pendingCommands.RemoveAll(value => value.PlayerId == playerId);
+            pendingCommands.RemovePlayer(playerId);
             pendingEconomyCommands.RemoveAll(value =>
                 value.PlayerId == playerId);
             pendingMissionCommands.RemoveAll(value =>
@@ -1168,15 +1316,51 @@ namespace FPS.Networking.Netcode
                     pendingPresentationInputs.Remove(key);
         }
 
-        private void PublishSnapshot(
+        private void PublishSimulationSnapshot(
             AuthoritativeWorldSnapshot snapshot,
             IReadOnlyList<AuthoritativeEvent> events)
         {
+            BufferSnapshotEvents(events);
+            // Offline domain adapters retain their synchronous read contract.
+            // Spawned NGO worlds publish only the newest complete state at
+            // 20Hz. Throttling NetworkList transport alone would accumulate
+            // every old Value event and resend all intermediate states.
+            if (IsSpawned && IsServer)
+            {
+                snapshotPublicationBudget += CoopSnapshotCadence.RateFor(
+                    simulation.Rules.TickRate);
+                if (snapshotPublicationBudget < simulation.Rules.TickRate)
+                    return;
+                snapshotPublicationBudget -= simulation.Rules.TickRate;
+            }
+            PublishSnapshot(snapshot, Array.Empty<AuthoritativeEvent>(),
+                preserveCadence: true);
+        }
+
+        private void BufferSnapshotEvents(IReadOnlyList<AuthoritativeEvent> events)
+        {
+            for (int index = 0; index < events.Count; index++)
+                pendingSnapshotEvents.Add(events[index]);
+            // Match the existing bounded replicated event journal. State is
+            // authoritative; an absent/slow recipient cannot grow this queue.
+            if (pendingSnapshotEvents.Count > MaximumReplicatedEvents)
+                pendingSnapshotEvents.RemoveRange(0,
+                    pendingSnapshotEvents.Count - MaximumReplicatedEvents);
+        }
+
+        private void PublishSnapshot(
+            AuthoritativeWorldSnapshot snapshot,
+            IReadOnlyList<AuthoritativeEvent> events,
+            bool preserveCadence = false)
+        {
+            if (!preserveCadence) snapshotPublicationBudget = 0;
+            BufferSnapshotEvents(events);
             if (!IsSpawned || !IsServer)
             {
                 worldState.Reset(BuildWorldState(snapshot,
                     worldState.Value.LastEventSequence,
                     worldState.Value.EconomyRevision + 1));
+                pendingSnapshotEvents.Clear();
                 return;
             }
 
@@ -1211,10 +1395,13 @@ namespace FPS.Networking.Netcode
             for (int index = 0; index < snapshot.Targets.Count; index++)
             {
                 NetcodeTargetState replicated =
-                    NetcodeTargetState.FromDomain(snapshot.Targets[index]);
+                    NetcodeTargetState.FromDomain(snapshot.Targets[index],
+                        snapshot.Tick, runGeneration);
                 if (runGeneration > 1)
                     replicated.SpawnGeneration +=
                         (runGeneration - 1) * 1000;
+                if (EnemyTraceEnabled)
+                    TracePublishedEnemy(snapshot.Tick, replicated);
                 if (index >= targetStates.Count)
                 {
                     targetStates.Add(replicated);
@@ -1280,10 +1467,10 @@ namespace FPS.Networking.Netcode
             while (upgradeStates.Count > economy.Upgrades.Count)
                 upgradeStates.RemoveAt(upgradeStates.Count - 1);
 
-            for (int index = 0; index < events.Count; index++)
+            for (int index = 0; index < pendingSnapshotEvents.Count; index++)
             {
                 NetcodeAuthorityEvent replicated =
-                    NetcodeAuthorityEvent.FromDomain(events[index]);
+                    NetcodeAuthorityEvent.FromDomain(pendingSnapshotEvents[index]);
                 authorityEvents.Add(replicated);
                 lastEventSequence = replicated.Sequence;
             }
@@ -1295,6 +1482,7 @@ namespace FPS.Networking.Netcode
 
             worldState.Value = BuildWorldState(snapshot, lastEventSequence,
                 worldState.Value.EconomyRevision + 1);
+            pendingSnapshotEvents.Clear();
         }
 
         private NetcodeWorldState BuildWorldState(
@@ -1388,29 +1576,175 @@ namespace FPS.Networking.Netcode
             for (int index = 0; index < result.Commands.Count; index++)
             {
                 CommandResolution resolution = result.Commands[index];
-                if (!resolution.Accepted ||
+                if (EnemyTraceEnabled && IsServer &&
+                    (resolution.Command.Fire ||
+                     resolution.Shot.Kind !=
+                         ShotResolutionKind.NotRequested))
+                    TraceShotResolution(result.Tick, resolution);
+                if (!resolution.Command.Fire &&
                     resolution.Shot.Kind == ShotResolutionKind.NotRequested)
                     continue;
-                var value = NetcodeShotFeedbackEvent.FromDomain(
-                    result.Tick,
-                    ++nextShotEventSequence,
-                    resolution.Command.PlayerId,
-                    resolution.Shot);
-                offlineShotEvents.Add(value);
-                while (offlineShotEvents.Count > MaximumShotEvents)
-                    offlineShotEvents.RemoveAt(0);
-                if (playerPresentation.TryGetValue(
-                        resolution.Command.PlayerId,
-                        out ServerPresentationState state))
-                {
-                    state.LastShotEventSequence = value.Sequence;
-                    playerPresentation[resolution.Command.PlayerId] = state;
-                }
-                if (!IsSpawned || !IsServer) continue;
-                shotEvents.Add(value);
-                while (shotEvents.Count > MaximumShotEvents)
-                    shotEvents.RemoveAt(0);
+                PublishShotFeedback(result.Snapshot, resolution.Command,
+                    resolution.Shot, resolution.RejectionReason);
             }
+        }
+
+        private void PublishShotFeedback(AuthoritativeWorldSnapshot snapshot,
+            PlayerInputCommand command, ShotResolution shot,
+            CommandRejectionReason rejectionReason)
+        {
+            long sequence = ++nextShotEventSequence;
+            NetcodeShotFeedbackEvent value =
+                rejectionReason == CommandRejectionReason.None
+                    ? NetcodeShotFeedbackEvent.FromDomain(snapshot.Tick,
+                        sequence, command.PlayerId, shot)
+                    : new NetcodeShotFeedbackEvent
+                    {
+                        ServerTick = snapshot.Tick,
+                        Sequence = sequence,
+                        ShooterPlayerId = command.PlayerId,
+                        Kind = ShotResolutionKind.NotRequested
+                    };
+            value.ShotCommandSequence = command.Sequence;
+            value.WeaponId = command.WeaponId;
+            value.RejectionReason = rejectionReason;
+            AuthoritativePlayerState player = snapshot.Player(command.PlayerId);
+            value.HasAmmoState = true;
+            value.AmmoWeaponId = player.EquippedWeaponId;
+            // This is the input prefix contained by the captured ammo state,
+            // not necessarily this feedback's shot command. A tick can batch
+            // several commands; an early queue rejection contains none of them.
+            value.AmmoAcknowledgedSequence = player.AcknowledgedSequence;
+            value.MagazineAmmo = player.MagazineAmmo;
+            value.ReserveAmmo = player.ReserveAmmo;
+            offlineShotEvents.Add(value);
+            while (offlineShotEvents.Count > MaximumShotEvents)
+                offlineShotEvents.RemoveAt(0);
+            if (playerPresentation.TryGetValue(command.PlayerId,
+                    out ServerPresentationState state))
+            {
+                state.LastShotEventSequence = value.Sequence;
+                playerPresentation[command.PlayerId] = state;
+            }
+            if (!IsSpawned || !IsServer) return;
+            // Small immediate datagrams bypass the reliable world's queue.
+            // The reliable journal below remains the eventual-delivery path;
+            // two bounded later copies tolerate loss without client mutation.
+            ShotFeedbackFastRpc(value, runGeneration);
+            if (pendingFastShotCopies.Count >= MaximumShotEvents)
+                pendingFastShotCopies.RemoveAt(0);
+            pendingFastShotCopies.Add(new FastShotCopy
+            {
+                Value = value,
+                NextTick = snapshot.Tick + 3,
+                RemainingCopies = 2,
+                Generation = runGeneration
+            });
+            shotEvents.Add(value);
+            while (shotEvents.Count > MaximumShotEvents)
+                shotEvents.RemoveAt(0);
+        }
+
+        private void PublishPendingFastShotCopies(long tick)
+        {
+            if (!IsSpawned || !IsServer) return;
+            for (int index = pendingFastShotCopies.Count - 1; index >= 0; index--)
+            {
+                FastShotCopy copy = pendingFastShotCopies[index];
+                if (copy.Generation != runGeneration)
+                {
+                    pendingFastShotCopies.RemoveAt(index);
+                    continue;
+                }
+                if (tick < copy.NextTick) continue;
+                ShotFeedbackFastRpc(copy.Value, copy.Generation);
+                copy.RemainingCopies--;
+                if (copy.RemainingCopies == 0)
+                    pendingFastShotCopies.RemoveAt(index);
+                else
+                {
+                    copy.NextTick = tick + 3;
+                    pendingFastShotCopies[index] = copy;
+                }
+            }
+        }
+
+        private void TracePublishedEnemy(
+            long serverTick,
+            NetcodeTargetState target)
+        {
+            var key = (target.TargetId, target.SpawnGeneration);
+            double now = Time.realtimeSinceStartupAsDouble;
+            enemyTraceSamples.TryGetValue(key, out EnemyTraceSample sample);
+            float jumpY = sample.HasPrevious
+                ? target.Position.y - sample.PreviousY
+                : 0f;
+            bool significantJump = sample.HasPrevious &&
+                Mathf.Abs(jumpY) >= EnemyTraceVerticalJumpMeters;
+            bool periodic = !sample.HasPrevious ||
+                now - sample.LastLoggedAt >= EnemyTraceIntervalSeconds;
+            bool jumpDue = significantJump &&
+                (!sample.HasJumpLog || now - sample.LastJumpLoggedAt >=
+                    EnemyTraceJumpIntervalSeconds);
+            sample.PreviousY = target.Position.y;
+            sample.HasPrevious = true;
+            if (periodic || jumpDue)
+            {
+                sample.LastLoggedAt = now;
+                if (jumpDue)
+                {
+                    sample.LastJumpLoggedAt = now;
+                    sample.HasJumpLog = true;
+                }
+                Debug.Log(string.Format(CultureInfo.InvariantCulture,
+                    "[NETTRACE-v1] role=server kind=enemy utcMs={0} monoMs={1:F1} tick={2} id={3} gen={4} x={5:F3} y={6:F3} z={7:F3} alive={8} active={9} jumpY={10:F3} reason={11}",
+                    DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                    now * 1000d, serverTick, target.TargetId,
+                    target.SpawnGeneration, target.Position.x,
+                    target.Position.y, target.Position.z,
+                    target.IsAlive ? 1 : 0, target.Active ? 1 : 0,
+                    jumpY, jumpDue ? "vertical_jump" : "sample"));
+            }
+            enemyTraceSamples[key] = sample;
+        }
+
+        private void TraceCommandRejection(CommandRejectionDiagnostic value)
+        {
+            int player = value.Command.PlayerId;
+            movementDiagnosticCounts.TryGetValue(player, out int count);
+            if (count >= CoopMovementTrace.MaximumSamplesPerPlayerRun) return;
+            movementDiagnosticCounts[player] = ++count;
+            PlayerInputCommand command = value.Command;
+            Debug.Log(string.Format(CultureInfo.InvariantCulture,
+                "[NETTRACE-v1] role=server kind=commandRejection utcMs={0} monoMs={1:F1} run={2} player={3} diagnosticIndex={4} serverTick={5} cmdSeq={6} cmdTick={7} lastAcceptedTick={8} elapsedTicks={9} candidateIntegrated={10} reason={11} tolerance={12:F6} speedMultiplier={13:F6} moveX={14:F6} moveZ={15:F6} sprint={16} crouch={17} jump={18} fire={19} claimX={20:F6} claimY={21:F6} claimZ={22:F6} {23} {24}",
+                DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                Time.realtimeSinceStartupAsDouble * 1000d,
+                runGeneration, player, count, value.ServerTick,
+                command.Sequence, command.ClientTick, value.LastAcceptedClientTick,
+                value.ElapsedTicks, value.CandidateIntegrated ? 1 : 0,
+                value.Reason, value.ClaimedTolerance, value.SpeedMultiplier,
+                command.MoveX, command.MoveZ, command.SprintHeld ? 1 : 0,
+                command.CrouchRequested ? 1 : 0, command.JumpPressed ? 1 : 0,
+                command.Fire ? 1 : 0, command.ClaimedPosition.X,
+                command.ClaimedPosition.Y, command.ClaimedPosition.Z,
+                CoopMovementTrace.MovementFields("before", value.Before),
+                CoopMovementTrace.MovementFields("candidate", value.Candidate)));
+        }
+
+        private static void TraceShotResolution(
+            long serverTick,
+            CommandResolution resolution)
+        {
+            double now = Time.realtimeSinceStartupAsDouble;
+            Debug.Log(string.Format(CultureInfo.InvariantCulture,
+                "[NETTRACE-v1] role=server kind=shot utcMs={0} monoMs={1:F1} tick={2} player={3} cmdSeq={4} seq={5} target={6} result={7} damage={8:F3} accepted={9} reject={10}",
+                DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
+                now * 1000d, serverTick, resolution.Command.PlayerId,
+                resolution.Command.Sequence, resolution.Shot.ShotSequence,
+                resolution.Shot.TargetId, resolution.Shot.Kind,
+                resolution.Shot.AppliedDamage,
+                resolution.Accepted ? 1 : 0,
+                resolution.RejectionReason));
         }
 
         private void EmitPresentationEvent(

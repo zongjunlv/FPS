@@ -2,6 +2,7 @@
   "name": "FPS.Networking.Acceptance",
   "rootNamespace": "FPS.Networking.Acceptance",
   "references": [
+    "FPS.Core",
     "FPS.Networking.Domain",
     "FPS.Networking.Diagnostics",
     "FPS.Networking.Netcode",

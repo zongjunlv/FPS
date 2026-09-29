@@ -67,9 +67,14 @@ public sealed class GameModeSceneBootstrap : MonoBehaviour
             if (!Application.isBatchMode)
             {
                 entry.SetAuthenticationUnlocked(false);
-                CoopAccountView.CreateAuthenticationGate(Flow,
+                CoopAccountView gate = CoopAccountView.CreateAuthenticationGate(Flow,
                     new SelfHostedAuthenticationGateway(),
                     () => entry.SetAuthenticationUnlocked(true));
+                entry.ConfigureAccountSignOut(() =>
+                {
+                    if (gate != null && gate.SignOutToAuthentication())
+                        entry.SetAuthenticationUnlocked(false);
+                });
             }
         }
         else if (marker.Stage == GameModeStage.BattlePreparation)

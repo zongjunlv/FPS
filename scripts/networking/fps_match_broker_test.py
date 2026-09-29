@@ -112,7 +112,60 @@ class BackendTests(unittest.TestCase):
         with self.assertRaises(PermissionError):
             self.store.get_room(room["id"], third["accountId"])
         self.store.leave_room(room["id"], host["accountId"])
-        self.assertEqual(self.store.get_room(room["id"])["hostId"], guest["accountId"])
+        closed = self.store.get_room(room["id"], guest["accountId"])
+        self.assertEqual(closed["phase"], "cancelled")
+        self.assertEqual(closed["loadFailure"], "房主已退出")
+        self.assertIsNone(self.store.current_room(guest["accountId"]))
+
+    def test_host_exit_after_failed_battle_does_not_leave_joinable_ghost_room(self):
+        host = self._account()
+        guest = self._account("Guest123")
+        newcomer = self._account("Newcomer123")
+        room = self._room(host)
+        room = self.store.join_room(guest["accountId"], {
+            "sessionId": room["id"], "appearanceId": "operative-bravo"})
+        self.store.update_player(room["id"], host["accountId"], {"ready": True})
+        self.store.update_player(room["id"], guest["accountId"], {"ready": True})
+        self.broker.allocate(host["accountId"], self._allocation_payload(room))
+        # A failed battle connection returns the host to the menu. Leaving
+        # must not promote an abandoned guest and advertise a 1/2 room.
+        self.broker.leave_room(host["accountId"], room["id"])
+        self.assertNotIn(room["id"], {item["id"] for item in self.store.list_rooms()})
+        self.assertIsNone(self.store.current_room(guest["accountId"]))
+        with self.assertRaises(fps_control_store.ConflictError):
+            self.store.join_room(guest["accountId"], {
+                "sessionId": room["id"], "appearanceId": "operative-bravo"})
+        with self.assertRaises((LookupError, fps_control_store.ConflictError)):
+            self.store.join_room(newcomer["accountId"], {
+                "sessionId": room["id"], "appearanceId": "operative-alpha"})
+
+    def test_host_room_closes_even_when_dedicated_release_fails(self):
+        host = self._account()
+        guest = self._account("Guest123")
+        room = self._room(host)
+        room = self.store.join_room(guest["accountId"], {
+            "sessionId": room["id"], "appearanceId": "operative-bravo"})
+        self.store.update_player(room["id"], host["accountId"], {"ready": True})
+        self.store.update_player(room["id"], guest["accountId"], {"ready": True})
+        self.broker.allocate(host["accountId"], self._allocation_payload(room))
+        with mock.patch.object(self.broker, "_release_if_current",
+                               side_effect=RuntimeError("stop unavailable")):
+            self.broker.leave_room(host["accountId"], room["id"])
+        self.assertEqual(self.store.get_room(room["id"])["phase"], "cancelled")
+        self.assertNotIn(room["id"], {item["id"] for item in self.store.list_rooms()})
+
+    def test_host_logout_closes_current_room_before_revoking_token(self):
+        host = self._account()
+        guest = self._account("Guest123")
+        room = self._room(host)
+        self.store.join_room(guest["accountId"], {
+            "sessionId": room["id"], "appearanceId": "operative-bravo"})
+        self.broker.logout(host["accountId"], host["accessToken"])
+        self.assertEqual(self.store.get_room(room["id"])["phase"], "cancelled")
+        self.assertNotIn(room["id"], {item["id"] for item in self.store.list_rooms()})
+        self.assertIsNone(self.store.current_room(guest["accountId"]))
+        with self.assertRaises(PermissionError):
+            self.store.authenticate(host["accessToken"])
 
     def test_room_snapshot_persists_across_restart(self):
         account = self._account()

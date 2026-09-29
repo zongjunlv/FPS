@@ -1,0 +1,48 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: bbb281ee3bf0b054c82ac2347e9e782c, type: 3}
+  m_Name: Coop Presentation
+  m_EditorClassIdentifier: Unity.Addressables.Editor::UnityEditor.AddressableAssets.Settings.AddressableAssetGroup
+  m_GroupName: Coop Presentation
+  m_GUID: cea9f53a19ec142cb9f9b49b6c453eff
+  m_SerializeEntries:
+  - m_GUID: 0ebad406bac984cd79771f411efaa10b
+    m_Address: coop/presentation/enemy/eye-drone-support
+    m_ReadOnly: 0
+    m_SerializedLabels: []
+    FlaggedDuringContentUpdateRestriction: 0
+  - m_GUID: 418c014fdfa4d462e9ebe90c6bd6f1a0
+    m_Address: coop/presentation/enemy/trilobite-assault
+    m_ReadOnly: 0
+    m_SerializedLabels: []
+    FlaggedDuringContentUpdateRestriction: 0
+  - m_GUID: 54f6bb5bd41ce4ec88d4ef6b11c1a463
+    m_Address: coop/presentation/enemy/spider
+    m_ReadOnly: 0
+    m_SerializedLabels: []
+    FlaggedDuringContentUpdateRestriction: 0
+  - m_GUID: e6d286a132104427b820d4a92ca9ce33
+    m_Address: coop/presentation/enemy/eye-drone-suppressor
+    m_ReadOnly: 0
+    m_SerializedLabels: []
+    FlaggedDuringContentUpdateRestriction: 0
+  - m_GUID: eecfd1dbe3cae4d0eb477ac6d8c9f72a
+    m_Address: coop/presentation/enemy/quad-shell-elite
+    m_ReadOnly: 0
+    m_SerializedLabels: []
+    FlaggedDuringContentUpdateRestriction: 0
+  m_ReadOnly: 0
+  m_Settings: {fileID: 11400000, guid: c04de4adaf41c45629a69e7c39345c52, type: 2}
+  m_SchemaSet:
+    m_Schemas:
+    - {fileID: 11400000, guid: f69d489bcd33c4a6982aee3c8301d6de, type: 2}
+    - {fileID: 11400000, guid: 41181a205570c4f84a18cb5d5bec8ea5, type: 2}

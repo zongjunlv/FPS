@@ -208,7 +208,10 @@ namespace FPS.Tests.Architecture
                 authoritativeMovement.Stance,
                 authoritativeMovement.Grounded,
                 authoritativeMovement.LastJumpTick,
-                authoritativeMovement.GroundHeight);
+                authoritativeMovement.GroundHeight,
+                "weapon.rifle", 0, 0, false, 0, false, string.Empty, 0,
+                System.Array.Empty<AuthoritativeWeaponState>(),
+                lastAcceptedClientTick: first.ClientTick);
 
             PredictionCorrection correction =
                 prediction.Reconcile(authoritative);

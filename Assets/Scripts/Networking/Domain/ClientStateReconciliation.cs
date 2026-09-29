@@ -46,6 +46,8 @@ namespace FPS.Networking.Domain
     {
         private readonly CoopServerRules rules;
         private readonly int playerId;
+        private readonly Func<int, PlayerMovementState, PlayerMovementState,
+            PlayerMovementState> movementResolver;
         private readonly List<PlayerInputCommand> pending = new();
         private PlayerMovementState predictedMovement;
         private long lastPredictedTick = long.MinValue;
@@ -56,7 +58,9 @@ namespace FPS.Networking.Domain
         public LocalPredictionBuffer(
             CoopServerRules rules,
             int playerId,
-            NetVector3 initialPosition)
+            NetVector3 initialPosition,
+            Func<int, PlayerMovementState, PlayerMovementState,
+                PlayerMovementState> movementResolver = null)
         {
             this.rules = rules ?? throw new ArgumentNullException(nameof(rules));
             if (playerId <= 0)
@@ -64,6 +68,7 @@ namespace FPS.Networking.Domain
             if (!initialPosition.IsFinite)
                 throw new ArgumentOutOfRangeException(nameof(initialPosition));
             this.playerId = playerId;
+            this.movementResolver = movementResolver;
             predictedMovement = new PlayerMovementState(
                 initialPosition,
                 new NetVector3(0d, 0d, 0d),
@@ -77,7 +82,24 @@ namespace FPS.Networking.Domain
 
         public NetVector3 PredictedPosition => predictedMovement.Position;
         public PlayerMovementState PredictedMovement => predictedMovement;
+        public PredictionReconciliationDiagnostic LastReconciliationDiagnostic
+            { get; private set; }
         public IReadOnlyList<PlayerInputCommand> PendingCommands => pending;
+        public int MaximumPendingCommands => Math.Min(512, rules.TickRate * 2);
+        public bool HasCapacity => pending.Count < MaximumPendingCommands;
+
+        public void ResetToAuthoritative(AuthoritativePlayerState authoritative)
+        {
+            if (authoritative.PlayerId != playerId)
+                throw new ArgumentException(
+                    "Snapshot belongs to a different player.",
+                    nameof(authoritative));
+            pending.Clear();
+            predictedMovement = authoritative.Movement;
+            lastPredictedTick = authoritative.LastAcceptedClientTick;
+            lastAcknowledgedClientTick = authoritative.LastAcceptedClientTick;
+            LastReconciliationDiagnostic = default;
+        }
 
         public NetVector3 Predict(PlayerInputCommand command)
         {
@@ -93,16 +115,22 @@ namespace FPS.Networking.Domain
             if (!CoopGameplayRules.Finite(command.MoveX) ||
                 !CoopGameplayRules.Finite(command.MoveZ))
                 throw new ArgumentOutOfRangeException(nameof(command));
+            if (!HasCapacity)
+                throw new InvalidOperationException(
+                    "Prediction history is full; await acknowledgement or resynchronize.");
 
             int elapsedTicks = lastPredictedTick == long.MinValue
                 ? 1
-                : (int)Math.Max(1L, command.ClientTick - lastPredictedTick);
-            predictedMovement = CoopGameplayRules.IntegrateMovement(
+                : BoundedElapsedTicks(command.ClientTick, lastPredictedTick);
+            PlayerMovementState nextMovement = CoopGameplayRules.IntegrateMovement(
                 predictedMovement,
                 command,
                 elapsedTicks,
                 rules,
                 movementSpeedMultiplier: MovementSpeedMultiplier);
+            predictedMovement = movementResolver == null
+                ? nextMovement
+                : movementResolver(playerId, predictedMovement, nextMovement);
             lastPredictedTick = command.ClientTick;
             pending.Add(command);
             return predictedMovement.Position;
@@ -116,15 +144,16 @@ namespace FPS.Networking.Domain
                     "Snapshot belongs to a different player.",
                     nameof(authoritative));
 
-            NetVector3 before = predictedMovement.Position;
-            foreach (PlayerInputCommand command in pending)
-            {
-                if (command.Sequence <= authoritative.AcknowledgedSequence &&
-                    command.ClientTick > lastAcknowledgedClientTick)
-                {
-                    lastAcknowledgedClientTick = command.ClientTick;
-                }
-            }
+            PlayerMovementState beforeMovement = predictedMovement;
+            NetVector3 before = beforeMovement.Position;
+            long previousPredictedTick = lastPredictedTick;
+            long previousAcceptedTick = lastAcknowledgedClientTick;
+            int pendingBefore = pending.Count;
+            // A sequence ACK can include rejected commands. Only the actual
+            // applied input tick is a valid movement replay time origin.
+            // MinValue is meaningful after reconnect: no input has been
+            // applied yet, so the first replay must integrate just one tick.
+            lastAcknowledgedClientTick = authoritative.LastAcceptedClientTick;
             pending.RemoveAll(command =>
                 command.Sequence <= authoritative.AcknowledgedSequence);
             PlayerMovementState replayMovement = authoritative.Movement;
@@ -134,13 +163,16 @@ namespace FPS.Networking.Domain
             {
                 int elapsedTicks = replayTick == long.MinValue
                     ? 1
-                    : (int)Math.Max(1L, command.ClientTick - replayTick);
-                replayMovement = CoopGameplayRules.IntegrateMovement(
+                    : BoundedElapsedTicks(command.ClientTick, replayTick);
+                PlayerMovementState nextMovement = CoopGameplayRules.IntegrateMovement(
                     replayMovement,
                     command,
                     elapsedTicks,
                     rules,
                     movementSpeedMultiplier: MovementSpeedMultiplier);
+                replayMovement = movementResolver == null
+                    ? nextMovement
+                    : movementResolver(playerId, replayMovement, nextMovement);
                 replayTick = command.ClientTick;
             }
 
@@ -164,17 +196,19 @@ namespace FPS.Networking.Domain
                 applied = replay;
             }
 
-            predictedMovement = new PlayerMovementState(
-                applied,
-                replayMovement.Velocity,
-                replayMovement.AimYawDegrees,
-                replayMovement.AimPitchDegrees,
-                replayMovement.Stance,
-                replayMovement.Grounded,
-                replayMovement.LastJumpTick,
-                replayMovement.GroundHeight);
+            // Presentation may blend a visible correction, but the next
+            // command must start from the complete authoritative replay.
+            // Feeding a half-corrected render pose back into physics creates
+            // another invalid claimed position immediately after a valid ACK.
+            predictedMovement = replayMovement;
             if (pending.Count == 0)
-                lastPredictedTick = long.MinValue;
+                lastPredictedTick = authoritative.LastAcceptedClientTick;
+            LastReconciliationDiagnostic = new PredictionReconciliationDiagnostic(
+                beforeMovement, replayMovement, authoritative,
+                previousPredictedTick, previousAcceptedTick, replayTick,
+                pendingBefore, pending.Count,
+                pending.Count > 0 ? pending[pending.Count - 1] : default,
+                pending.Count > 0, MovementSpeedMultiplier);
             return new PredictionCorrection(
                 kind,
                 error,
@@ -183,6 +217,10 @@ namespace FPS.Networking.Domain
                 applied,
                 pending.Count);
         }
+
+        private int BoundedElapsedTicks(long tick, long previousTick) =>
+            (int)Math.Max(1L, Math.Min(rules.MaximumInputGapTicks,
+                tick - previousTick));
     }
 
     public readonly struct RemotePlayerSnapshot

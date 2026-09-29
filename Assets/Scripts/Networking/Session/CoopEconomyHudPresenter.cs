@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using FPS.Networking.Domain;
 using FPS.Networking.Netcode;
 using UnityEngine;
@@ -7,263 +8,306 @@ using UnityEngine.InputSystem;
 namespace FPS.Networking.Session
 {
     /// <summary>
-    /// Read-only client projection of the server economy snapshot. Buttons
-    /// only submit intents; inventory, XP and upgrades change after replication.
+    /// Read-only projection of the server economy into the shared game UI.
+    /// Every operation sends an intent; only a complete server snapshot updates
+    /// inventory, XP and upgrade levels. Opening a modal never pauses the server.
     /// </summary>
+    [DefaultExecutionOrder(-500)]
     [DisallowMultipleComponent]
     public sealed class CoopEconomyHudPresenter : MonoBehaviour
     {
-        private const int InventoryWindowId = 97097;
-        private Rect inventoryRect = new(20f, 170f, 330f, 390f);
+        private const float PickupScrollReleaseDelay = 0.2f;
+        private const float WaitingNoticeDelay = 8f;
+        private readonly List<NetcodeInventorySlotState> inventory = new();
+        private readonly List<NetcodeUpgradeStackState> upgrades = new();
+        private readonly List<NetcodeWorldDropState> drops = new();
+        private readonly CoopNearbyDropSelection selection = new();
+        private readonly CoopEconomyRequestGate requests = new();
         private NetworkCoopSessionAuthority authority;
+        private NetworkCoopSessionAuthority presentedAuthority;
         private NetworkPlayerReplica localPlayer;
+        private ICoopEconomyPresentation presentation;
+        private CoopEconomyPresentationFrame lastCompleteFrame;
+        private int presentedRunGeneration = -1;
+        private int presentedPlayerId;
         private bool inventoryVisible;
         private bool modalVisible;
+        private bool economyCursorOwned;
+        private float pickupScrollCaptureUntil;
+        private float requestStartedAt;
+        private string status = string.Empty;
+
+        public bool InventoryVisible => inventoryVisible;
+        public bool RequestPending => requests.IsPending;
+        public int SelectedDropId => selection.Selected.DropId;
 
         private void Update()
         {
             ResolveBindings();
-            if (localPlayer != null &&
-                !localPlayer.HasConsumedServerState)
+            if (authority == null || localPlayer == null ||
+                !localPlayer.HasConsumedServerState ||
+                IsOutcome(authority.WorldState))
             {
-                inventoryVisible = false;
-                SetModalVisible(false);
+                HideUnavailablePresentation();
                 return;
             }
-            if (authority != null && IsOutcome(authority.WorldState))
+
+            NetcodeWorldState world = authority.WorldState;
+            if (!authority.IsReplicatedSnapshotComplete)
             {
-                inventoryVisible = false;
-                SetModalVisible(false);
+                if (presentedAuthority == authority &&
+                    presentedRunGeneration == world.RunGeneration &&
+                    presentedPlayerId == localPlayer.PlayerId &&
+                    lastCompleteFrame != null && presentation != null)
+                    SuspendForIncompleteSnapshot();
+                else
+                    HideUnavailablePresentation();
                 return;
             }
-            if (Keyboard.current == null || localPlayer == null) return;
-            bool pauseOpen = CoopUiInputGate.PauseMenuVisible;
-            if (!pauseOpen && Keyboard.current.iKey.wasPressedThisFrame)
+            if (!authority.TryGetProgression(localPlayer.PlayerId,
+                    out NetcodeProgressionState progression))
+            {
+                HideUnavailablePresentation();
+                return;
+            }
+            if (presentedAuthority != authority ||
+                presentedRunGeneration != world.RunGeneration ||
+                presentedPlayerId != localPlayer.PlayerId)
+            {
+                requests.Reset();
+                selection.Clear();
+                inventoryVisible = false;
+                status = string.Empty;
+                pickupScrollCaptureUntil = 0f;
+                presentation?.Hide();
+                lastCompleteFrame = null;
+                presentedAuthority = authority;
+                presentedRunGeneration = world.RunGeneration;
+                presentedPlayerId = localPlayer.PlayerId;
+            }
+
+            presentation ??= CoopEconomyPresentationRegistry.Create(
+                gameObject, SubmitIntent, CloseInventory);
+            if (presentation == null || !presentation.IsReady)
+            {
+                HideUnavailablePresentation();
+                return;
+            }
+
+            bool retry = false;
+            if (requests.Observe(progression))
+            {
+                retry = !requests.WasAccepted;
+                status = requests.WasAccepted
+                    ? "服务器已确认"
+                    : "操作未生效：物品或候选已变化，请重新选择";
+            }
+            else if (requests.IsPending &&
+                     Time.unscaledTime - requestStartedAt >= WaitingNoticeDelay)
+            {
+                // A local timeout cannot prove the server rejected the command.
+                // Do not resubmit, unlock it, or apply its effects speculatively.
+                status = "仍在等待服务器确认，请勿重复操作";
+            }
+
+            bool paused = CoopUiInputGate.PauseMenuVisible;
+            bool choosing = progression.PendingUpgradeChoices > 0;
+            Keyboard keyboard = Keyboard.current;
+            if (!paused && !choosing && keyboard != null &&
+                (keyboard.iKey.wasPressedThisFrame ||
+                 keyboard.tabKey.wasPressedThisFrame))
                 inventoryVisible = !inventoryVisible;
-            bool choosingUpgrade = authority != null &&
+            if (choosing) inventoryVisible = false;
+            SetModalVisible(inventoryVisible || choosing);
+
+            ReadSnapshotLists();
+            selection.Refresh(drops, localPlayer.PlayerId,
+                localPlayer.PresentedPosition);
+            HandlePickupInput(paused);
+            lastCompleteFrame = new CoopEconomyPresentationFrame
+            {
+                Progression = progression,
+                Inventory = inventory,
+                Upgrades = upgrades,
+                NearbyDrops = selection.Nearby,
+                SelectedDropIndex = selection.SelectedIndex,
+                RunGeneration = world.RunGeneration,
+                InventoryVisible = inventoryVisible,
+                Suspended = paused,
+                Pending = requests.IsPending,
+                RetryAfterRejection = retry,
+                Status = status
+            };
+            presentation.Present(lastCompleteFrame);
+        }
+
+        private void ReadSnapshotLists()
+        {
+            inventory.Clear();
+            upgrades.Clear();
+            drops.Clear();
+            for (int index = 0; index < authority.ReplicatedInventorySlotCount; index++)
+            {
+                NetcodeInventorySlotState slot = authority.GetReplicatedInventorySlot(index);
+                if (slot.PlayerId == localPlayer.PlayerId) inventory.Add(slot);
+            }
+            for (int index = 0; index < authority.ReplicatedUpgradeCount; index++)
+            {
+                NetcodeUpgradeStackState upgrade = authority.GetReplicatedUpgrade(index);
+                if (upgrade.PlayerId == localPlayer.PlayerId) upgrades.Add(upgrade);
+            }
+            for (int index = 0; index < authority.ReplicatedWorldDropCount; index++)
+                drops.Add(authority.GetReplicatedWorldDrop(index));
+        }
+
+        private void HandlePickupInput(bool paused)
+        {
+            if (selection.HasSelection)
+                pickupScrollCaptureUntil = Time.unscaledTime + PickupScrollReleaseDelay;
+            bool ownsScroll = selection.HasSelection ||
+                Time.unscaledTime < pickupScrollCaptureUntil;
+            CoopEconomyPresentationRegistry.PickupScrollOwned = ownsScroll;
+            if (ownsScroll)
+            {
+                // This is the same normalized event queue used by weapon cycling,
+                // consumed once. The bridge must not consume it again this frame.
+                int direction = presentation.ConsumePickupScroll();
+                if (direction != 0)
+                {
+                    pickupScrollCaptureUntil = Time.unscaledTime + PickupScrollReleaseDelay;
+                    if (!paused && !modalVisible) selection.Cycle(direction);
+                }
+            }
+            if (paused || modalVisible || requests.IsPending ||
+                !selection.HasSelection || !presentation.PickupPressed) return;
+            NetcodeWorldDropState selected = selection.Selected;
+            SubmitIntent(new CoopEconomyIntent(AuthoritativeEconomyCommandKind.Pickup,
+                dropId: selected.DropId, dropRevision: selected.Revision,
+                itemId: selected.ItemId.ToString()));
+        }
+
+        private bool SubmitIntent(CoopEconomyIntent intent)
+        {
+            if (!isActiveAndEnabled || requests.IsPending ||
+                CoopUiInputGate.PauseMenuVisible || authority == null ||
+                localPlayer == null || !localPlayer.HasConsumedServerState ||
+                !authority.IsReplicatedSnapshotComplete ||
+                IsOutcome(authority.WorldState) ||
+                !authority.TryGetProgression(localPlayer.PlayerId,
+                    out NetcodeProgressionState baseline)) return false;
+            try
+            {
+                NetcodeEconomyCommand command = localPlayer.SubmitEconomyAction(
+                    intent.Kind, entityId: intent.DropId,
+                    sourceSlot: intent.SourceSlot,
+                    destinationSlot: intent.DestinationSlot,
+                    quantity: intent.Quantity,
+                    candidateIndex: intent.CandidateIndex,
+                    expectedDropRevision: intent.DropRevision,
+                    expectedItemId: intent.ItemId);
+                if (!requests.Begin(command, baseline)) return false;
+                requestStartedAt = Time.unscaledTime;
+                status = "正在等待服务器确认……";
+                return true;
+            }
+            catch (InvalidOperationException)
+            {
+                status = "战斗连接尚未就绪，请稍后重试";
+                return false;
+            }
+        }
+
+        private void CloseInventory()
+        {
+            inventoryVisible = false;
+            bool choosing = authority != null && localPlayer != null &&
                 authority.TryGetProgression(localPlayer.PlayerId,
                     out NetcodeProgressionState progression) &&
                 progression.PendingUpgradeChoices > 0;
-            SetModalVisible(inventoryVisible || choosingUpgrade);
-            if (!pauseOpen && !modalVisible &&
-                Keyboard.current.fKey.wasPressedThisFrame &&
-                TryNearestDrop(out NetcodeWorldDropState drop))
-            {
-                localPlayer.SubmitEconomyAction(
-                    AuthoritativeEconomyCommandKind.Pickup,
-                    entityId: drop.DropId,
-                    expectedDropRevision: drop.Revision,
-                    expectedItemId: drop.ItemId.ToString());
-            }
+            SetModalVisible(choosing);
+            // Closing a view is not cancellation of an already submitted intent.
+        }
+
+        private void HideUnavailablePresentation()
+        {
+            inventoryVisible = false;
+            presentation?.Hide();
+            lastCompleteFrame = null;
+            selection.Clear();
+            pickupScrollCaptureUntil = 0f;
+            CoopEconomyPresentationRegistry.PickupScrollOwned = false;
+            SetModalVisible(false, restoreGameplayCursor: false);
+        }
+
+        private void SuspendForIncompleteSnapshot()
+        {
+            // NGO may apply list elements and the committed world header in
+            // different frames. Keep the last validated projection and the
+            // player's open intent, but never interact with the partial data.
+            bool choosing = lastCompleteFrame.Progression.PendingUpgradeChoices > 0;
+            SetModalVisible(inventoryVisible || choosing);
+            lastCompleteFrame.InventoryVisible = inventoryVisible;
+            lastCompleteFrame.Suspended = true;
+            lastCompleteFrame.Pending = requests.IsPending;
+            lastCompleteFrame.Status = "正在同步战局，请稍候……";
+            presentation.Present(lastCompleteFrame);
+            // Keep consuming an already-owned pickup wheel gesture while it
+            // is suspended; it must not leak into weapon cycling on recovery.
+            HandlePickupInput(paused: true);
         }
 
         private void LateUpdate()
         {
-            if (!modalVisible) return;
+            if (!modalVisible || CoopUiInputGate.PauseMenuVisible) return;
             Cursor.lockState = CursorLockMode.None;
             Cursor.visible = true;
         }
 
-        private void OnDisable()
+        private void OnDisable() => HideUnavailablePresentation();
+
+        private void OnDestroy()
         {
-            inventoryVisible = false;
-            SetModalVisible(false);
+            HideUnavailablePresentation();
+            presentation?.Dispose();
+            presentation = null;
+            requests.Reset();
         }
 
-        private void SetModalVisible(bool visible)
+        private void SetModalVisible(bool visible, bool restoreGameplayCursor = true)
         {
-            if (modalVisible == visible) return;
+            bool changed = modalVisible != visible;
             modalVisible = visible;
             CoopUiInputGate.EconomyModalVisible = visible;
-            if (!visible && !CoopUiInputGate.PauseMenuVisible &&
-                authority != null &&
+            if (visible) economyCursorOwned = true;
+            // A partial replicated frame may temporarily hide the modal before
+            // its acknowledgement arrives. Retain the cursor lease so the next
+            // complete frame can restore gameplay even if modalVisible is false.
+            if ((changed || economyCursorOwned) && !visible && restoreGameplayCursor &&
+                !CoopUiInputGate.PauseMenuVisible && authority != null &&
                 !IsOutcome(authority.WorldState))
             {
                 Cursor.lockState = CursorLockMode.Locked;
                 Cursor.visible = false;
+                economyCursorOwned = false;
             }
-        }
-
-        private void OnGUI()
-        {
-            if (authority == null || localPlayer == null ||
-                !localPlayer.HasConsumedServerState ||
-                IsOutcome(authority.WorldState) ||
-                !authority.TryGetProgression(localPlayer.PlayerId,
-                    out NetcodeProgressionState progression))
-                return;
-
-            DrawProgression(progression);
-            if (TryNearestDrop(out NetcodeWorldDropState drop))
-            {
-                GUI.Box(new Rect(Screen.width * 0.5f - 145f,
-                    Screen.height - 105f, 290f, 36f),
-                    $"[F] 拾取 {ItemName(drop.ItemId.ToString())} ×{drop.Quantity}");
-            }
-            if (inventoryVisible)
-                inventoryRect = GUI.Window(InventoryWindowId, inventoryRect,
-                    _ => DrawInventory(progression), "联机消耗品背包 · I 关闭");
-            if (progression.PendingUpgradeChoices > 0)
-                DrawUpgradeChoices(progression);
-        }
-
-        private void DrawProgression(NetcodeProgressionState value)
-        {
-            float width = 280f;
-            Rect area = new(20f, 80f, width, 78f);
-            GUI.Box(area, GUIContent.none);
-            GUI.Label(new Rect(32f, 88f, width - 24f, 24f),
-                $"等级 {value.Level}   经验 {value.CurrentExperience} / " +
-                (value.ExperienceToNextLevel > 0
-                    ? value.ExperienceToNextLevel.ToString()
-                    : "MAX"));
-            float normalized = value.ExperienceToNextLevel <= 0
-                ? 1f
-                : Mathf.Clamp01((float)value.CurrentExperience /
-                    value.ExperienceToNextLevel);
-            GUI.Box(new Rect(32f, 119f, width - 24f, 14f), GUIContent.none);
-            GUI.Box(new Rect(34f, 121f,
-                (width - 28f) * normalized, 10f), GUIContent.none);
-            GUI.Label(new Rect(32f, 136f, width - 24f, 20f),
-                $"构筑：{BuildTags(value.BuildTags.ToString())}   [I] 背包");
-        }
-
-        private void DrawInventory(NetcodeProgressionState progression)
-        {
-            GUILayout.Label($"服务器版本 {progression.InventoryRevision}");
-            for (int index = 0; index < authority.ReplicatedInventorySlotCount;
-                 index++)
-            {
-                NetcodeInventorySlotState slot =
-                    authority.GetReplicatedInventorySlot(index);
-                if (slot.PlayerId != localPlayer.PlayerId ||
-                    slot.Quantity <= 0) continue;
-                GUILayout.BeginHorizontal();
-                GUILayout.Label(
-                    $"{slot.SlotIndex + 1:00}  {ItemName(slot.ItemId.ToString())} ×{slot.Quantity}",
-                    GUILayout.Width(190f));
-                if (GUILayout.Button("使用", GUILayout.Width(52f)))
-                    localPlayer.SubmitEconomyAction(
-                        AuthoritativeEconomyCommandKind.Use,
-                        sourceSlot: slot.SlotIndex);
-                if (GUILayout.Button("丢弃", GUILayout.Width(52f)))
-                    localPlayer.SubmitEconomyAction(
-                        AuthoritativeEconomyCommandKind.Drop,
-                        sourceSlot: slot.SlotIndex,
-                        quantity: 1);
-                GUILayout.EndHorizontal();
-            }
-            GUILayout.Space(8f);
-            if (GUILayout.Button("自动整理空位"))
-                localPlayer.SubmitEconomyAction(
-                    AuthoritativeEconomyCommandKind.Compact);
-            GUI.DragWindow(new Rect(0f, 0f, 10000f, 24f));
-        }
-
-        private void DrawUpgradeChoices(NetcodeProgressionState value)
-        {
-            string[] candidates =
-            {
-                value.Candidate0.ToString(),
-                value.Candidate1.ToString(),
-                value.Candidate2.ToString()
-            };
-            float width = 210f;
-            float total = candidates.Length * width + 24f;
-            GUILayout.BeginArea(new Rect(
-                (Screen.width - total) * 0.5f,
-                Screen.height * 0.18f,
-                total,
-                190f));
-            GUILayout.Label("选择一项肉鸽强化（由服务器结算）");
-            GUILayout.BeginHorizontal();
-            for (int index = 0; index < candidates.Length; index++)
-            {
-                if (string.IsNullOrEmpty(candidates[index])) continue;
-                if (GUILayout.Button(
-                        UpgradeName(candidates[index]),
-                        GUILayout.Width(width - 8f),
-                        GUILayout.Height(126f)))
-                {
-                    localPlayer.SubmitEconomyAction(
-                        AuthoritativeEconomyCommandKind.SelectUpgrade,
-                        candidateIndex: index);
-                }
-            }
-            GUILayout.EndHorizontal();
-            GUILayout.EndArea();
-        }
-
-        private bool TryNearestDrop(out NetcodeWorldDropState selected)
-        {
-            selected = default;
-            if (authority == null || localPlayer == null) return false;
-            float best = 3.25f * 3.25f;
-            Vector3 position = localPlayer.PresentedPosition;
-            bool found = false;
-            for (int index = 0; index < authority.ReplicatedWorldDropCount;
-                 index++)
-            {
-                NetcodeWorldDropState candidate =
-                    authority.GetReplicatedWorldDrop(index);
-                if (!candidate.Available || candidate.OwnerPlayerId != 0 &&
-                    candidate.OwnerPlayerId != localPlayer.PlayerId) continue;
-                float distance = (candidate.Position - position).sqrMagnitude;
-                if (distance > best) continue;
-                best = distance;
-                selected = candidate;
-                found = true;
-            }
-            return found;
         }
 
         private void ResolveBindings()
         {
             if (authority == null)
                 authority = FindFirstObjectByType<NetworkCoopSessionAuthority>();
-            if (localPlayer != null) return;
-            NetworkPlayerReplica[] players =
-                FindObjectsByType<NetworkPlayerReplica>(
-                    FindObjectsInactive.Exclude,
-                    FindObjectsSortMode.None);
-            for (int index = 0; index < players.Length; index++)
+            if (localPlayer != null && localPlayer.Session == authority &&
+                localPlayer.IsLocallyControlled) return;
+            localPlayer = null;
+            NetworkPlayerReplica[] players = FindObjectsByType<NetworkPlayerReplica>(
+                FindObjectsInactive.Exclude, FindObjectsSortMode.None);
+            foreach (NetworkPlayerReplica player in players)
             {
-                if (!players[index].IsLocallyControlled) continue;
-                localPlayer = players[index];
+                if (!player.IsLocallyControlled || player.Session != authority) continue;
+                localPlayer = player;
                 break;
             }
         }
-
-        private static string ItemName(string id) => id switch
-        {
-            "medical_kit" or "medkit" => "医疗包",
-            "armor_pack" or "armor_plate" => "护甲包",
-            "rifle_ammo" => "步枪弹药",
-            "handgun_ammo" => "手枪弹药",
-            _ => id
-        };
-
-        private static string UpgradeName(string id) => id switch
-        {
-            "damage_hardened_rounds" => "硬化弹头\n武器伤害 +25%",
-            "damage_overcharged_core" => "过载核心\n武器伤害 +35%",
-            "damage_weakpoint_analysis" => "弱点分析\n武器伤害 +20%",
-            "fire_rate_rapid_cycling" => "快速循环\n射速 +15%",
-            "magazine_extended_capacity" => "扩容弹匣\n容量 +20%",
-            "reload_quick_hands" => "快速换弹\n换弹速度 +20%",
-            "recoil_dampening" => "后坐阻尼\n后坐控制 +18%",
-            "accuracy_tight_grouping" => "密集弹着\n精准 +20%",
-            "survival_vitality_reinforcement" => "生命强化\n最大生命 +20%",
-            "survival_reinforced_plating" => "强化护甲\n最大护甲 +20%",
-            "survival_emergency_treatment" => "紧急治疗\n恢复 30 生命",
-            "survival_field_armor_repair" => "战地修甲\n恢复 30 护甲",
-            "survival_mobility_training" => "机动训练\n移动速度 +10%",
-            _ => id
-        };
-
-        private static string BuildTags(string tags) =>
-            string.IsNullOrWhiteSpace(tags) ? "尚未形成" :
-            tags.Replace("build.", string.Empty).Replace("|", " / ");
 
         private static bool IsOutcome(NetcodeWorldState world) =>
             world.MissionPhase == AuthoritativeMissionPhase.Victory ||

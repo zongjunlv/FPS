@@ -166,6 +166,11 @@ namespace FPS.Networking.Domain
         public double FixedDeltaSeconds => 1d / TickRate;
         public int MaximumPastCommandTicks { get; }
         public int MaximumFutureCommandTicks { get; }
+        // A missing input is not permission to integrate an arbitrary pause in
+        // one command. Prediction and authority use the same bounded interval.
+        public int MaximumInputGapTicks => (int)Math.Max(1L,
+            Math.Min(TickRate, (long)MaximumPastCommandTicks +
+                MaximumFutureCommandTicks));
         public int HistoryCapacity { get; }
         public double MaximumMoveSpeed { get; }
         public double ClaimedPositionTolerance { get; }
@@ -292,7 +297,10 @@ namespace FPS.Networking.Domain
             string presentationAddress = "",
             int waveIndex = 1,
             int spawnOrder = 0,
-            IReadOnlyList<AuthoritativeLootStack> lootDrops = null)
+            IReadOnlyList<AuthoritativeLootStack> lootDrops = null,
+            NetVector3 bodyOffset = default,
+            NetVector3 bodyHalfExtents = default,
+            NetVector3 headHalfExtents = default)
         {
             if (targetId <= 0) throw new ArgumentOutOfRangeException(nameof(targetId));
             if (!position.IsFinite) throw new ArgumentOutOfRangeException(nameof(position));
@@ -332,6 +340,9 @@ namespace FPS.Networking.Domain
             DropDefinitionId = dropDefinitionId ?? string.Empty;
             HeadOffset = headOffset;
             HeadRadius = headRadius;
+            BodyOffset = bodyOffset;
+            BodyHalfExtents = bodyHalfExtents;
+            HeadHalfExtents = headHalfExtents;
             Role = role;
             SpawnTick = spawnTick;
             MoveSpeed = moveSpeed;
@@ -359,6 +370,9 @@ namespace FPS.Networking.Domain
         public string DropDefinitionId { get; }
         public NetVector3 HeadOffset { get; }
         public double HeadRadius { get; }
+        public NetVector3 BodyOffset { get; }
+        public NetVector3 BodyHalfExtents { get; }
+        public NetVector3 HeadHalfExtents { get; }
         public AuthoritativeEnemyRole Role { get; }
         public long SpawnTick { get; }
         public double MoveSpeed { get; }
@@ -435,7 +449,9 @@ namespace FPS.Networking.Domain
             bool sprintHeld,
             bool crouchRequested,
             string weaponId,
-            NetVector3 shotOrigin)
+            NetVector3 shotOrigin,
+            long shotViewTick = -1,
+            NetVector3 shotDirection = default)
         {
             PlayerId = playerId;
             Sequence = sequence;
@@ -454,6 +470,8 @@ namespace FPS.Networking.Domain
                 ? "weapon.rifle"
                 : weaponId.Trim();
             ShotOrigin = shotOrigin;
+            ShotViewTick = shotViewTick;
+            ShotDirection = shotDirection;
         }
 
         public int PlayerId { get; }
@@ -471,6 +489,8 @@ namespace FPS.Networking.Domain
         public bool CrouchRequested { get; }
         public string WeaponId { get; }
         public NetVector3 ShotOrigin { get; }
+        public long ShotViewTick { get; }
+        public NetVector3 ShotDirection { get; }
     }
 
     public enum CommandRejectionReason
@@ -496,7 +516,8 @@ namespace FPS.Networking.Domain
         InvalidShotOrigin,
         LineOfSightBlocked,
         JumpRateExceeded,
-        StanceBlocked
+        StanceBlocked,
+        InputBufferFull
     }
 
     public enum ShotResolutionKind
@@ -719,7 +740,8 @@ namespace FPS.Networking.Domain
             double maximumArmor = 100d,
             AuthoritativePlayerLifeState lifeState =
                 AuthoritativePlayerLifeState.Alive,
-            uint acknowledgedMissionSequence = 0)
+            uint acknowledgedMissionSequence = 0,
+            long lastAcceptedClientTick = long.MinValue)
         {
             PlayerId = playerId;
             Position = position;
@@ -746,6 +768,7 @@ namespace FPS.Networking.Domain
             MaximumArmor = Math.Max(0d, maximumArmor);
             LifeState = lifeState;
             AcknowledgedMissionSequence = acknowledgedMissionSequence;
+            LastAcceptedClientTick = lastAcceptedClientTick;
         }
 
         public int PlayerId { get; }
@@ -773,6 +796,7 @@ namespace FPS.Networking.Domain
         public double MaximumArmor { get; }
         public AuthoritativePlayerLifeState LifeState { get; }
         public uint AcknowledgedMissionSequence { get; }
+        public long LastAcceptedClientTick { get; }
         public bool IsCrouching => Stance == PlayerStance.Crouching;
         public bool IsAlive => LifeState == AuthoritativePlayerLifeState.Alive &&
             Health > 0d;
@@ -812,7 +836,11 @@ namespace FPS.Networking.Domain
             string archetypeId = "",
             string presentationAddress = "",
             int waveIndex = 1,
-            double maximumHealth = 0d)
+            double maximumHealth = 0d,
+            NetVector3 bodyOffset = default,
+            NetVector3 bodyHalfExtents = default,
+            NetVector3 headHalfExtents = default,
+            long lastAttackTick = -1)
         {
             TargetId = targetId;
             Position = position;
@@ -831,6 +859,10 @@ namespace FPS.Networking.Domain
             ArchetypeId = archetypeId?.Trim() ?? string.Empty;
             PresentationAddress = presentationAddress?.Trim() ?? string.Empty;
             WaveIndex = Math.Max(1, waveIndex);
+            BodyOffset = bodyOffset;
+            BodyHalfExtents = bodyHalfExtents;
+            HeadHalfExtents = headHalfExtents;
+            LastAttackTick = lastAttackTick;
         }
 
         public int TargetId { get; }
@@ -851,6 +883,10 @@ namespace FPS.Networking.Domain
         public string PresentationAddress { get; }
         public int WaveIndex { get; }
         public bool IsAlive => Active && Health > 0d;
+        public NetVector3 BodyOffset { get; }
+        public NetVector3 BodyHalfExtents { get; }
+        public NetVector3 HeadHalfExtents { get; }
+        public long LastAttackTick { get; }
     }
 
     public enum AuthoritativeWaveStatus

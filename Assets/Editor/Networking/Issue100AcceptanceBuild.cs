@@ -37,8 +37,12 @@ public static class Issue100AcceptanceBuild
 
     public static void Build()
     {
-        BuildTarget target = ResolveTarget(Option("-issue100BuildTarget"));
-        string root = Option("-issue100BuildRoot");
+        BuildAt(Option("-issue100BuildRoot"), Option("-issue100BuildTarget"));
+    }
+
+    public static void BuildAt(string root, string targetName = null)
+    {
+        BuildTarget target = ResolveTarget(targetName);
         if (string.IsNullOrWhiteSpace(root))
             root = Path.Combine(Path.GetDirectoryName(Application.dataPath) ??
                 ".", "Builds", "Issue100");
@@ -72,10 +76,12 @@ public static class Issue100AcceptanceBuild
             }
             StandaloneBuildSubtarget serverSubtarget =
                 ResolveServerSubtarget(target);
-            BuildReport serverReport = BuildPlayer(server, target,
-                serverSubtarget);
-            BuildReport clientReport = BuildPlayer(client, target,
-                StandaloneBuildSubtarget.Player);
+            // Unity can destroy the preceding native BuildReport when starting
+            // another build. Copy its value summary before building the client.
+            BuildSummary serverSummary = BuildPlayer(server, target,
+                serverSubtarget).summary;
+            BuildSummary clientSummary = BuildPlayer(client, target,
+                StandaloneBuildSubtarget.Player).summary;
             var manifest = new AcceptanceBuildManifest
             {
                 target = target.ToString(),
@@ -83,7 +89,8 @@ public static class Issue100AcceptanceBuild
                 unityVersion = Application.unityVersion,
                 productVersion = PlayerSettings.bundleVersion,
                 protocolVersion = VersionOption(
-                    "-issue101ProtocolVersion", "1"),
+                    "-issue101ProtocolVersion",
+                    FPS.Networking.Netcode.CoopWireProtocol.CompatibilityId),
                 contentVersion = VersionOption(
                     "-issue101ContentVersion", "citynew-v1"),
                 builtAtUtc = DateTime.UtcNow.ToString("O"),
@@ -93,10 +100,10 @@ public static class Issue100AcceptanceBuild
                         : "PlayerHeadlessFallback",
                 serverOutput = server,
                 serverSha256 = HashArtifact(server),
-                serverBytes = serverReport.summary.totalSize,
+                serverBytes = serverSummary.totalSize,
                 clientOutput = client,
                 clientSha256 = HashArtifact(client),
-                clientBytes = clientReport.summary.totalSize
+                clientBytes = clientSummary.totalSize
             };
             string manifestPath = Path.Combine(root, "build-manifest.json");
             File.WriteAllText(manifestPath,

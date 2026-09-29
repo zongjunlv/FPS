@@ -72,7 +72,8 @@ public static class Issue85DedicatedServerBuild
 
             string protocolVersion = Option("-serverProtocolVersion");
             if (string.IsNullOrWhiteSpace(protocolVersion))
-                protocolVersion = "1";
+                protocolVersion =
+                    FPS.Networking.Netcode.CoopWireProtocol.CompatibilityId;
             string contentVersion = Option("-serverContentVersion");
             if (string.IsNullOrWhiteSpace(contentVersion))
                 contentVersion = "citynew-v1";

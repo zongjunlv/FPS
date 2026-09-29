@@ -79,7 +79,8 @@ namespace FPS.Networking.Session
                 string version = Argument("-issue86-version");
                 if (string.IsNullOrWhiteSpace(version)) version = "local-dev";
                 string protocol = Argument("-issue101-protocol-version");
-                if (string.IsNullOrWhiteSpace(protocol)) protocol = "1";
+                if (string.IsNullOrWhiteSpace(protocol))
+                    protocol = CoopWireProtocol.CompatibilityId;
                 string content = Argument("-issue101-content-version");
                 if (string.IsNullOrWhiteSpace(content)) content = "citynew-v1";
                 var localCompatibility = new CoopBuildCompatibility(version,

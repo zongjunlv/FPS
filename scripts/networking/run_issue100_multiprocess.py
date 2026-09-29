@@ -597,22 +597,24 @@ def main() -> int:
         "runnerPassed": runner_passed,
     }
     diagnostic_run = bool(args.scenario)
-    errors = [] if diagnostic_run else validate(report, args.record_video)
+    errors = validate(report, args.record_video,
+                      require_full_matrix=not diagnostic_run)
     errors.extend(video_errors)
     if not runner_passed:
         errors.append("一个或多个玩家进程以失败状态退出")
     errors = sorted(set(errors))
     if diagnostic_run:
         report["gate"] = {
-            "outcome": "DiagnosticPass" if not errors else "DiagnosticFail",
+            "outcome": "DiagnosticIncomplete" if not errors else "DiagnosticFail",
             "acceptanceEligible": False,
-            "reasons": (["单场景诊断结果不能替代完整四档验收"]
-                        if not errors else errors),
+            "fullMatrixEvaluated": False,
+            "reasons": ["未执行完整四档门禁；单场景诊断结果不能替代完整验收", *errors],
         }
     else:
         report["gate"] = {
             "outcome": "Pass" if not errors else "Fail",
             "acceptanceEligible": not errors,
+            "fullMatrixEvaluated": True,
             "reasons": errors,
         }
     report_path = output / "report.json"
@@ -628,7 +630,7 @@ def main() -> int:
         print(f"证据已保留：{output}", file=sys.stderr)
         return 1
     if diagnostic_run:
-        print(f"[PASS] Issue100 单场景诊断通过：{report_path}")
+        print(f"[DIAGNOSTIC] Issue100 单场景执行完成；未执行完整四档门禁（Incomplete）：{report_path}")
     else:
         print(f"[PASS] Issue100 真实三进程验收通过：{report_path}")
     return 0

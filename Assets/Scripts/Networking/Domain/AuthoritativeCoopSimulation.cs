@@ -283,6 +283,7 @@ namespace FPS.Networking.Domain
         }
 
         public CoopServerRules Rules => rules;
+        public event Action<CommandRejectionDiagnostic> CommandRejectionDiagnosed;
         public long CurrentTick => currentTick;
         public int HistoryCount => history.Count;
         public AuthoritativeWaveStatus WaveStatus => waveStatus;
@@ -443,6 +444,9 @@ namespace FPS.Networking.Domain
             AdvanceEnemyLifecycle(events);
             AdvanceEnemySpawns(events);
             AdvanceEnemyAi(events);
+            // A command for this server tick must see entities that spawned in
+            // this tick. Older view ticks still resolve against older generations.
+            CaptureHistory(currentTick);
             var resolutions = new List<CommandResolution>();
             PlayerInputCommand[] commands = (receivedCommands ??
                     Array.Empty<PlayerInputCommand>())
@@ -518,7 +522,7 @@ namespace FPS.Networking.Domain
             }
             AdvanceMission(events);
 
-            CaptureHistory(currentTick);
+            ReplaceCurrentHistory();
             return new AuthoritativeTickResult(
                 currentTick,
                 resolutions,
@@ -1230,6 +1234,7 @@ namespace FPS.Networking.Domain
                     continue;
                 target.NextAttackTick = currentTick +
                     target.AttackIntervalTicks;
+                target.LastAttackTick = currentTick;
                 double damage = target.AttackDamage *
                     AuthoritativeEnemyUtility.DamageMultiplier(target.Role);
                 if (HasSupportAura(target)) damage *= 1.2d;
@@ -1322,16 +1327,31 @@ namespace FPS.Networking.Domain
                 player,
                 command);
             if (identityError != CommandRejectionReason.None)
+            {
+                CommandRejectionDiagnosed?.Invoke(new CommandRejectionDiagnostic(
+                    currentTick, command, identityError, player.Movement,
+                    player.Movement, player.LastClientTick, 0, false, 0d,
+                    economy.Modifier(player.Id,
+                        AuthoritativeUpgradeEffect.MovementSpeed)));
                 return Rejected(command, identityError);
+            }
 
             CommandRejectionReason error = ValidateGameplay(
                 player,
                 command,
                 out int elapsedTicks,
-                out PlayerMovementState nextMovement);
+                out PlayerMovementState nextMovement,
+                out bool candidateIntegrated,
+                out double claimedPositionTolerance);
             if (error != CommandRejectionReason.None)
             {
                 player.AcknowledgedSequence = command.Sequence;
+                CommandRejectionDiagnosed?.Invoke(new CommandRejectionDiagnostic(
+                    currentTick, command, error, player.Movement,
+                    nextMovement, player.LastClientTick, elapsedTicks,
+                    candidateIntegrated, claimedPositionTolerance,
+                    economy.Modifier(player.Id,
+                        AuthoritativeUpgradeEffect.MovementSpeed)));
                 return Rejected(command, error);
             }
 
@@ -1394,11 +1414,16 @@ namespace FPS.Networking.Domain
             MutablePlayer player,
             PlayerInputCommand command,
             out int elapsedTicks,
-            out PlayerMovementState nextMovement)
+            out PlayerMovementState nextMovement,
+            out bool candidateIntegrated,
+            out double claimedPositionTolerance)
         {
+            candidateIntegrated = false;
+            claimedPositionTolerance = rules.ClaimedPositionTolerance;
             elapsedTicks = player.LastClientTick == long.MinValue
                 ? 1
-                : (int)Math.Max(1L, command.ClientTick - player.LastClientTick);
+                : (int)Math.Max(1L, Math.Min(rules.MaximumInputGapTicks,
+                    command.ClientTick - player.LastClientTick));
             nextMovement = player.Movement;
             if (IsMissionOutcome)
                 return CommandRejectionReason.InvalidMovement;
@@ -1443,11 +1468,12 @@ namespace FPS.Networking.Domain
                 player.Id,
                 player.Movement,
                 nextMovement);
+            candidateIntegrated = true;
             double missedTickAllowance = rules.MaximumMoveSpeed *
                 economy.Modifier(player.Id,
                     AuthoritativeUpgradeEffect.MovementSpeed) *
                 rules.FixedDeltaSeconds * Math.Max(0, elapsedTicks - 1) * 2d;
-            double claimedPositionTolerance =
+            claimedPositionTolerance =
                 rules.ClaimedPositionTolerance + missedTickAllowance;
             if (NetVector3.Distance(
                     nextMovement.Position,
@@ -1470,6 +1496,24 @@ namespace FPS.Networking.Domain
 
             if (command.Fire)
             {
+                if (!command.ShotDirection.IsFinite)
+                    return CommandRejectionReason.InvalidAim;
+                if (command.ShotDirection.SqrMagnitude > 0d)
+                {
+                    NetVector3 forward = CoopGameplayRules.AimDirection(command.AimYawDegrees, command.AimPitchDegrees);
+                    if (Math.Abs(command.ShotDirection.SqrMagnitude - 1d) > 0.01d ||
+                        NetVector3.Dot(forward, command.ShotDirection) < 0.707106d)
+                        return CommandRejectionReason.InvalidAim;
+                }
+                if (command.ShotViewTick >= 0)
+                {
+                    long rewindWindow = Math.Min(rules.HistoryCapacity - 1,
+                        rules.MaximumPastCommandTicks + 12);
+                    if (command.ShotViewTick < currentTick - rewindWindow)
+                        return CommandRejectionReason.TimestampTooOld;
+                    if (command.ShotViewTick > currentTick || command.ShotViewTick > command.ClientTick)
+                        return CommandRejectionReason.TimestampInFuture;
+                }
                 if (!weaponDefinitions.TryGetValue(command.WeaponId,
                         out AuthoritativeWeaponDefinition definition) ||
                     !player.Weapons.TryGetValue(command.WeaponId,
@@ -1488,6 +1532,8 @@ namespace FPS.Networking.Domain
                     NetVector3.Distance(command.ShotOrigin,
                         command.ClaimedPosition) > 2.5d)
                     return CommandRejectionReason.InvalidShotOrigin;
+                if (!ValidateCandidateShotDirection(player, command, definition))
+                    return CommandRejectionReason.InvalidAim;
                 int fireInterval = Math.Max(1, (int)Math.Ceiling(
                     definition.FireIntervalTicks /
                     economy.Modifier(player.Id,
@@ -1499,18 +1545,45 @@ namespace FPS.Networking.Domain
             return CommandRejectionReason.None;
         }
 
+        private bool ValidateCandidateShotDirection(MutablePlayer player,
+            PlayerInputCommand command, AuthoritativeWeaponDefinition weapon)
+        {
+            if (command.ShotDirection.SqrMagnitude <= 0d) return true;
+            HistoryFrame frame = FindHistory(command.ShotViewTick >= 0
+                ? command.ShotViewTick : command.ClientTick);
+            NetVector3 direction = command.ShotDirection.Normalized;
+            double nearestDistance = weapon.HitscanRange;
+            bool found = false;
+            double accuracyAssist = economy.Modifier(player.Id, AuthoritativeUpgradeEffect.Accuracy);
+            foreach (MutableTarget target in targets.Values)
+            {
+                if (!target.IsAlive || !frame.TryGetTarget(target.Id, out AuthoritativeTargetState pose) ||
+                    !pose.IsAlive || pose.SpawnGeneration != target.SpawnGeneration)
+                    continue;
+                if (!AuthoritativeShotDirectionValidation.TryGetHitDistance(command.ShotOrigin,
+                        direction, pose, accuracyAssist, nearestDistance, out double distance))
+                    continue;
+                nearestDistance = distance;
+                found = true;
+            }
+            // With no damage candidate the existing finite/unit/45-degree coarse
+            // check remains sufficient; close world obstructions can create parallax.
+            return !found || AuthoritativeShotDirectionValidation.WithinWeaponAimAtDistance(
+                command, nearestDistance, weapon.MaxSpreadDegrees +
+                AuthoritativeWeaponDefinition.MaxCameraRecoilDeviationDegrees);
+        }
+
         private ShotResolution ResolveShot(
             MutablePlayer shooter,
             PlayerInputCommand command,
             ICollection<AuthoritativeEvent> events)
         {
-            HistoryFrame frame = FindHistory(command.ClientTick);
+            HistoryFrame frame = FindHistory(command.ShotViewTick >= 0 ? command.ShotViewTick : command.ClientTick);
             AuthoritativeWeaponDefinition weapon =
                 weaponDefinitions[command.WeaponId];
             NetVector3 origin = command.ShotOrigin;
-            NetVector3 direction = CoopGameplayRules.AimDirection(
-                command.AimYawDegrees,
-                command.AimPitchDegrees);
+            NetVector3 direction = command.ShotDirection.SqrMagnitude > 0d ? command.ShotDirection.Normalized :
+                CoopGameplayRules.AimDirection(command.AimYawDegrees, command.AimPitchDegrees);
             double accuracyAssist = economy.Modifier(shooter.Id,
                 AuthoritativeUpgradeEffect.Accuracy);
             MutableTarget selected = null;
@@ -1521,14 +1594,18 @@ namespace FPS.Networking.Domain
             foreach (MutableTarget target in targets.Values
                          .OrderBy(value => value.Id))
             {
-                if (!target.IsAlive || command.ClientTick < target.SpawnTick ||
-                    !frame.TryGetTargetPosition(target.Id, out NetVector3 center))
+                if (!target.IsAlive || !frame.TryGetTarget(target.Id, out AuthoritativeTargetState pose) ||
+                    !pose.IsAlive || pose.SpawnGeneration != target.SpawnGeneration)
                     continue;
+                NetVector3 center = pose.Position;
                 double headDistance = 0d;
-                bool hitHead = target.HeadRadius > 0d && TryRaySphere(
+                bool hitHead = AuthoritativeHitGeometry.HasBox(pose.HeadHalfExtents)
+                    ? AuthoritativeHitGeometry.RayBox(origin, direction, center, pose.YawDegrees,
+                        pose.HeadOffset, pose.HeadHalfExtents, weapon.HitscanRange, out headDistance)
+                    : target.HeadRadius > 0d && TryRaySphere(
                         origin,
                         direction,
-                        center + target.HeadOffset,
+                        center + AuthoritativeHitGeometry.RotateYaw(pose.HeadOffset, pose.YawDegrees),
                         target.HeadRadius * accuracyAssist,
                         weapon.HitscanRange,
                         out headDistance);
@@ -1538,13 +1615,14 @@ namespace FPS.Networking.Domain
                     selectedDistance = headDistance;
                     selectedRegion = AuthoritativeHitRegion.Head;
                 }
-                if (!hitHead && TryRaySphere(
-                        origin,
-                        direction,
-                        center,
-                        target.Radius * accuracyAssist,
-                        weapon.HitscanRange,
-                        out double distance) &&
+                double distance;
+                bool hitBody = AuthoritativeHitGeometry.HasBox(pose.BodyHalfExtents)
+                    ? AuthoritativeHitGeometry.RayBox(origin, direction, center, pose.YawDegrees,
+                        pose.BodyOffset, pose.BodyHalfExtents, weapon.HitscanRange, out distance)
+                    : TryRaySphere(origin, direction,
+                        center + AuthoritativeHitGeometry.RotateYaw(pose.BodyOffset, pose.YawDegrees),
+                        target.Radius * accuracyAssist, weapon.HitscanRange, out distance);
+                if (hitBody && (!hitHead || distance < headDistance) &&
                     distance < selectedDistance)
                 {
                     selected = target;
@@ -1577,11 +1655,16 @@ namespace FPS.Networking.Domain
             }
 
             NetVector3 hitPoint = origin + direction * selectedDistance;
-            NetVector3 hitCenter = selectedRegion ==
+            frame.TryGetTarget(selected.Id, out AuthoritativeTargetState hitPose);
+            NetVector3 hitOffset = selectedRegion ==
                 AuthoritativeHitRegion.Head
-                    ? frame.TargetPosition(selected.Id) + selected.HeadOffset
-                    : frame.TargetPosition(selected.Id);
-            NetVector3 normal = (hitPoint - hitCenter).Normalized;
+                    ? hitPose.HeadOffset : hitPose.BodyOffset;
+            NetVector3 halfExtents = selectedRegion == AuthoritativeHitRegion.Head
+                ? hitPose.HeadHalfExtents : hitPose.BodyHalfExtents;
+            NetVector3 hitCenter = hitPose.Position + AuthoritativeHitGeometry.RotateYaw(hitOffset, hitPose.YawDegrees);
+            NetVector3 normal = AuthoritativeHitGeometry.HasBox(halfExtents)
+                ? AuthoritativeHitGeometry.BoxNormal(hitPoint, hitPose.Position, hitPose.YawDegrees, hitOffset, halfExtents)
+                : (hitPoint - hitCenter).Normalized;
             AuthoritativeShotObstruction obstruction =
                 shotObstructionResolver(shooter.Id, origin, hitPoint);
             if (obstruction.Blocked)
@@ -1797,7 +1880,7 @@ namespace FPS.Networking.Domain
                 players.Values.ToDictionary(value => value.Id,
                     value => value.Position),
                 targets.Values.ToDictionary(value => value.Id,
-                    value => value.Position)));
+                    value => value.Snapshot())));
             while (history.Count > rules.HistoryCapacity)
                 history.RemoveFirst();
         }
@@ -1963,7 +2046,8 @@ namespace FPS.Networking.Domain
                         : IsAlive
                             ? AuthoritativePlayerLifeState.Alive
                             : AuthoritativePlayerLifeState.Downed,
-                    HasMissionSequence ? LastMissionSequence : 0);
+                    HasMissionSequence ? LastMissionSequence : 0,
+                    LastClientTick);
             }
         }
 
@@ -2173,6 +2257,9 @@ namespace FPS.Networking.Domain
                 DropDefinitionId = spawn.DropDefinitionId;
                 HeadOffset = spawn.HeadOffset;
                 HeadRadius = spawn.HeadRadius;
+                BodyOffset = spawn.BodyOffset;
+                BodyHalfExtents = spawn.BodyHalfExtents;
+                HeadHalfExtents = spawn.HeadHalfExtents;
                 Role = spawn.Role;
                 SpawnTick = spawn.SpawnTick;
                 MoveSpeed = spawn.MoveSpeed;
@@ -2202,6 +2289,10 @@ namespace FPS.Networking.Domain
             public string DropDefinitionId;
             public NetVector3 HeadOffset;
             public double HeadRadius;
+            public NetVector3 BodyOffset;
+            public NetVector3 BodyHalfExtents;
+            public NetVector3 HeadHalfExtents;
+            public long LastAttackTick = -1;
             public AuthoritativeEnemyRole Role;
             public long SpawnTick;
             public double MoveSpeed;
@@ -2237,6 +2328,7 @@ namespace FPS.Networking.Domain
                 TargetPlayerId = 0;
                 FlankCompleted = false;
                 NextAttackTick = 0;
+                LastAttackTick = -1;
                 RecycleTick = 0;
                 SpawnGeneration++;
             }
@@ -2258,18 +2350,19 @@ namespace FPS.Networking.Domain
                 ArchetypeId,
                 PresentationAddress,
                 WaveIndex,
-                MaximumHealth);
+                MaximumHealth,
+                BodyOffset, BodyHalfExtents, HeadHalfExtents, LastAttackTick);
         }
 
         private sealed class HistoryFrame
         {
             private readonly IReadOnlyDictionary<int, NetVector3> players;
-            private readonly IReadOnlyDictionary<int, NetVector3> targets;
+            private readonly IReadOnlyDictionary<int, AuthoritativeTargetState> targets;
 
             public HistoryFrame(
                 long tick,
                 IReadOnlyDictionary<int, NetVector3> players,
-                IReadOnlyDictionary<int, NetVector3> targets)
+                IReadOnlyDictionary<int, AuthoritativeTargetState> targets)
             {
                 Tick = tick;
                 this.players = players;
@@ -2279,9 +2372,9 @@ namespace FPS.Networking.Domain
             public long Tick { get; }
             public bool TryGetPlayerPosition(int id, out NetVector3 value) =>
                 players.TryGetValue(id, out value);
-            public bool TryGetTargetPosition(int id, out NetVector3 value) =>
+            public bool TryGetTarget(int id, out AuthoritativeTargetState value) =>
                 targets.TryGetValue(id, out value);
-            public NetVector3 TargetPosition(int id) => targets[id];
+            public NetVector3 TargetPosition(int id) => targets[id].Position;
         }
     }
 }

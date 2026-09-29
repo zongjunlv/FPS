@@ -12,6 +12,7 @@ from issue100_report_gate import (
     REQUIRED_SCENARIOS,
     REQUIRED_STEPS,
     SCHEMA_VERSION,
+    to_markdown,
     validate,
 )
 
@@ -80,6 +81,63 @@ class Issue100ReportGateTests(unittest.TestCase):
             errors = validate(report)
             self.assertTrue(any("校正幅度超预算" in error
                                 for error in errors))
+
+    def test_markdown_missing_final_metrics_are_not_measured_zero(self) -> None:
+        for payload in ({}, {"metrics": None}, {"metrics": {}}):
+            with self.subTest(payload=payload):
+                scenario = {
+                    "stableId": "rtt-000-loss-00",
+                    "roundTripLatencyMilliseconds": 0,
+                    "packetLossBasisPoints": 0,
+                    **payload,
+                }
+                markdown = to_markdown({"scenarios": [scenario]},
+                                       ["缺少最终指标"])
+                row = next(line for line in markdown.splitlines()
+                           if line.startswith("| rtt-000-loss-00 |"))
+                self.assertEqual(
+                    "| rtt-000-loss-00 | 0ms / 0% | 未采集 | 未采集 | "
+                    "未采集 | 未采集 | 未采集 / 未采集 |", row)
+                self.assertNotIn("0.0ms", row)
+                self.assertNotIn("0.00%", row)
+
+    def test_markdown_keeps_real_zero_metrics_as_zero(self) -> None:
+        scenario = {
+            "stableId": "rtt-000-loss-00",
+            "roundTripLatencyMilliseconds": 0,
+            "packetLossBasisPoints": 0,
+            "metrics": {
+                "meanTransportRttMilliseconds": 0,
+                "p95HitFeedbackMilliseconds": 0,
+                "correctionsPerMinute": 0,
+                "stateDivergenceRate": 0,
+                "uplinkBytesPerSecond": 0,
+                "downlinkBytesPerSecond": 0,
+            },
+        }
+        markdown = to_markdown({"scenarios": [scenario]}, [])
+        self.assertIn(
+            "| rtt-000-loss-00 | 0ms / 0% | 0.0ms | 0.0ms | "
+            "0.0 | 0.00% | 0 / 0 |", markdown)
+        self.assertNotIn("未采集", markdown)
+
+    def test_markdown_partial_metrics_distinguish_null_missing_and_zero(self) -> None:
+        scenario = {
+            "stableId": "rtt-080-loss-00",
+            "roundTripLatencyMilliseconds": 80,
+            "packetLossBasisPoints": 0,
+            "metrics": {
+                "meanTransportRttMilliseconds": 0.0,
+                "p95HitFeedbackMilliseconds": None,
+                "correctionsPerMinute": 3.2,
+                "uplinkBytesPerSecond": 0,
+                "downlinkBytesPerSecond": 125,
+            },
+        }
+        markdown = to_markdown({"scenarios": [scenario]}, ["字段不完整"])
+        self.assertIn(
+            "| rtt-080-loss-00 | 80ms / 0% | 0.0ms | 未采集 | "
+            "3.2 | 未采集 | 0 / 125 |", markdown)
 
     def _report(self, root: pathlib.Path) -> dict:
         flow = [{

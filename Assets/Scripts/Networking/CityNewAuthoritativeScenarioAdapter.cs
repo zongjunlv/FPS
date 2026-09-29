@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using FPS.Networking.Domain;
 using FPS.Networking.Netcode;
+using FPS.Networking.Session;
 using UnityEngine;
 
 namespace FPS.Networking
@@ -109,6 +110,9 @@ namespace FPS.Networking
                             "缺少 Archetype。");
 
                     AuthoritativeEnemyRole role = ToRole(archetype.RoleTag);
+                    CoopEnemyPresentationDefinition calibration = CoopEnemyPresentationCatalog.Find(archetype.TemplateAddress);
+                    if (calibration == null)
+                        throw new InvalidOperationException($"正式联机模型缺少命中校准：{archetype.TemplateAddress}");
                     IReadOnlyList<LootDropStack> rolled = loot.Resolve(
                         catalog.LootDropTable,
                         new LootRewardContext(
@@ -144,11 +148,10 @@ namespace FPS.Networking
                         DropDefinitionId = drop.ItemStableId,
                         DropQuantity = Mathf.Max(1, drop.Quantity),
                         LootDrops = allDrops,
-                        HeadOffset = new Vector3(0f,
-                            role == AuthoritativeEnemyRole.Elite
-                                ? 1.05f
-                                : 0.75f,
-                            0f),
+                        HeadOffset = calibration.HeadCenter,
+                        BodyOffset = calibration.BodyCenter,
+                        BodyHalfExtents = calibration.BodyHalfExtents,
+                        HeadHalfExtents = calibration.HeadHalfExtents,
                         HeadRadius = role == AuthoritativeEnemyRole.Elite
                             ? 0.38f
                             : 0.3f,

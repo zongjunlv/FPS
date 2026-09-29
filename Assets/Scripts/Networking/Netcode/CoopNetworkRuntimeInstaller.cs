@@ -46,6 +46,9 @@ namespace FPS.Networking.Netcode
         public string DropDefinitionId;
         public Vector3 HeadOffset;
         public float HeadRadius;
+        public Vector3 BodyOffset;
+        public Vector3 BodyHalfExtents;
+        public Vector3 HeadHalfExtents;
         public AuthoritativeEnemyRole Role;
         [Min(0)] public long SpawnTick;
         [Min(0f)] public float MoveSpeed;
@@ -83,7 +86,10 @@ namespace FPS.Networking.Netcode
                 Mathf.Max(1, WaveIndex),
                 Mathf.Max(0, SpawnOrder),
                 LootDrops == null ? null :
-                Array.ConvertAll(LootDrops, value => value.ToDomain()));
+                Array.ConvertAll(LootDrops, value => value.ToDomain()),
+                NetcodeConversions.ToDomain(BodyOffset),
+                NetcodeConversions.ToDomain(BodyHalfExtents),
+                NetcodeConversions.ToDomain(HeadHalfExtents));
         }
     }
 

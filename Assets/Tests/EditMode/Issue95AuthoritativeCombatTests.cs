@@ -6,6 +6,7 @@ using FPS.Networking.Netcode;
 using NUnit.Framework;
 using Unity.Collections;
 using Unity.Netcode;
+using UnityEngine.Rendering;
 
 namespace FPS.Tests.Architecture
 {
@@ -240,6 +241,9 @@ namespace FPS.Tests.Architecture
         [Test]
         public void ConfirmedWeaponVisualsUseBoundedPrewarmedPools()
         {
+            if (IsHeadlessRendering())
+                Assert.Ignore("无图形设备时不创建武器视觉对象。");
+
             var host = new UnityEngine.GameObject(
                 "Issue95 Weapon Feedback Pool");
             try
@@ -266,6 +270,46 @@ namespace FPS.Tests.Architecture
             {
                 UnityEngine.Object.DestroyImmediate(host);
             }
+        }
+
+        [Test]
+        public void HeadlessWeaponFeedbackDoesNotCreateVisuals()
+        {
+            if (!IsHeadlessRendering())
+                Assert.Ignore("仅在无图形设备的 headless 运行中验证。");
+
+            var host = new UnityEngine.GameObject(
+                "Issue95 Headless Weapon Feedback Pool");
+            try
+            {
+                NetworkWeaponFeedbackPool pool =
+                    host.AddComponent<NetworkWeaponFeedbackPool>();
+                for (int index = 0; index < 3; index++)
+                {
+                    pool.PlayMuzzle(default, UnityEngine.Vector3.forward);
+                    pool.EjectCasing(default, UnityEngine.Vector3.forward);
+                }
+
+                Assert.That(pool.MuzzleFlashCapacity, Is.Zero);
+                Assert.That(pool.CasingCapacityValue, Is.Zero);
+                Assert.That(host.transform.childCount, Is.Zero);
+                Assert.That(pool.ActiveMuzzleFlashCount, Is.Zero);
+                Assert.That(pool.ActiveCasingCount, Is.Zero);
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(host);
+            }
+        }
+
+        private static bool IsHeadlessRendering()
+        {
+#if UNITY_SERVER
+            return true;
+#else
+            return UnityEngine.SystemInfo.graphicsDeviceType ==
+                   GraphicsDeviceType.Null;
+#endif
         }
 
         private static AuthoritativeCoopSimulation Simulation(

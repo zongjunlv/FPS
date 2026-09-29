@@ -3,6 +3,16 @@ using System.Text;
 
 namespace FPS.Networking.Netcode
 {
+    /// <summary>
+    /// Version of the compiled battle payload layout, not the REST API. Both
+    /// NGO configuration and published allocation metadata use this identity.
+    /// </summary>
+    public static class CoopWireProtocol
+    {
+        public const ushort NetworkConfigVersion = 2;
+        public const string CompatibilityId = "2";
+    }
+
     public enum CoopCompatibilityFailure
     {
         None = 0,

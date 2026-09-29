@@ -109,6 +109,9 @@ namespace FPS.Networking.Session
         private float nextRoomPollAt;
         private int consecutiveRoomPollFailures;
         private bool recoveringBattleScene;
+        private int battleTransportGeneration;
+        private Task transportShutdownTask = Task.CompletedTask;
+        private bool networkCallbacksBound;
 
         public event Action<CoopSessionState> StateChanged;
         public event Action LobbyChanged;
@@ -197,15 +200,18 @@ namespace FPS.Networking.Session
                 dedicatedTransportOperationInProgress)
                 return false;
 
-            if (networkBootstrap?.IsListening == true)
+            int generation = operationGeneration;
+            string roomId = activeRoom.id;
+            try
             {
-                networkBootstrap.Shutdown();
-                NetworkManager manager = networkBootstrap.NetworkManager;
-                while (manager != null && manager.ShutdownInProgress)
-                    await Task.Yield();
+                await ShutdownDedicatedBattleTransport();
             }
-            dedicatedTransportConnected = false;
-            activeRemoteTicket = string.Empty;
+            catch (Exception exception)
+            {
+                if (IsCurrentOperation(generation)) Fail(exception);
+                return false;
+            }
+            if (!IsCurrentRoomOperation(generation, roomId)) return false;
             LastFailure = string.Empty;
             LobbyFailureMessage = string.Empty;
             SetState(CoopSessionState.Connected);
@@ -307,6 +313,7 @@ namespace FPS.Networking.Session
         {
             if (operationInProgress || networkBootstrap == null ||
                 networkBootstrap.IsListening ||
+                networkBootstrap.NetworkManager.ShutdownInProgress ||
                 networkBootstrap.NetworkManager.IsHost ||
                 activeRoom == null && !directSession)
             {
@@ -323,6 +330,7 @@ namespace FPS.Networking.Session
             SetState(CoopSessionState.Reconnecting);
             try
             {
+                BindNetworkCallbacks();
                 pendingConnectionCredential = normalized;
                 networkBootstrap.ConfigureClientCredential(normalized);
                 if (!networkBootstrap.StartClient())
@@ -344,16 +352,11 @@ namespace FPS.Networking.Session
         {
             modeExitRequested = true;
             operationGeneration++;
+            battleTransportGeneration++;
             activeRoom = null;
             directSession = false;
             suppressDedicatedReconnect = true;
-            if (networkBootstrap != null)
-            {
-                networkBootstrap.ClientConnected -=
-                    HandleReconnectableClientConnected;
-                networkBootstrap.ClientDisconnected -=
-                    HandleReconnectableClientDisconnect;
-            }
+            UnbindNetworkCallbacks();
             networkBootstrap?.Shutdown();
         }
 
@@ -378,7 +381,8 @@ namespace FPS.Networking.Session
             try
             {
                 pendingScenarioSeed = CreateRunSeed();
-                EnsureNetworkPrerequisite(deferPlayerSpawn: true);
+                if (!await PrepareNetworkPrerequisiteAsync(true, generation))
+                    return false;
                 EnsureSignedIn();
                 if (!IsCurrentOperation(generation)) return false;
                 SetState(CoopSessionState.Hosting);
@@ -432,7 +436,8 @@ namespace FPS.Networking.Session
             SetState(CoopSessionState.Initializing);
             try
             {
-                EnsureNetworkPrerequisite(deferPlayerSpawn: true);
+                if (!await PrepareNetworkPrerequisiteAsync(true, generation))
+                    return false;
                 EnsureSignedIn();
                 if (!IsCurrentOperation(generation)) return false;
                 SetState(CoopSessionState.Joining);
@@ -484,7 +489,8 @@ namespace FPS.Networking.Session
             SetState(CoopSessionState.Initializing);
             try
             {
-                EnsureNetworkPrerequisite(deferPlayerSpawn: true);
+                if (!await PrepareNetworkPrerequisiteAsync(true, generation))
+                    return false;
                 EnsureSignedIn();
                 if (!IsCurrentOperation(generation)) return false;
                 SetState(CoopSessionState.Joining);
@@ -641,79 +647,77 @@ namespace FPS.Networking.Session
         public async Task ShutdownForModeExitAsync()
         {
             modeExitRequested = true;
-            operationGeneration++;
-            operationInProgress = false;
+            int generation = ++operationGeneration;
+            operationInProgress = true;
             directSession = false;
-            suppressDedicatedReconnect = true;
 
             SelfHostedRoomSnapshot leaving = activeRoom;
-            RemoteMatchConnectionInfo remoteConnection =
-                ResolveRemoteConnectionFromSession();
-            await ReleaseOwnedDedicatedServerAsync(leaving, remoteConnection);
             activeRoom = null;
-
-            if (leaving != null)
-            {
-                try
-                {
-                    await EnsureRoomGateway().LeaveAsync(leaving.id);
-                }
-                catch (Exception exception)
-                {
-                    Debug.LogWarning(
-                        $"合作战局退出时清理失败：{exception.Message}",
-                        this);
-                }
-            }
-
-            ShutdownDedicatedBattleTransport();
-            LastFailure = string.Empty;
-            ResetLobbyState();
-            SetState(CoopSessionState.Offline);
+            // Invalidate the old join/reconnect immediately, before a control-
+            // plane HTTP request can suspend this method for several seconds.
+            Task shutdown = ShutdownDedicatedBattleTransport();
+            RestoreLobbyInteraction();
+            await CompleteExitAsync(leaving, shutdown, generation);
         }
 
         public async Task LeaveAsync()
         {
-            if (operationInProgress ||
+            // Exiting is also allowed while an old battle join is awaiting a
+            // ticket. The generation check makes that continuation harmless.
+            if (State == CoopSessionState.Leaving ||
                 (activeRoom == null && !directSession)) return;
             modeExitRequested = true;
-            operationGeneration++;
+            int generation = ++operationGeneration;
             operationInProgress = true;
             SetState(CoopSessionState.Leaving);
-            suppressDedicatedReconnect = true;
-
-            if (directSession)
-            {
-                directSession = false;
-                networkBootstrap?.Shutdown();
-                LastFailure = string.Empty;
-                SetState(CoopSessionState.Offline);
-                ResetLobbyState();
-                operationInProgress = false;
-                return;
-            }
-
             SelfHostedRoomSnapshot leaving = activeRoom;
-            RemoteMatchConnectionInfo remoteConnection =
-                ResolveRemoteConnectionFromSession();
-            await ReleaseOwnedDedicatedServerAsync(leaving, remoteConnection);
             activeRoom = null;
+            directSession = false;
+            Task shutdown = ShutdownDedicatedBattleTransport();
+            RestoreLobbyInteraction();
+            await CompleteExitAsync(leaving, shutdown, generation);
+        }
 
+        private async Task CompleteExitAsync(SelfHostedRoomSnapshot leaving,
+            Task shutdown, int generation)
+        {
+            Exception failure = null;
             try
             {
-                ShutdownDedicatedBattleTransport();
-                await EnsureRoomGateway().LeaveAsync(leaving.id);
-                LastFailure = string.Empty;
-                SetState(CoopSessionState.Offline);
-                ResetLobbyState();
+                // Leaving the host room atomically closes it and releases its
+                // match on the backend. Retain that control-plane cleanup even
+                // when local shutdown reports an error.
+                if (leaving != null)
+                    await EnsureRoomGateway().LeaveAsync(leaving.id);
             }
             catch (Exception exception)
             {
-                Fail(exception);
+                failure = exception;
+            }
+            try
+            {
+                // Observe this promise once. Re-awaiting the same faulted task
+                // inside a catch skips the Offline transition and leaks the
+                // original exception into the UI's mode-exit coroutine.
+                await shutdown;
+            }
+            catch (Exception exception)
+            {
+                failure = exception;
             }
             finally
             {
-                operationInProgress = false;
+                if (generation == operationGeneration && this != null)
+                {
+                    ResetLobbyState();
+                    LastFailure = failure?.Message ?? string.Empty;
+                    SetState(CoopSessionState.Offline);
+                    operationInProgress = false;
+                    RestoreLobbyInteraction();
+                    if (failure != null)
+                        Debug.LogWarning("合作战局退出清理未完全完成：" +
+                                         LastFailure, this);
+                }
             }
         }
 
@@ -732,19 +736,20 @@ namespace FPS.Networking.Session
             if (activeRoom == null || !IsHost)
                 return false;
             returnToLobbyInProgress = true;
+            int generation = operationGeneration;
             string roomId = activeRoom.id;
+            SelfHostedRoomSnapshot finishedRoom = activeRoom;
             try
             {
                 RemoteMatchConnectionInfo finishedConnection =
                     ResolveRemoteConnectionFromSession();
-                ShutdownDedicatedBattleTransport();
+                await ShutdownDedicatedBattleTransport();
                 await ReleaseOwnedDedicatedServerAsync(
-                    activeRoom, finishedConnection);
-                if (modeExitRequested || activeRoom == null ||
-                    !string.Equals(activeRoom.id, roomId,
-                        StringComparison.Ordinal)) return false;
+                    finishedRoom, finishedConnection);
+                if (!IsCurrentRoomOperation(generation, roomId)) return false;
                 SelfHostedRoomSnapshot returned = await EnsureRoomGateway()
                     .SetPhaseAsync(roomId, PhaseLobby);
+                if (!IsCurrentRoomOperation(generation, roomId)) return false;
                 ApplyRoom(returned);
                 LastFailure = string.Empty;
                 SetState(CoopSessionState.Connected);
@@ -765,6 +770,13 @@ namespace FPS.Networking.Session
             NetworkEndpointSettings endpoint)
         {
             if (!CanBegin()) return false;
+            if (!transportShutdownTask.IsCompleted ||
+                networkBootstrap?.NetworkManager.ShutdownInProgress == true ||
+                networkBootstrap?.IsListening == true)
+            {
+                LastFailure = "上一场战局的网络连接尚未关闭，请稍候重试。";
+                return false;
+            }
             modeExitRequested = false;
             operationGeneration++;
             operationInProgress = true;
@@ -927,6 +939,8 @@ namespace FPS.Networking.Session
         public async Task<bool> ReportSceneReadyAsync(string epoch)
         {
             if (!CanMutateLobby()) return false;
+            int generation = operationGeneration;
+            string roomId = activeRoom.id;
             if (!string.Equals(SceneLoadEpoch, epoch,
                     StringComparison.Ordinal))
                 return FailSceneLoad("场景就绪回报已过期，服务器已忽略。");
@@ -936,7 +950,9 @@ namespace FPS.Networking.Session
             {
                 recoveringBattleScene = false;
                 await EnsureDedicatedBattleTransportAsync();
-                return IsBattleTransportConnected;
+                return IsCurrentRoomOperation(generation, roomId) &&
+                       string.Equals(SceneLoadEpoch, epoch, StringComparison.Ordinal) &&
+                       IsBattleTransportConnected;
             }
             if (!string.Equals(LobbyPhase, PhaseLoading,
                     StringComparison.Ordinal))
@@ -944,13 +960,18 @@ namespace FPS.Networking.Session
             try
             {
                 SelfHostedRoomSnapshot changed = await EnsureRoomGateway()
-                    .ReportReadyEpochAsync(activeRoom.id, epoch);
+                    .ReportReadyEpochAsync(roomId, epoch);
+                if (!IsCurrentRoomOperation(generation, roomId) ||
+                    !string.Equals(SceneLoadEpoch, epoch, StringComparison.Ordinal))
+                    return false;
                 ApplyRoom(changed);
                 await EvaluateHostSceneLoadBarrierAsync();
-                return true;
+                return IsCurrentRoomOperation(generation, roomId) &&
+                       string.Equals(SceneLoadEpoch, epoch, StringComparison.Ordinal);
             }
             catch (Exception exception)
             {
+                if (!IsCurrentRoomOperation(generation, roomId)) return false;
                 return FailSceneLoad(exception.Message);
             }
         }
@@ -964,6 +985,8 @@ namespace FPS.Networking.Session
             sceneCancellationInProgress = true;
             sceneLoadBarrier.Cancel();
             string roomId = activeRoom.id;
+            int generation = operationGeneration;
+            string epoch = SceneLoadEpoch;
             sceneLoadFailure = string.IsNullOrWhiteSpace(reason)
                 ? "服务器取消了场景加载。"
                 : reason.Trim();
@@ -972,25 +995,33 @@ namespace FPS.Networking.Session
                 SelfHostedRoomSnapshot changed = await EnsureRoomGateway()
                     .SetPhaseAsync(roomId, PhaseCancelled,
                         sceneLoadFailure);
+                if (!IsCurrentRoomOperation(generation, roomId) ||
+                    !string.Equals(SceneLoadEpoch, epoch, StringComparison.Ordinal))
+                    return false;
                 ApplyRoom(changed);
-                if (modeExitRequested || activeRoom == null) return false;
                 await ReleaseCancelledDedicatedServerAsync();
+                if (!IsCurrentRoomOperation(generation, roomId) ||
+                    !string.Equals(SceneLoadEpoch, epoch, StringComparison.Ordinal))
+                    return false;
                 RaiseSceneLoadCancelledOnce();
                 // A cancelled load must not strand the room in a phase that
                 // rejects the next allocation. Return both clients to lobby.
                 SelfHostedRoomSnapshot lobby = await EnsureRoomGateway()
                     .SetPhaseAsync(roomId, PhaseLobby);
+                if (!IsCurrentRoomOperation(generation, roomId)) return false;
                 ApplyRoom(lobby);
                 NotifyLobbyChanged();
                 return true;
             }
             catch (Exception exception)
             {
+                if (!IsCurrentRoomOperation(generation, roomId)) return false;
                 return FailSceneLoad(exception.Message);
             }
             finally
             {
-                sceneCancellationInProgress = false;
+                if (generation == operationGeneration && this != null)
+                    sceneCancellationInProgress = false;
             }
         }
 
@@ -1020,6 +1051,37 @@ namespace FPS.Networking.Session
             return !modeExitRequested &&
                    generation == operationGeneration &&
                    this != null;
+        }
+
+        private bool IsCurrentRoomOperation(int generation, string roomId)
+        {
+            return IsCurrentOperation(generation) && activeRoom != null &&
+                   string.Equals(activeRoom.id, roomId, StringComparison.Ordinal);
+        }
+
+        private bool IsCurrentBattleOperation(int generation, int roomGeneration,
+            string roomId, string epoch)
+        {
+            return generation == battleTransportGeneration &&
+                   IsCurrentRoomOperation(roomGeneration, roomId) &&
+                   string.Equals(SceneLoadEpoch, epoch, StringComparison.Ordinal) &&
+                   string.Equals(LobbyPhase, PhaseBattle, StringComparison.Ordinal);
+        }
+
+        private async Task<bool> PrepareNetworkPrerequisiteAsync(bool deferPlayerSpawn,
+            int generation)
+        {
+            if (networkBootstrap?.IsListening == true ||
+                networkBootstrap?.NetworkManager.ShutdownInProgress == true)
+                await ShutdownDedicatedBattleTransport();
+            else
+                // A previous timeout is history once NGO is actually idle.
+                // Recheck the runtime rather than permanently poisoning all
+                // future Host/Join attempts with that completed faulted task.
+                await StopNetworkRuntimeAsync();
+            if (!IsCurrentOperation(generation)) return false;
+            EnsureNetworkPrerequisite(deferPlayerSpawn);
+            return true;
         }
 
         private async Task LeaveStaleRoomAsync(SelfHostedRoomSnapshot room)
@@ -1052,16 +1114,14 @@ namespace FPS.Networking.Session
             if (networkBootstrap != null)
             {
                 networkInstaller?.ConfigurePlayerSpawnBarrier(deferPlayerSpawn);
+                BindNetworkCallbacks();
                 return;
             }
             networkBootstrap = OptionalNetworkBootstrap.CreateRuntime(
                 NetworkEndpointSettings.Localhost,
                 "FPS Coop Network Runtime");
             DontDestroyOnLoad(networkBootstrap.gameObject);
-            networkBootstrap.ClientDisconnected +=
-                HandleReconnectableClientDisconnect;
-            networkBootstrap.ClientConnected +=
-                HandleReconnectableClientConnected;
+            BindNetworkCallbacks();
             if (!string.IsNullOrEmpty(pendingConnectionCredential))
                 networkBootstrap.ConfigureClientCredential(
                     pendingConnectionCredential);
@@ -1078,6 +1138,7 @@ namespace FPS.Networking.Session
                 : null;
             if (authorityPrefab == null || replicaPrefab == null)
             {
+                UnbindNetworkCallbacks();
                 Destroy(networkBootstrap.gameObject);
                 networkBootstrap = null;
                 throw new InvalidOperationException(
@@ -1095,6 +1156,7 @@ namespace FPS.Networking.Session
                     out CoopScenarioConfiguration scenario,
                     out string scenarioError))
             {
+                UnbindNetworkCallbacks();
                 Destroy(networkBootstrap.gameObject);
                 networkBootstrap = null;
                 throw new InvalidOperationException(scenarioError);
@@ -1113,6 +1175,7 @@ namespace FPS.Networking.Session
             if (!installer.RegisterConfiguredPrefabs())
             {
                 string failure = installer.LastFailure;
+                UnbindNetworkCallbacks();
                 Destroy(networkBootstrap.gameObject);
                 networkBootstrap = null;
                 throw new InvalidOperationException(failure);
@@ -1141,11 +1204,20 @@ namespace FPS.Networking.Session
             if (dedicatedTransportOperationInProgress || activeRoom == null ||
                 !string.Equals(LobbyPhase, PhaseBattle,
                     StringComparison.Ordinal)) return;
+            int generation = ++battleTransportGeneration;
+            int roomGeneration = operationGeneration;
+            string roomId = activeRoom.id;
+            string epoch = SceneLoadEpoch;
             dedicatedTransportOperationInProgress = true;
             try
             {
                 Debug.Log("[COOP_DATA_PLANE][CONNECTING] 正在连接专用服务器。",
                     this);
+                // NGO shuts down at the end of an update. A room can already
+                // be in battle while the previous socket is still stopping.
+                await StopNetworkRuntimeAsync();
+                if (!IsCurrentBattleOperation(generation, roomGeneration, roomId, epoch))
+                    return;
                 EnsureNetworkPrerequisite(deferPlayerSpawn: true);
                 RemoteMatchConnectionInfo connection =
                     ResolveRemoteConnectionFromSession();
@@ -1161,7 +1233,9 @@ namespace FPS.Networking.Session
                     string.IsNullOrWhiteSpace(ticket))
                 {
                     CoopDedicatedServerAllocation allocation =
-                        await gateway.JoinAsync(activeRoom.id, connection);
+                        await gateway.JoinAsync(roomId, connection);
+                    if (!IsCurrentBattleOperation(generation, roomGeneration, roomId, epoch))
+                        return;
                     connection = allocation.connection;
                     ticket = allocation.connectionTicket;
                 }
@@ -1188,8 +1262,11 @@ namespace FPS.Networking.Session
                 while (networkBootstrap.NetworkManager != null &&
                        !networkBootstrap.NetworkManager.IsConnectedClient &&
                        networkBootstrap.IsListening &&
-                       Time.realtimeSinceStartup < deadline)
+                       Time.realtimeSinceStartup < deadline &&
+                       IsCurrentBattleOperation(generation, roomGeneration, roomId, epoch))
                     await Task.Yield();
+                if (!IsCurrentBattleOperation(generation, roomGeneration, roomId, epoch))
+                    return;
                 if (networkBootstrap.NetworkManager == null ||
                     !networkBootstrap.NetworkManager.IsConnectedClient)
                     throw new TimeoutException(
@@ -1204,6 +1281,16 @@ namespace FPS.Networking.Session
             }
             catch (Exception exception)
             {
+                if (!IsCurrentBattleOperation(generation, roomGeneration, roomId, epoch))
+                    return;
+                suppressDedicatedReconnect = true;
+                try { await StopNetworkRuntimeAsync(); }
+                catch (Exception shutdownException)
+                {
+                    Debug.LogWarning("失败连接的本地清理异常：" + shutdownException.Message, this);
+                }
+                if (!IsCurrentBattleOperation(generation, roomGeneration, roomId, epoch))
+                    return;
                 dedicatedTransportConnected = false;
                 LastFailure = string.IsNullOrWhiteSpace(exception.Message)
                     ? "连接专用服务器失败。"
@@ -1216,7 +1303,8 @@ namespace FPS.Networking.Session
             }
             finally
             {
-                dedicatedTransportOperationInProgress = false;
+                if (generation == battleTransportGeneration && this != null)
+                    dedicatedTransportOperationInProgress = false;
             }
         }
 
@@ -1231,27 +1319,37 @@ namespace FPS.Networking.Session
         {
             if (dedicatedTransportOperationInProgress || activeRoom == null ||
                 activeRemoteConnection == null) return;
+            int generation = ++battleTransportGeneration;
+            int roomGeneration = operationGeneration;
+            string roomId = activeRoom.id;
+            string epoch = SceneLoadEpoch;
+            RemoteMatchConnectionInfo reconnectConnection = activeRemoteConnection;
             dedicatedTransportOperationInProgress = true;
             try
             {
-                float shutdownDeadline = Time.realtimeSinceStartup + 3f;
-                while (networkBootstrap != null &&
-                       networkBootstrap.IsListening &&
-                       Time.realtimeSinceStartup < shutdownDeadline)
-                    await Task.Yield();
+                suppressDedicatedReconnect = true;
+                await StopNetworkRuntimeAsync();
+                if (!IsCurrentBattleOperation(generation, roomGeneration, roomId, epoch))
+                    return;
                 CoopDedicatedServerAllocation allocation =
                     await EnsureDedicatedServerGateway().JoinAsync(
-                        activeRoom.id, activeRemoteConnection);
+                        roomId, reconnectConnection);
+                if (!IsCurrentBattleOperation(generation, roomGeneration, roomId, epoch))
+                    return;
                 activeRemoteConnection = allocation.connection;
                 activeRemoteTicket = allocation.connectionTicket;
+                suppressDedicatedReconnect = false;
                 if (!ReconnectWithCredential(activeRemoteTicket))
                     throw new InvalidOperationException(LastFailure);
                 float deadline = Time.realtimeSinceStartup + 10f;
                 while (networkBootstrap.NetworkManager != null &&
                        !networkBootstrap.NetworkManager.IsConnectedClient &&
                        networkBootstrap.IsListening &&
-                       Time.realtimeSinceStartup < deadline)
+                       Time.realtimeSinceStartup < deadline &&
+                       IsCurrentBattleOperation(generation, roomGeneration, roomId, epoch))
                     await Task.Yield();
+                if (!IsCurrentBattleOperation(generation, roomGeneration, roomId, epoch))
+                    return;
                 if (networkBootstrap.NetworkManager == null ||
                     !networkBootstrap.NetworkManager.IsConnectedClient)
                     throw new TimeoutException("专用服务器重连超时。 ");
@@ -1261,6 +1359,16 @@ namespace FPS.Networking.Session
             }
             catch (Exception exception)
             {
+                if (!IsCurrentBattleOperation(generation, roomGeneration, roomId, epoch))
+                    return;
+                suppressDedicatedReconnect = true;
+                try { await StopNetworkRuntimeAsync(); }
+                catch (Exception shutdownException)
+                {
+                    Debug.LogWarning("重连失败后的本地清理异常：" + shutdownException.Message, this);
+                }
+                if (!IsCurrentBattleOperation(generation, roomGeneration, roomId, epoch))
+                    return;
                 dedicatedTransportConnected = false;
                 LastFailure = string.IsNullOrWhiteSpace(exception.Message)
                     ? "专用服务器重连失败。"
@@ -1269,29 +1377,98 @@ namespace FPS.Networking.Session
             }
             finally
             {
-                dedicatedTransportOperationInProgress = false;
+                if (generation == battleTransportGeneration && this != null)
+                    dedicatedTransportOperationInProgress = false;
             }
         }
 
-        private void ShutdownDedicatedBattleTransport()
+        private Task ShutdownDedicatedBattleTransport()
         {
+            battleTransportGeneration++;
             suppressDedicatedReconnect = true;
+            dedicatedTransportOperationInProgress = false;
             dedicatedTransportConnected = false;
             activeRemoteConnection = null;
             activeRemoteTicket = string.Empty;
             pendingConnectionCredential = string.Empty;
-            networkBootstrap?.Shutdown();
+            return StopNetworkRuntimeAsync();
+        }
+
+        /// <summary>Completes only after the previous NGO socket is fully idle.</summary>
+        public Task StopBattleTransportAsync()
+        {
+            return ShutdownDedicatedBattleTransport();
+        }
+
+        private Task StopNetworkRuntimeAsync()
+        {
+            UnbindNetworkCallbacks();
+            if (!transportShutdownTask.IsCompleted) return transportShutdownTask;
+            NetworkManager manager = networkBootstrap?.NetworkManager;
+            if (manager == null)
+                return transportShutdownTask = Task.CompletedTask;
+            if (!manager.ShutdownInProgress &&
+                (manager.IsListening || manager.IsClient || manager.IsServer))
+            {
+                // Despawn and clear installer bookkeeping while it is still
+                // a server; after NGO stops its server-only cleanup guard fails.
+                networkInstaller?.PrepareForLobbyReturn();
+                networkBootstrap.Shutdown();
+            }
+            return transportShutdownTask = WaitForNetworkShutdownAsync(manager);
+        }
+
+        private static async Task WaitForNetworkShutdownAsync(NetworkManager manager)
+        {
+            float deadline = Time.realtimeSinceStartup + 5f;
+            while (manager != null &&
+                   (manager.ShutdownInProgress || manager.IsListening))
+            {
+                if (Time.realtimeSinceStartup >= deadline)
+                    throw new TimeoutException("上一场战局的网络连接关闭超时，已阻止重入。");
+                await Task.Yield();
+            }
+        }
+
+        private void BindNetworkCallbacks()
+        {
+            if (networkBootstrap == null || networkCallbacksBound) return;
+            networkBootstrap.ClientDisconnected += HandleReconnectableClientDisconnect;
+            networkBootstrap.ClientConnected += HandleReconnectableClientConnected;
+            networkCallbacksBound = true;
+        }
+
+        private void UnbindNetworkCallbacks()
+        {
+            if (networkBootstrap != null && networkCallbacksBound)
+            {
+                networkBootstrap.ClientDisconnected -= HandleReconnectableClientDisconnect;
+                networkBootstrap.ClientConnected -= HandleReconnectableClientConnected;
+            }
+            networkCallbacksBound = false;
+        }
+
+        public void RestoreLobbyInteraction()
+        {
+            Time.timeScale = 1f;
+            CoopUiInputGate.PauseMenuVisible = false;
+            CoopUiInputGate.EconomyModalVisible = false;
+            GetComponent<CoopReconnectPresentationGate>()?.ResetForLobby();
+            Cursor.lockState = CursorLockMode.None;
+            Cursor.visible = true;
         }
 
         private async Task ReleaseCancelledDedicatedServerAsync()
         {
-            if (activeRoom == null || !IsHost ||
-                activeRemoteConnection == null) return;
-            RemoteMatchConnectionInfo cancelled = activeRemoteConnection;
+            RemoteMatchConnectionInfo cancelled = ResolveRemoteConnectionFromSession();
+            if (activeRoom == null || !IsHost || cancelled == null) return;
+            int generation = operationGeneration;
+            string roomId = activeRoom.id;
+            string epoch = SceneLoadEpoch;
             try
             {
                 await EnsureDedicatedServerGateway().ReleaseAsync(
-                    activeRoom.id, cancelled);
+                    roomId, cancelled);
             }
             catch (Exception exception)
             {
@@ -1301,7 +1478,9 @@ namespace FPS.Networking.Session
             }
             finally
             {
-                ShutdownDedicatedBattleTransport();
+                if (IsCurrentRoomOperation(generation, roomId) &&
+                    string.Equals(SceneLoadEpoch, epoch, StringComparison.Ordinal))
+                    await ShutdownDedicatedBattleTransport();
             }
         }
 
@@ -1405,8 +1584,16 @@ namespace FPS.Networking.Session
                     LobbyFailureMessage = string.Empty;
                     NotifyLobbyChanged();
                 }
-                if (!latest.HasPlayer(LocalPlayerId))
+                if (!latest.HasPlayer(LocalPlayerId) ||
+                    string.Equals(latest.phase, PhaseCancelled,
+                        StringComparison.Ordinal) &&
+                    !latest.HasPlayer(latest.hostId))
                 {
+                    sceneLoadFailure = string.IsNullOrWhiteSpace(
+                        latest.loadFailure)
+                        ? "房主已退出，合作房间已关闭。"
+                        : latest.loadFailure;
+                    RaiseSceneLoadCancelledOnce();
                     HandleRoomEnded();
                     return;
                 }
@@ -1434,7 +1621,8 @@ namespace FPS.Networking.Session
             }
             finally
             {
-                roomPollInProgress = false;
+                if (generation == operationGeneration && this != null)
+                    roomPollInProgress = false;
             }
         }
 
@@ -1474,7 +1662,7 @@ namespace FPS.Networking.Session
                     StringComparison.Ordinal))
             {
                 recoveringBattleScene = false;
-                ShutdownDedicatedBattleTransport();
+                _ = ShutdownDedicatedBattleTransport();
                 _ = ClearLocalReadyAfterMatchAsync();
                 LastFailure = string.Empty;
                 SetState(CoopSessionState.Connected);
@@ -1505,11 +1693,13 @@ namespace FPS.Networking.Session
 
         private void HandleRoomEnded()
         {
-            ShutdownDedicatedBattleTransport();
+            operationGeneration++;
+            _ = ShutdownDedicatedBattleTransport();
             activeRoom = null;
             recoveringBattleScene = false;
             ResetLobbyState();
             SetState(CoopSessionState.Offline);
+            RestoreLobbyInteraction();
         }
 
         private bool CanMutateLobby()
@@ -1695,6 +1885,8 @@ namespace FPS.Networking.Session
             dedicatedTransportConnected = false;
             suppressDedicatedReconnect = false;
             recoveringBattleScene = false;
+            roomPollInProgress = false;
+            consecutiveRoomPollFailures = 0;
             NotifyLobbyChanged();
         }
 
@@ -1762,6 +1954,10 @@ namespace FPS.Networking.Session
         {
             if (State == next) return;
             State = next;
+            if (next == CoopSessionState.Offline ||
+                next == CoopSessionState.Leaving ||
+                next == CoopSessionState.Failed)
+                RestoreLobbyInteraction();
             StateChanged?.Invoke(next);
         }
     }

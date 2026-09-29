@@ -175,6 +175,13 @@ public sealed class PlayerCombatCompositionRoot : MonoBehaviour
     private void EnsureLegacyGameplayExtensions()
     {
         GetOrAdd<PlayerInteractionController>();
+        if (CoopSceneContentIsolation.UsesAuthoritativeGameplay)
+        {
+            // Keep combat/health and the shared visual HUD, not local inventory,
+            // XP, reward, upgrade or single-player defeat settlement.
+            CoopSceneContentIsolation.DisableLegacyPlayerEconomy(gameObject);
+            return;
+        }
         GetOrAdd<PlayerWorldPickupController>();
         GetOrAdd<PlayerRunProgression>();
         GetOrAdd<PlayerUpgradeController>();

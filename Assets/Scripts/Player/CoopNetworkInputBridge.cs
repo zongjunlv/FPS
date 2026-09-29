@@ -20,6 +20,8 @@ public sealed class CoopNetworkInputBridge : MonoBehaviour
     private NetworkVerticalSliceInputDriver networkDriver;
     private NetworkVerticalSliceInputDriver subscribedDriver;
     private NetworkPlayerReplica subscribedReplica;
+    private CoopNetworkWorldPresenter worldPresenter;
+    private NetworkCoopSessionAuthority shotAuthority;
     private float nextDriverSearchTime;
     private bool combatSuppressed;
     private bool overlaySuppressed;
@@ -29,6 +31,7 @@ public sealed class CoopNetworkInputBridge : MonoBehaviour
     private string lastAmmoWeaponId;
     private int lastServerMagazine = -1;
     private int lastServerReserve = -1;
+    private int lastProjectedMagazine = -1;
     private uint lastServerAcknowledgedSequence;
     private float lastServerHealth = -1f;
     private float lastServerMaximumHealth = -1f;
@@ -121,6 +124,17 @@ public sealed class CoopNetworkInputBridge : MonoBehaviour
             (weapon.IsAutomatic ? input.AttackHeld : input.AttackPressed);
         bool predictedFire = wantsToFire &&
             combat.TryPredictNetworkFire();
+        if (predictedFire)
+        {
+            if (worldPresenter == null) worldPresenter = FindFirstObjectByType<CoopNetworkWorldPresenter>();
+            if (shotAuthority == null) shotAuthority = FindFirstObjectByType<NetworkCoopSessionAuthority>();
+            worldPresenter?.ResetShotViewSample();
+            Ray ray = weapon.CreateNetworkShotRay(worldPresenter != null ? worldPresenter.RaycastVisibleTarget : null);
+            double shotViewTick = worldPresenter != null && worldPresenter.LastResolvedShotViewTick >= 0d
+                ? worldPresenter.LastResolvedShotViewTick
+                : shotAuthority != null ? shotAuthority.PresentationTick : -1d;
+            networkDriver.SetShotFrame(ray.direction, (long)System.Math.Floor(shotViewTick));
+        }
         networkDriver.SetInputFrame(
             input.Move,
             transform.eulerAngles.y,
@@ -245,11 +259,15 @@ public sealed class CoopNetworkInputBridge : MonoBehaviour
     {
         if (subscribedReplica == replica) return;
         if (subscribedReplica != null)
+        {
             subscribedReplica.PosePresented -= HandleNetworkPose;
+            subscribedReplica.ShotFeedbackReceived -= HandleShotFeedbackReceived;
+        }
         subscribedReplica = replica;
         lastAmmoWeaponId = null;
         lastServerMagazine = -1;
         lastServerReserve = -1;
+        lastProjectedMagazine = -1;
         lastServerAcknowledgedSequence = 0;
         lastServerHealth = -1f;
         lastServerMaximumHealth = -1f;
@@ -258,7 +276,19 @@ public sealed class CoopNetworkInputBridge : MonoBehaviour
         lastServerAlive = false;
         lastUpgradeSignature = int.MinValue;
         if (subscribedReplica != null)
+        {
             subscribedReplica.PosePresented += HandleNetworkPose;
+            subscribedReplica.ShotFeedbackReceived += HandleShotFeedbackReceived;
+        }
+    }
+
+    private void HandleShotFeedbackReceived(NetcodeShotFeedbackEvent feedback)
+    {
+        // The exact request is resolved even when it was rejected before the
+        // queued input prefix was processed. Do not retire earlier queued shots
+        // by treating this single feedback as a movement ACK.
+        pendingPredictedShots.RemoveAll(shot =>
+            shot.Sequence == feedback.ShotCommandSequence);
     }
 
     private void ReconcileCombatState()
@@ -270,12 +300,15 @@ public sealed class CoopNetworkInputBridge : MonoBehaviour
         int reserve = subscribedReplica.PresentedReserveAmmo;
         uint acknowledged =
             subscribedReplica.PresentedAcknowledgedSequence;
+        uint ammoAcknowledged =
+            subscribedReplica.PresentedAmmoAcknowledgedSequence;
         ReconcileVitals();
         for (int index = pendingPredictedShots.Count - 1;
              index >= 0;
              index--)
         {
-            if (pendingPredictedShots[index].Sequence <= acknowledged)
+            if (pendingPredictedShots[index].Sequence <= acknowledged ||
+                pendingPredictedShots[index].Sequence <= ammoAcknowledged)
                 pendingPredictedShots.RemoveAt(index);
         }
         int outstandingShots = 0;
@@ -290,10 +323,12 @@ public sealed class CoopNetworkInputBridge : MonoBehaviour
                 System.StringComparison.Ordinal) &&
             lastServerMagazine == magazine &&
             lastServerReserve == reserve &&
+            lastProjectedMagazine == predictedMagazine &&
             lastServerAcknowledgedSequence == acknowledged) return;
         lastAmmoWeaponId = weaponId;
         lastServerMagazine = magazine;
         lastServerReserve = reserve;
+        lastProjectedMagazine = predictedMagazine;
         lastServerAcknowledgedSequence = acknowledged;
         combat.ReconcileAuthoritativeAmmo(
             weaponId, predictedMagazine, reserve);
@@ -407,7 +442,8 @@ public sealed class CoopNetworkInputBridge : MonoBehaviour
         if (combat == null || networkDriver == null) return;
 
         int requestedSlot = input.ConsumeWeaponSelection();
-        int cycleDirection = input.ConsumeWeaponCycleDirection();
+        int cycleDirection = CoopEconomyPresentationRegistry.PickupScrollOwned
+            ? 0 : input.ConsumeWeaponCycleDirection();
         int targetIndex = requestedSlot;
         if (targetIndex < 0 && cycleDirection != 0 &&
             combat.WeaponCount > 0)

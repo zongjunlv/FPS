@@ -25,6 +25,7 @@ from typing import Any
 
 
 SCHEMA = "fps-remote-match-v1"
+BATTLE_PROTOCOL_VERSION = "2"
 SECRET_ENV = "FPS_SERVER_AUTH_SECRET"
 IDENTIFIER = re.compile(r"^[A-Za-z0-9._-]{1,64}$")
 
@@ -470,7 +471,7 @@ def add_start_arguments(command: argparse.ArgumentParser) -> None:
     command.add_argument("--maximum-players", type=int, default=2)
     command.add_argument("--seed", type=int, default=18018)
     command.add_argument("--application-version", default="development")
-    command.add_argument("--protocol-version", default="1")
+    command.add_argument("--protocol-version", default=BATTLE_PROTOCOL_VERSION)
     command.add_argument("--content-version", default="citynew-v1")
     command.add_argument("--tick-rate", type=int, default=60)
     command.add_argument("--idle-timeout", type=int, default=120)

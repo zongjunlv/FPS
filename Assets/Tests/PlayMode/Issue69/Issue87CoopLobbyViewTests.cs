@@ -64,9 +64,16 @@ namespace FPS.Tests.PlayMode.Issue69
                 .Select(value => value.text)
                 .ToArray();
             Assert.That(visibleCopy, Does.Contain("行动整备大厅"));
-            Assert.That(visibleCopy.Any(value =>
-                value.Contains("玩家席位 1") &&
-                value.Contains("玩家席位 2")), Is.True);
+            Transform browser = view.LobbyPanel.transform.Find("房间操作区域");
+            Transform actions = view.LobbyPanel.transform.Find("队伍与角色区域/房间操作");
+            Transform roster = view.LobbyPanel.transform.Find("队伍与角色区域/小队整备");
+            Assert.That(browser, Is.Not.Null);
+            Assert.That(actions, Is.Not.Null);
+            Assert.That(roster, Is.Not.Null);
+            Assert.That(actions.gameObject.activeSelf, Is.True);
+            Assert.That(roster.gameObject.activeSelf, Is.False);
+            Assert.That(((RectTransform)browser).sizeDelta.x,
+                Is.GreaterThan(((RectTransform)actions.parent).sizeDelta.x));
 
             Object.Destroy(view.gameObject);
             Object.Destroy(sessionObject);

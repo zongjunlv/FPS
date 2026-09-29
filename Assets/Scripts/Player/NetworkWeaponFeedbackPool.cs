@@ -1,4 +1,5 @@
 using UnityEngine;
+using UnityEngine.Rendering;
 
 [DisallowMultipleComponent]
 public sealed class NetworkWeaponFeedbackPool : MonoBehaviour
@@ -10,6 +11,7 @@ public sealed class NetworkWeaponFeedbackPool : MonoBehaviour
     private PooledNetworkWeaponVisual[] casings;
     private Material muzzleMaterial;
     private Material casingMaterial;
+    private bool visualSetupUnavailable;
     private int muzzleReuseIndex;
     private int casingReuseIndex;
 
@@ -25,7 +27,7 @@ public sealed class NetworkWeaponFeedbackPool : MonoBehaviour
 
     public void PlayMuzzle(Vector3 origin, Vector3 shotDirection)
     {
-        Prewarm();
+        if (!Prewarm()) return;
         Vector3 forward = SafeDirection(shotDirection);
         PooledNetworkWeaponVisual visual = Acquire(
             muzzleFlashes, ref muzzleReuseIndex);
@@ -35,7 +37,7 @@ public sealed class NetworkWeaponFeedbackPool : MonoBehaviour
 
     public void EjectCasing(Vector3 origin, Vector3 shotDirection)
     {
-        Prewarm();
+        if (!Prewarm()) return;
         Vector3 forward = SafeDirection(shotDirection);
         Vector3 right = Vector3.Cross(Vector3.up, forward);
         if (right.sqrMagnitude < 0.001f)
@@ -57,10 +59,22 @@ public sealed class NetworkWeaponFeedbackPool : MonoBehaviour
         DeactivateAll(casings);
     }
 
-    private void Prewarm()
+    private bool Prewarm()
     {
-        if (muzzleFlashes != null && casings != null) return;
-        CreateMaterials();
+        if (muzzleFlashes != null && casings != null) return true;
+#if UNITY_SERVER
+        return false;
+#else
+        if (SystemInfo.graphicsDeviceType == GraphicsDeviceType.Null ||
+            visualSetupUnavailable)
+            return false;
+        if (!TryCreateMaterials())
+        {
+            visualSetupUnavailable = true;
+            Debug.LogWarning("NetworkWeaponFeedbackPool: no supported shader; " +
+                             "weapon feedback visuals disabled.");
+            return false;
+        }
         muzzleFlashes = new PooledNetworkWeaponVisual[MuzzleCapacity];
         casings = new PooledNetworkWeaponVisual[CasingCapacity];
         for (int index = 0; index < muzzleFlashes.Length; index++)
@@ -89,13 +103,16 @@ public sealed class NetworkWeaponFeedbackPool : MonoBehaviour
                 PooledNetworkWeaponVisual>();
             casings[index].Prepare(gravity: true);
         }
+        return true;
+#endif
     }
 
-    private void CreateMaterials()
+    private bool TryCreateMaterials()
     {
         Shader shader = Shader.Find("Universal Render Pipeline/Unlit") ??
                         Shader.Find("Unlit/Color") ??
                         Shader.Find("Sprites/Default");
+        if (shader == null) return false;
         muzzleMaterial = new Material(shader)
         {
             name = "Network Muzzle Flash Material",
@@ -108,6 +125,7 @@ public sealed class NetworkWeaponFeedbackPool : MonoBehaviour
             color = new Color(0.72f, 0.48f, 0.12f, 1f),
             hideFlags = HideFlags.HideAndDontSave
         };
+        return true;
     }
 
     private void OnDestroy()

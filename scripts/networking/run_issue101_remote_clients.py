@@ -14,6 +14,8 @@ import time
 from datetime import datetime, timezone
 from typing import Any
 
+from issue101_server_manager import BATTLE_PROTOCOL_VERSION
+
 
 def read_json(path: pathlib.Path) -> dict[str, Any]:
     try:
@@ -64,6 +66,10 @@ def main() -> int:
     allocation = read_json(args.allocation.resolve())
     if allocation.get("schemaVersion") != "fps-remote-match-v1":
         print("[FAIL] allocation schema 无效", file=sys.stderr)
+        return 2
+    if allocation.get("protocolVersion") != BATTLE_PROTOCOL_VERSION:
+        print(f"[FAIL] allocation 战斗协议必须为 {BATTLE_PROTOCOL_VERSION}，"
+              "请使用对应版本重新分配战局", file=sys.stderr)
         return 2
     players = allocation.get("players") or []
     if len(players) < 2:

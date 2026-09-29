@@ -1,6 +1,7 @@
 using System;
 using System.Collections;
 using System.Linq;
+using FPS.Core.GameModes;
 using FPS.Networking.Diagnostics;
 using FPS.Networking.Domain;
 using FPS.Networking.Netcode;
@@ -43,6 +44,7 @@ namespace FPS.Networking.Acceptance
                 return;
             }
 
+            RequestClientBattleRoute(parsed);
             var root = new GameObject("Issue100 Multi-Process Acceptance");
             root.SetActive(false);
             DontDestroyOnLoad(root);
@@ -66,6 +68,16 @@ namespace FPS.Networking.Acceptance
             if (parsed.RecordVideo)
                 root.AddComponent<Issue100OffscreenRecorder>();
             root.SetActive(true);
+        }
+
+        private static void RequestClientBattleRoute(Issue100RuntimeArguments parsed)
+        {
+            if (!parsed.IsClient) return;
+            // Use the same requested route as the normal room-to-battle flow
+            // before CityNew's marker Awake. The authored Solo/Battle marker
+            // then activates its existing cooperative override; isolation alone
+            // cannot stop later Start callbacks while the context remains Solo.
+            GameModeContext.BeginTransition(GameModeId.Coop, GameModeStage.CoopBattle);
         }
 
         private void Awake()

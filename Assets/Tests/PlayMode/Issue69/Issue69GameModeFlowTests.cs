@@ -24,6 +24,9 @@ namespace FPS.Tests.PlayMode.Issue69
             ModeEntryView view = Object.FindFirstObjectByType<ModeEntryView>();
             Assert.That(view, Is.Not.Null);
             Assert.That(view.Buttons, Has.Count.EqualTo(3));
+            Assert.That(view.GetComponentsInChildren<UnityEngine.UI.Button>(true)
+                .Any(button => button.gameObject.name == "退出当前账号"),
+                Is.True, "模式大厅应直接提供退出账号入口。");
             foreach (UnityEngine.UI.Button button in view.Buttons)
             {
                 UnityEngine.UI.Image icon = button
@@ -33,6 +36,24 @@ namespace FPS.Tests.PlayMode.Issue69
                 Assert.That(icon, Is.Not.Null, button.gameObject.name);
                 Assert.That(icon.sprite, Is.Not.Null,
                     $"{button.gameObject.name} 应加载模式图标。");
+                Canvas.ForceUpdateCanvases();
+                Transform plate = button.transform.Find("模式图标底座");
+                Transform name = button.transform.Find("Mode Name");
+                Transform description = button.transform.Find("Description");
+                Transform action = button.transform.Find("Action Label");
+                Bounds plateBounds = RectTransformUtility
+                    .CalculateRelativeRectTransformBounds(button.transform, plate);
+                Bounds nameBounds = RectTransformUtility
+                    .CalculateRelativeRectTransformBounds(button.transform, name);
+                Bounds descriptionBounds = RectTransformUtility
+                    .CalculateRelativeRectTransformBounds(button.transform, description);
+                Bounds actionBounds = RectTransformUtility
+                    .CalculateRelativeRectTransformBounds(button.transform, action);
+                Assert.That(plateBounds.max.x, Is.LessThanOrEqualTo(nameBounds.min.x),
+                    $"{button.gameObject.name} 的图标不能压到标题布局。");
+                Assert.That(descriptionBounds.max.x,
+                    Is.LessThanOrEqualTo(actionBounds.min.x),
+                    $"{button.gameObject.name} 的描述不能压到操作文字布局。");
             }
             Assert.That(view.Buttons.Select(button =>
                     button.GetComponent<GameModeEntryButton>().Mode),

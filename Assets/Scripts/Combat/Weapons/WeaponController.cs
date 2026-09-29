@@ -86,6 +86,7 @@ public class WeaponController : MonoBehaviour
     private WeaponSpreadState spreadState;
     private float aimBlend;
     private Vector2? spreadSampleOverride;
+    private float? pendingNetworkShotSpread;
     private CombatSoundEventChannel soundEventChannel;
     private CombatEffectPool combatEffectPool;
     private PlayerRuntimeCombatStats runtimeCombatStats;
@@ -229,6 +230,9 @@ public class WeaponController : MonoBehaviour
         }
 
         nextFireTime = Time.time + FireInterval;
+        // Capture this shot's cone before bloom is accumulated for the next
+        // shot, matching ResolveHitscan -> RegisterShot in the solo path.
+        pendingNetworkShotSpread = CurrentSpreadDegrees;
         spreadState.RegisterShot();
         if (weapon.FireSound != null)
         {
@@ -520,14 +524,26 @@ public class WeaponController : MonoBehaviour
 
     private void ResolveHitscan()
     {
+        Ray ray = BuildHitscanRay(null, out float distance);
+        ResolveShotRay(ray, distance);
+    }
+
+    public Ray CreateNetworkShotRay(System.Func<Ray, float, Vector3?> visibleTargetResolver = null)
+    {
+        float? shotSpread = pendingNetworkShotSpread;
+        pendingNetworkShotSpread = null;
+        return BuildHitscanRay(visibleTargetResolver, out _, shotSpread);
+    }
+
+    private Ray BuildHitscanRay(System.Func<Ray, float, Vector3?> visibleTargetResolver, out float distance,
+        float? shotSpread = null)
+    {
         Transform firePoint = FirePoint.transform;
 
         if (aimCamera == null)
         {
-            ResolveShotRay(
-                new Ray(firePoint.position, firePoint.forward),
-                maxAimDistance);
-            return;
+            distance = maxAimDistance;
+            return new Ray(firePoint.position, firePoint.forward);
         }
 
         Ray aimRay = aimCamera.ViewportPointToRay(
@@ -538,7 +554,7 @@ public class WeaponController : MonoBehaviour
             aimRay.direction,
             aimCamera.transform.right,
             aimCamera.transform.up,
-            CurrentSpreadDegrees,
+            shotSpread ?? CurrentSpreadDegrees,
             spreadSample);
         Vector3 aimPoint = aimRay.GetPoint(maxAimDistance);
 
@@ -549,6 +565,9 @@ public class WeaponController : MonoBehaviour
         {
             aimPoint = cameraHit.point;
         }
+        Vector3? visibleTarget = visibleTargetResolver?.Invoke(aimRay, maxAimDistance);
+        if (visibleTarget.HasValue && Vector3.Distance(aimRay.origin, visibleTarget.Value) <
+            Vector3.Distance(aimRay.origin, aimPoint)) aimPoint = visibleTarget.Value;
 
         Vector3 direction = aimPoint - firePoint.position;
         float rayDistance = direction.magnitude;
@@ -559,9 +578,8 @@ public class WeaponController : MonoBehaviour
             rayDistance = maxAimDistance;
         }
 
-        ResolveShotRay(
-            new Ray(firePoint.position, direction.normalized),
-            rayDistance + 0.05f);
+        distance = rayDistance + 0.05f;
+        return new Ray(firePoint.position, direction.normalized);
     }
 
     private void ResolveShotRay(Ray ray, float distance)

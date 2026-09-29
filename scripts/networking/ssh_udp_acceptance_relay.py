@@ -73,12 +73,16 @@ def remote(port: int) -> int:
                 write_all(1, frame(slot, payload))
 
 
-def local(host: str, remote_script: str, port: int) -> int:
+def local(host: str, remote_script: str, port: int,
+          ssh_bind_address: str | None = None) -> int:
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.bind(("127.0.0.1", port))
     command = ["ssh", "-T", "-o", "BatchMode=yes", "-o",
-               "StrictHostKeyChecking=yes", host, "python3", "-u",
-               remote_script, "--remote", "--port", str(port)]
+               "StrictHostKeyChecking=yes"]
+    if ssh_bind_address:
+        command.extend(("-b", ssh_bind_address))
+    command.extend((host, "python3", "-u", remote_script,
+                    "--remote", "--port", str(port)))
     process = subprocess.Popen(command, stdin=subprocess.PIPE,
                                stdout=subprocess.PIPE)
     addresses: list[tuple[str, int] | None] = [None, None]
@@ -123,12 +127,15 @@ def main() -> int:
     parser.add_argument("--host")
     parser.add_argument("--remote-script")
     parser.add_argument("--port", type=int, default=17777)
+    parser.add_argument("--ssh-bind-address",
+                        help="Source IPv4 for the diagnostic SSH tunnel")
     args = parser.parse_args()
     if args.remote:
         return remote(args.port)
     if not args.host or not args.remote_script:
         parser.error("local relay requires --host and --remote-script")
-    return local(args.host, args.remote_script, args.port)
+    return local(args.host, args.remote_script, args.port,
+                 args.ssh_bind_address)
 
 
 if __name__ == "__main__":

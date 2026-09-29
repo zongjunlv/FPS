@@ -5,6 +5,7 @@ using FPS.Networking.Netcode;
 using FPS.Networking.Session;
 using NUnit.Framework;
 using UnityEngine;
+using UnityEngine.AI;
 using UnityEngine.TestTools;
 using Unity.Collections;
 
@@ -119,6 +120,80 @@ namespace FPS.Tests.PlayMode.Issue65
                 Is.EqualTo(20f).Within(0.0001f));
         }
 
+        [Test]
+        public void SameGenerationSnapsToAuthoritativePositionAfterPresentationResumes()
+        {
+            CoopNetworkWorldPresenter presenter = Presenter(
+                "Issue96 Resumed Enemy Client");
+            NetcodeTargetState initial = State(Vector3.right * 50f,
+                AuthoritativeEnemyRole.Assault,
+                AuthoritativeEnemyBehavior.Pursue);
+            presenter.PresentForTests(new[] { initial }, 1f / 60f);
+            Assert.That(presenter.TryGetTargetView(1,
+                out GameObject originalView), Is.True);
+
+            // A reconnect can leave the presenter and pooled view alive while
+            // no world frames are presented. The server may advance hundreds
+            // of ticks before the first complete replacement snapshot arrives.
+            presenter.enabled = false;
+            presenter.enabled = true;
+            NetcodeTargetState resumed = initial;
+            resumed.Position = Vector3.right * 63.5f;
+            presenter.PresentForTests(new[] { resumed }, 1f / 60f);
+
+            Assert.That(presenter.TryGetTargetView(1,
+                out GameObject resumedView), Is.True);
+            Assert.That(resumedView, Is.SameAs(originalView),
+                "重连后无需重建同代敌人表现对象。");
+            Assert.That(resumedView.transform.position.x,
+                Is.EqualTo(63.5f).Within(0.0001f),
+                "恢复展示时不能从断线前的位置快速滑行到新快照。");
+        }
+
+        [Test]
+        public void SameGenerationContinuousUpdatesStillInterpolate()
+        {
+            CoopNetworkWorldPresenter presenter = Presenter(
+                "Issue96 Continuous Enemy Client");
+            NetcodeTargetState initial = State(Vector3.right * 50f,
+                AuthoritativeEnemyRole.Assault,
+                AuthoritativeEnemyBehavior.Pursue);
+            presenter.PresentForTests(new[] { initial }, 1f / 60f,
+                serverTick: 507);
+            presenter.TryGetTargetView(1, out GameObject view);
+
+            NetcodeTargetState nextFrame = initial;
+            nextFrame.Position = Vector3.right * 50.3f;
+            presenter.PresentForTests(new[] { nextFrame }, 1f / 60f,
+                serverTick: 508);
+
+            Assert.That(view.transform.position.x,
+                Is.GreaterThan(50f).And.LessThan(50.3f),
+                "正常连续快照仍应使用插值，而不是每帧瞬移。");
+        }
+
+        [Test]
+        public void SameGenerationSnapsAfterLargeServerTickGap()
+        {
+            CoopNetworkWorldPresenter presenter = Presenter(
+                "Issue96 Tick Gap Enemy Client");
+            NetcodeTargetState initial = State(Vector3.right * 50f,
+                AuthoritativeEnemyRole.Assault,
+                AuthoritativeEnemyBehavior.Pursue);
+            presenter.PresentForTests(new[] { initial }, 1f / 60f,
+                serverTick: 507);
+            presenter.TryGetTargetView(1, out GameObject view);
+
+            NetcodeTargetState resumed = initial;
+            resumed.Position = Vector3.right * 63.5f;
+            presenter.PresentForTests(new[] { resumed }, 1f / 60f,
+                serverTick: 1138);
+
+            Assert.That(view.transform.position.x,
+                Is.EqualTo(63.5f).Within(0.0001f),
+                "服务端在断线期间已前进数百 Tick，首帧应对齐权威位置。");
+        }
+
         [UnityTest]
         public IEnumerator RuntimeStateLoadsOfficialAddressablePresentation()
         {
@@ -147,7 +222,17 @@ namespace FPS.Tests.PlayMode.Issue65
                 "正式敌人 Addressable 应在联机表现根节点下完成加载。");
             Assert.That(view.name, Does.Contain("Coop Enemy View"));
             Assert.That(view.GetComponentsInChildren<Collider>(true),
-                Has.All.Matches<Collider>(collider => !collider.enabled));
+                Is.Empty);
+            NavMeshAgent[] agents =
+                view.GetComponentsInChildren<NavMeshAgent>(true);
+            Assert.That(agents, Is.Empty,
+                "纯表现资源不得实例化单机 NavMeshAgent，即使暂时 disabled 也不允许。");
+            var model = view.GetComponentInChildren<CoopEnemyPresentationDefinition>(true);
+            Assert.That(model, Is.Not.Null);
+            yield return new WaitForSecondsRealtime(0.5f);
+            Assert.That(model.transform.localPosition.sqrMagnitude,
+                Is.LessThan(0.0001f),
+                "展示一段时间后，模型根节点仍应保持预制体的局部原点。");
         }
 
         [Test]

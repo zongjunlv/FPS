@@ -24,6 +24,8 @@ namespace FPS.Networking.Netcode
         private bool aimingHeld;
         private double accumulatedSeconds;
         private long clientTick;
+        private int lastClockRevision;
+        private int lastInputRunGeneration;
         private object exclusiveInputOwner;
 
         public long ClientTick => clientTick;
@@ -55,6 +57,7 @@ namespace FPS.Networking.Netcode
                 movement = Vector2.zero;
                 fireQueued = false;
                 jumpQueued = false;
+                replica.DiscardLocalShotFrame();
                 sprintHeld = false;
                 aimingHeld = false;
                 return;
@@ -62,7 +65,8 @@ namespace FPS.Networking.Netcode
 
             int tickRate = replica.Session.Rules.TickRate;
             double tickSeconds = 1d / tickRate;
-            accumulatedSeconds += Time.unscaledDeltaTime;
+            accumulatedSeconds = Math.Min(tickSeconds * 4d,
+                accumulatedSeconds + Time.unscaledDeltaTime);
             int safety = 0;
             while (accumulatedSeconds >= tickSeconds && safety++ < 4)
             {
@@ -72,6 +76,7 @@ namespace FPS.Networking.Netcode
                         accumulatedSeconds, tickSeconds);
                     break;
                 }
+                if (accumulatedSeconds < tickSeconds) break;
                 accumulatedSeconds -= tickSeconds;
                 SubmitCurrentFrame();
             }
@@ -191,6 +196,18 @@ namespace FPS.Networking.Netcode
             replica?.ConfigureLocalCombatContext(gameplayWeaponId, shotOrigin);
         }
 
+        /// <summary>
+        /// Stores the visible aim ray and presentation tick for the next actual
+        /// fire command. Movement continues on its independent input clock.
+        /// </summary>
+        public void SetShotFrame(Vector3 direction, long viewTick)
+        {
+            if (exclusiveInputOwner != null) return;
+            if (replica == null)
+                replica = GetComponent<NetworkPlayerReplica>();
+            replica?.ConfigureLocalShotFrame(direction, viewTick);
+        }
+
         public bool SetExclusivePredictedCombatFrame(
             object owner,
             string gameplayWeaponId)
@@ -216,10 +233,12 @@ namespace FPS.Networking.Netcode
                     "The local network player is not ready to submit input.");
             }
 
-            clientTick = Math.Max(
-                clientTick,
-                replica.Session.WorldState.ServerTick);
-            clientTick++;
+            if (!HasServerTickBudget() ||
+                !replica.Session.TryGetNextClientInputTick(clientTick,
+                    out long nextTick))
+                throw new InvalidOperationException(
+                    "The input clock is unhealthy or prediction is awaiting acknowledgement.");
+            clientTick = nextTick;
             bool fire = fireQueued;
             fireQueued = false;
             bool jump = jumpQueued;
@@ -260,10 +279,34 @@ namespace FPS.Networking.Netcode
                 !replica.IsPresentationReady || replica.Session == null ||
                 replica.Session.Rules == null)
                 return false;
-            long maximumTick = replica.Session.WorldState.ServerTick +
-                               replica.Session.Rules
-                                   .MaximumFutureCommandTicks;
-            return clientTick < maximumTick;
+            // Capacity may resynchronize the prediction buffer after a long
+            // gap. Do this before checking the input-clock revision.
+            bool hasCapacity = replica.HasPredictionCapacity;
+            int revision = replica.Session.ClockRevision;
+            int generation = replica.Session.WorldState.RunGeneration;
+            if (revision != lastClockRevision)
+            {
+                if (lastClockRevision != 0)
+                {
+                    fireQueued = false;
+                    jumpQueued = false;
+                    replica.DiscardLocalShotFrame();
+                    accumulatedSeconds = 0d;
+                    long resumeTick = Math.Max(0,
+                        replica.Session.WorldState.ServerTick - 1);
+                    // A recovered clock is not a new input timeline. Some
+                    // old sends may already be processed or still in flight;
+                    // reusing their ticks makes the authority reject them as
+                    // duplicates. Only a genuinely new run resets its epoch.
+                    clientTick = generation != lastInputRunGeneration
+                        ? resumeTick
+                        : Math.Max(clientTick, resumeTick);
+                }
+                lastClockRevision = revision;
+                lastInputRunGeneration = generation;
+            }
+            return hasCapacity && replica.Session.TryGetNextClientInputTick(
+                clientTick, out _);
         }
 
         public void ResetDriver()
@@ -278,6 +321,8 @@ namespace FPS.Networking.Netcode
             aimingHeld = false;
             accumulatedSeconds = 0d;
             clientTick = 0;
+            lastClockRevision = 0;
+            lastInputRunGeneration = 0;
             LastSubmittedCommand = default;
             HasSubmittedCommand = false;
         }

@@ -90,6 +90,19 @@ class MatchBroker:
         self.rate_limit.check("login-user:" + username, 10)
         return self.store.login(payload.get("username"), payload.get("password"))
 
+    def logout(self, account: str, token: str) -> dict[str, bool]:
+        # Revoke the token only after detaching its player from an active room.
+        # Otherwise a signed-out host can strand a room that nobody can own.
+        room = self.store.current_room(account)
+        if room:
+            try:
+                self.leave_room(account, room["id"])
+            except (LookupError, PermissionError):
+                # Concurrent leave already removed this member.
+                pass
+        self.store.logout(token)
+        return {"loggedOut": True}
+
     def allocate(self, account: str, payload: dict[str, Any]) -> dict[str, Any]:
         session_id = safe_identifier(payload.get("sessionId"), "房间 ID")
         self._validate_compatibility(payload)
@@ -221,7 +234,14 @@ class MatchBroker:
         room = self.store.get_room(room_id, account)
         allocation = room["serverAllocation"]
         if room["hostId"] == account and allocation:
-            self._release_if_current(account, room_id, allocation)
+            try:
+                self._release_if_current(account, room_id, allocation)
+            except Exception as error:
+                # A failed process stop must not keep the room joinable after
+                # its owner has exited. The Dedicated Server idle timeout is
+                # the fallback for reclaiming the remaining process.
+                print(f"[room-leave] match release deferred: {error}",
+                      file=sys.stderr)
         return self.store.leave_room(room_id, account)
 
     def _release_if_current(self, account: str, room_id: str,
@@ -354,8 +374,7 @@ class BrokerHandler(BaseHTTPRequestHandler):
                 account, token = self._authorize()
                 aid, store = account["accountId"], broker.store
                 if path == "/v1/auth/logout":
-                    store.logout(token)
-                    result = {"loggedOut": True}
+                    result = broker.logout(aid, token)
                 elif path == "/v1/rooms":
                     result = store.create_room(aid, payload)
                 elif path == "/v1/rooms/join":
@@ -488,7 +507,8 @@ def parser() -> argparse.ArgumentParser:
     result.add_argument("--state-root", type=pathlib.Path,
                         default=pathlib.Path("/srv/fps/data/broker"))
     result.add_argument("--application-version", default="0.1.0")
-    result.add_argument("--protocol-version", default="1")
+    result.add_argument("--protocol-version",
+                        default=server_manager.BATTLE_PROTOCOL_VERSION)
     result.add_argument("--content-version", default="citynew-v1")
     result.add_argument("--tick-rate", type=int, default=60)
     result.add_argument("--idle-timeout", type=int, default=120)

@@ -332,6 +332,8 @@ namespace FPS.Networking.Netcode
             }
 
             networkManager.NetworkConfig.NetworkTransport = transport;
+            networkManager.NetworkConfig.ProtocolVersion =
+                CoopWireProtocol.NetworkConfigVersion;
             networkManager.NetworkConfig.EnableSceneManagement = false;
             networkManager.NetworkConfig.ForceSamePrefabs = false;
         }

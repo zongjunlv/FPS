@@ -60,6 +60,21 @@ class QualityGateReportTests(unittest.TestCase):
         report = evaluate("editmode", 0, log, results)
         self.assertEqual("passed", report["category"])
 
+    def test_unsupported_ray_tracing_shader_warning_is_not_script_failure(self):
+        log = self.write(
+            "playmode.log",
+            "Shader warning in 'TraceRays': Compilation failed: "
+            "Platform doesn't support Ray Tracing Shader compilation.\n"
+            "Tests completed",
+        )
+        results = self.write(
+            "playmode.xml",
+            '<test-run result="Passed" total="2" passed="2" '
+            'failed="0" skipped="0" inconclusive="0" />',
+        )
+        report = evaluate("playmode", 0, log, results)
+        self.assertEqual("passed", report["category"])
+
     def test_input_fixture_shard_requires_real_xml(self):
         log = self.write("playmode-input.log", "Tests completed")
         missing = self.root / "playmode-input.xml"

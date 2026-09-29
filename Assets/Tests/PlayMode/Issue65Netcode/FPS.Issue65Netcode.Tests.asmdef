@@ -2,15 +2,18 @@
   "name": "FPS.Issue65Netcode.Tests",
   "rootNamespace": "FPS.Tests.PlayMode.Issue65",
   "references": [
+    "FPS.Core",
     "FPS.Networking.Domain",
     "FPS.Networking.Netcode",
     "FPS.Networking.Session",
     "FPS.Composition",
+    "FPS.Combat",
     "Unity.Netcode.Runtime",
     "Unity.Networking.Transport",
     "Unity.Collections",
     "Unity.Addressables",
-    "Unity.ResourceManager"
+    "Unity.ResourceManager",
+    "Unity.ugui"
   ],
   "includePlatforms": [],
   "excludePlatforms": [],

@@ -22,6 +22,25 @@ def decode(value: str) -> bytes:
 
 
 class Issue101ServerManagerTests(unittest.TestCase):
+    def test_current_battle_protocol_matches_bundled_client_settings(self):
+        import json
+        settings = PATH.parents[2] / "Assets" / "Resources" / "Networking" / \
+            "CoopDedicatedServerSettings.json"
+        self.assertEqual(MODULE.BATTLE_PROTOCOL_VERSION,
+                         json.loads(settings.read_text())["protocolVersion"])
+        args = MODULE.parser().parse_args([
+            "start", "--binary", "/tmp/fps-test-server",
+            "--public-host", "127.0.0.1"])
+        self.assertEqual(args.protocol_version, MODULE.BATTLE_PROTOCOL_VERSION)
+
+    def test_deployment_examples_do_not_pin_a_stale_battle_protocol(self):
+        directory = PATH.parents[2] / "deploy" / "dedicated-server"
+        for name in ("broker.conf.example", "server.conf.example"):
+            with self.subTest(name=name):
+                value = (directory / name).read_text(encoding="utf-8")
+                self.assertIn("FPS_PROTOCOL_VERSION=" +
+                              MODULE.BATTLE_PROTOCOL_VERSION + "\n", value)
+
     def test_ticket_matches_server_codec_format_and_signature(self):
         secret = "issue101-secret-is-longer-than-thirty-two-bytes"
         compatibility = MODULE.compatibility_token("1.2.3", "net-7",

@@ -340,6 +340,8 @@ class ControlStore:
             if row is None:
                 raise LookupError("房间不存在")
             room = self._room(row["id"])
+            if room["phase"] == "cancelled":
+                raise ConflictError("房间已关闭")
             existing = next((p for p in room["players"] if p["accountId"] == account), None)
             if existing:
                 self.db.execute("UPDATE room_players SET connected=1 WHERE room_id=? AND account_id=?",
@@ -437,12 +439,15 @@ class ControlStore:
             self.db.execute("DELETE FROM room_players WHERE room_id=? AND account_id=?",
                             (room_id, account))
             remaining = [p for p in room["players"] if p["accountId"] != account]
-            if not remaining:
-                self.db.execute("UPDATE rooms SET phase='cancelled',load_failure='所有成员已退出' WHERE id=?",
+            if account == room["hostId"] or not remaining:
+                # The host owns the dedicated battle allocation. Promoting a
+                # guest after the host exits a failed connection would make an
+                # abandoned 1/2 room publicly joinable with no real owner.
+                failure = "房主已退出" if remaining else "所有成员已退出"
+                self.db.execute("""UPDATE rooms SET phase='cancelled',
+                    load_epoch='',load_failure=?,server_allocation=''
+                    WHERE id=?""", (failure, room_id))
+                self.db.execute("UPDATE room_players SET ready=0,ready_epoch='' WHERE room_id=?",
                                 (room_id,))
-            elif account == room["hostId"]:
-                self.db.execute("UPDATE rooms SET host_id=?,phase='lobby',load_epoch='',load_failure='',server_allocation='' WHERE id=?",
-                                (remaining[0]["accountId"], room_id))
-                self.db.execute("UPDATE room_players SET ready=0,ready_epoch='' WHERE room_id=?", (room_id,))
             self._touch(room_id)
             return {"left": True}

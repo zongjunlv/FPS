@@ -24,6 +24,18 @@ namespace FPS.Networking.Acceptance
         private readonly Dictionary<uint, double> pendingShots = new();
         private readonly List<double> rttSamples = new();
         private readonly RaycastHit[] combatLineHits = new RaycastHit[32];
+        private readonly CoopPlayerMovementCollision combatMovementCollision = new();
+        private const float CombatProbeDistance = 0.75f;
+        private Vector3[] combatCorners = Array.Empty<Vector3>();
+        private int combatWaypointIndex;
+        private Vector3 combatRouteTarget;
+        private Vector3 combatProgressPosition;
+        private double combatNextRepathAt;
+        private double combatProgressCheckedAt = -1d;
+        private int combatStallCount;
+        private double combatRecoveryUntil;
+        private Vector3 combatRecoveryDirection;
+        private bool combatJumpRequested;
         private NavMeshPath navigationPath;
         private Issue100AcceptanceRuntime runtime;
         private Issue100RuntimeArguments options;
@@ -41,6 +53,10 @@ namespace FPS.Networking.Acceptance
         private int missedFeedbacks;
         private int blockedFeedbacks;
         private int lockedCombatTargetId;
+        private string lastNavigationTrace = string.Empty;
+        private int combatDecisionRunGeneration = -1;
+        private int combatDecisionSampleCount;
+        private double nextCombatDecisionAt;
         private double divergentSince = -1d;
         private bool initialized;
         private bool metricsBound;
@@ -278,7 +294,7 @@ namespace FPS.Networking.Acceptance
                     yield break;
                 }
                 ticket = codec.Issue(options.AccountId,
-                    new CoopBuildCompatibility("local-dev", "1",
+                    new CoopBuildCompatibility("local-dev", CoopWireProtocol.CompatibilityId,
                         "citynew-v1"),
                     DateTimeOffset.UtcNow.ToUnixTimeSeconds(),
                     matchId: options.MatchId);
@@ -535,6 +551,7 @@ namespace FPS.Networking.Acceptance
                 yield return new WaitForSecondsRealtime(0.9f);
             double deadline = Time.realtimeSinceStartupAsDouble +
                 WaveClearTimeoutSeconds;
+            double nextFireAt = 0d;
             while (authority.WorldState.RemainingEnemyCount > 0 &&
                    Time.realtimeSinceStartupAsDouble < deadline)
             {
@@ -553,9 +570,16 @@ namespace FPS.Networking.Acceptance
                     continue;
                 }
                 Vector3 target = ResolveTargetPoint(lockTarget: true);
-                AimAt(target, fire: CanFireAt(target, 3.5f),
-                    approach: true);
-                yield return new WaitForSecondsRealtime(0.18f);
+                double now = Time.realtimeSinceStartupAsDouble;
+                bool fireDue = now >= nextFireAt;
+                bool eligible = CanFireAt(target, 3.5f);
+                bool fire = fireDue && eligible;
+                if (fireDue) nextFireAt = now + 0.18d;
+                TraceCombatDecision(target, fireDue, eligible, fire);
+                AimAt(target, fire: fire, approach: true);
+                // Aim/movement are normal per-frame input; only requesting a
+                // shot retains the original .18s acceptance cadence.
+                yield return null;
             }
             yield return RecoverTeamDuringCombat(
                 Issue100AcceptanceSteps.WaveComplete);
@@ -593,6 +617,7 @@ namespace FPS.Networking.Acceptance
             evidence.Started(step, Tick(), "client-b=reconnected");
             double deadline = Time.realtimeSinceStartupAsDouble +
                 WaveClearTimeoutSeconds;
+            double nextFireAt = 0d;
             while (authority.WorldState.RemainingEnemyCount > 0 &&
                    Time.realtimeSinceStartupAsDouble < deadline)
             {
@@ -610,9 +635,14 @@ namespace FPS.Networking.Acceptance
                     continue;
                 }
                 Vector3 target = ResolveTargetPoint(lockTarget: true);
-                AimAt(target, fire: CanFireAt(target, 3.5f),
-                    approach: true);
-                yield return new WaitForSecondsRealtime(0.18f);
+                double now = Time.realtimeSinceStartupAsDouble;
+                bool fireDue = now >= nextFireAt;
+                bool eligible = CanFireAt(target, 3.5f);
+                bool fire = fireDue && eligible;
+                if (fireDue) nextFireAt = now + 0.18d;
+                TraceCombatDecision(target, fireDue, eligible, fire);
+                AimAt(target, fire: fire, approach: true);
+                yield return null;
             }
             yield return RecoverTeamDuringCombat(step);
             if (!initialized) yield break;
@@ -753,7 +783,8 @@ namespace FPS.Networking.Acceptance
                 replica.PresentedPosition, extraction);
             if (distance > authority.WorldState.ExtractionRadius)
             {
-                Abort(step, $"协作客户端未进入撤离区：distance={distance:F1}。");
+                Abort(step, $"协作客户端未进入撤离区：distance={distance:F1};" +
+                    lastNavigationTrace);
                 yield break;
             }
             evidence.Passed(step, Tick(), $"distance={distance:F1}");
@@ -772,6 +803,7 @@ namespace FPS.Networking.Acceptance
                     authority.GetReplicatedWorldDrop(index);
                 if (!candidate.Available || candidate.OwnerPlayerId != 0 &&
                     candidate.OwnerPlayerId != replica.PlayerId) continue;
+                if (!CanUseConsumable(candidate.ItemId.ToString())) continue;
                 float distance = Vector3.Distance(
                     replica.PresentedPosition, candidate.Position);
                 if (distance >= nearestDistance) continue;
@@ -782,7 +814,7 @@ namespace FPS.Networking.Acceptance
             if (!found)
             {
                 Abort(Issue100AcceptanceSteps.InventoryPickup,
-                    "没有可由 Client A 拾取的权威掉落物。");
+                    "没有可由 Client A 拾取且当前适用的权威消耗品。");
                 yield break;
             }
             yield return MoveTo(drop.Position, 2.5f, 24d);
@@ -793,54 +825,127 @@ namespace FPS.Networking.Acceptance
                     "无法移动到掉落物拾取范围。");
                 yield break;
             }
-            int inventoryBefore = CountOwnedItems();
-            replica.SubmitEconomyAction(AuthoritativeEconomyCommandKind.Pickup,
+            string pickupItemId = drop.ItemId.ToString();
+            int quantityBeforePickup = CountOwnedItemQuantity(pickupItemId);
+            NetcodeProgressionState pickupBaseline = Progression();
+            NetcodeEconomyCommand pickup = replica.SubmitEconomyAction(AuthoritativeEconomyCommandKind.Pickup,
                 entityId: drop.DropId,
                 expectedDropRevision: drop.Revision,
-                expectedItemId: drop.ItemId.ToString());
-            yield return WaitUntil(() => CountOwnedItems() > inventoryBefore,
-                5d);
-            if (CountOwnedItems() <= inventoryBefore)
+                expectedItemId: pickupItemId);
+            yield return WaitUntil(() =>
+                authority.IsReplicatedSnapshotComplete &&
+                Progression().AcknowledgedEconomySequence >= pickup.Sequence &&
+                Progression().InventoryRevision > pickupBaseline.InventoryRevision &&
+                CountOwnedItemQuantity(pickupItemId) == quantityBeforePickup + drop.Quantity, 5d);
+            NetcodeProgressionState pickupAfter = Progression();
+            int quantityAfterPickup = CountOwnedItemQuantity(pickupItemId);
+            if (!authority.IsReplicatedSnapshotComplete ||
+                pickupAfter.AcknowledgedEconomySequence < pickup.Sequence ||
+                pickupAfter.InventoryRevision <= pickupBaseline.InventoryRevision ||
+                quantityAfterPickup != quantityBeforePickup + drop.Quantity)
             {
                 Abort(Issue100AcceptanceSteps.InventoryPickup,
-                    "拾取命令未改变权威背包。");
+                    $"拾取未成功结算：seq={pickup.Sequence};" +
+                    $"ack={pickupAfter.AcknowledgedEconomySequence};" +
+                    $"quantity={quantityBeforePickup}->{quantityAfterPickup}。");
                 yield break;
             }
             evidence.Passed(Issue100AcceptanceSteps.InventoryPickup, Tick(),
-                "item=" + drop.ItemId);
+                $"item={drop.ItemId};seq={pickup.Sequence};" +
+                $"quantity={quantityBeforePickup}->{quantityAfterPickup}");
 
             yield return PresentStep(Issue100AcceptanceSteps.InventoryUse);
             NetcodeInventorySlotState owned = FindOwnedItem();
-            uint ackBefore = Progression().AcknowledgedEconomySequence;
-            replica.SubmitEconomyAction(AuthoritativeEconomyCommandKind.Use,
+            if (owned.Quantity <= 0)
+            {
+                Abort(Issue100AcceptanceSteps.InventoryUse,
+                    "权威背包没有当前可适用的消耗品，不能记录使用成功。");
+                yield break;
+            }
+            yield return WaitUntil(() => Tick() >= Progression().NextConsumableUseTick, 5d);
+            NetcodeProgressionState useBaseline = Progression();
+            string usedItemId = owned.ItemId.ToString();
+            int quantityBeforeUse = CountOwnedItemQuantity(usedItemId);
+            NetcodeEconomyCommand use = replica.SubmitEconomyAction(AuthoritativeEconomyCommandKind.Use,
                 sourceSlot: owned.SlotIndex, quantity: 1);
             yield return WaitUntil(() =>
-                Progression().AcknowledgedEconomySequence > ackBefore, 5d);
+                authority.IsReplicatedSnapshotComplete &&
+                HasConfirmedItemUse(use.Sequence, useBaseline, Progression(),
+                    quantityBeforeUse, CountOwnedItemQuantity(usedItemId)), 5d);
+            NetcodeProgressionState useAfter = Progression();
+            int quantityAfterUse = CountOwnedItemQuantity(usedItemId);
+            if (!authority.IsReplicatedSnapshotComplete ||
+                !HasConfirmedItemUse(use.Sequence, useBaseline, useAfter,
+                    quantityBeforeUse, quantityAfterUse))
+            {
+                Abort(Issue100AcceptanceSteps.InventoryUse,
+                    $"消耗品使用超时或被拒绝：seq={use.Sequence};" +
+                    $"ack={useAfter.AcknowledgedEconomySequence};" +
+                    $"revision={useBaseline.InventoryRevision}->{useAfter.InventoryRevision};" +
+                    $"quantity={quantityBeforeUse}->{quantityAfterUse}。");
+                yield break;
+            }
             evidence.Passed(Issue100AcceptanceSteps.InventoryUse, Tick(),
-                "item=" + owned.ItemId);
+                $"item={owned.ItemId};seq={use.Sequence};" +
+                $"quantity={quantityBeforeUse}->{quantityAfterUse}");
 
             yield return PresentStep(Issue100AcceptanceSteps.UpgradeSelect);
             NetcodeProgressionState progression = Progression();
-            if (progression.PendingUpgradeChoices > 0)
-            {
-                int upgradesBefore = CountOwnedUpgrades();
-                int candidateIndex = SelectApplicableUpgradeCandidate(
-                    progression);
-                replica.SubmitEconomyAction(
-                    AuthoritativeEconomyCommandKind.SelectUpgrade,
-                    candidateIndex: candidateIndex);
-                yield return WaitUntil(() =>
-                    CountOwnedUpgrades() > upgradesBefore, 5d);
-            }
-            if (CountOwnedUpgrades() <= 0)
+            if (progression.PendingUpgradeChoices <= 0)
             {
                 Abort(Issue100AcceptanceSteps.UpgradeSelect,
-                    "清敌经验没有产生并应用肉鸽升级。");
+                    "没有待选升级，已有升级不能证明本次选择成功。");
+                yield break;
+            }
+            int candidateIndex = SelectApplicableUpgradeCandidate(progression);
+            string candidateId = candidateIndex switch
+            {
+                0 => progression.Candidate0.ToString(),
+                1 => progression.Candidate1.ToString(),
+                _ => progression.Candidate2.ToString()
+            };
+            int candidateLevelBefore = CountOwnedUpgradeLevel(candidateId);
+            NetcodeEconomyCommand selected = replica.SubmitEconomyAction(
+                AuthoritativeEconomyCommandKind.SelectUpgrade,
+                candidateIndex: candidateIndex);
+            yield return WaitUntil(() =>
+                authority.IsReplicatedSnapshotComplete &&
+                HasConfirmedUpgradeSelection(selected.Sequence, progression,
+                    Progression(), candidateLevelBefore, CountOwnedUpgradeLevel(candidateId)), 5d);
+            NetcodeProgressionState upgradeAfter = Progression();
+            int candidateLevelAfter = CountOwnedUpgradeLevel(candidateId);
+            if (!authority.IsReplicatedSnapshotComplete ||
+                !HasConfirmedUpgradeSelection(selected.Sequence, progression,
+                    upgradeAfter, candidateLevelBefore, candidateLevelAfter))
+            {
+                Abort(Issue100AcceptanceSteps.UpgradeSelect,
+                    $"本次升级超时或未应用：seq={selected.Sequence};" +
+                    $"ack={upgradeAfter.AcknowledgedEconomySequence};candidate={candidateId};" +
+                    $"level={candidateLevelBefore}->{candidateLevelAfter};" +
+                    $"pending={progression.PendingUpgradeChoices}->{upgradeAfter.PendingUpgradeChoices}。");
                 yield break;
             }
             evidence.Passed(Issue100AcceptanceSteps.UpgradeSelect, Tick(),
-                "upgradeStacks=" + CountOwnedUpgrades());
+                $"upgradeStacks={CountOwnedUpgrades()};seq={selected.Sequence};" +
+                $"candidate={candidateId};level={candidateLevelBefore}->{candidateLevelAfter}");
         }
+
+        private static bool HasConfirmedItemUse(uint requestedSequence,
+            NetcodeProgressionState before, NetcodeProgressionState after,
+            int quantityBefore, int quantityAfter) =>
+            requestedSequence > before.AcknowledgedEconomySequence &&
+            after.AcknowledgedEconomySequence >= requestedSequence &&
+            after.InventoryRevision > before.InventoryRevision &&
+            quantityBefore > 0 && quantityAfter == quantityBefore - 1;
+
+        private static bool HasConfirmedUpgradeSelection(uint requestedSequence,
+            NetcodeProgressionState before, NetcodeProgressionState after,
+            int levelsBefore, int levelsAfter) =>
+            requestedSequence > before.AcknowledgedEconomySequence &&
+            after.AcknowledgedEconomySequence >= requestedSequence &&
+            before.PendingUpgradeChoices > 0 &&
+            (levelsAfter > levelsBefore ||
+             after.PendingUpgradeChoices < before.PendingUpgradeChoices);
 
         private static int SelectApplicableUpgradeCandidate(
             NetcodeProgressionState progression)
@@ -924,7 +1029,8 @@ namespace FPS.Networking.Acceptance
             {
                 Abort(Issue100AcceptanceSteps.MissionExtraction,
                     $"录像客户端未进入撤离区：" +
-                    $"distance={extractionDistance:F1}。");
+                    $"distance={extractionDistance:F1};" +
+                    lastNavigationTrace);
                 yield break;
             }
             double extractionDeadline = Time.realtimeSinceStartupAsDouble +
@@ -1091,30 +1197,230 @@ namespace FPS.Networking.Acceptance
                 target, radius);
             double deadline = Time.realtimeSinceStartupAsDouble +
                 timeoutSeconds;
+            var route = new NavMeshPath();
+            Vector3[] corners = Array.Empty<Vector3>();
+            int waypointIndex = 0;
+            NavMeshPathStatus pathStatus = NavMeshPathStatus.PathInvalid;
+            double nextRepathAt = 0d;
+            double nextTraceAt = 0d;
+            double progressCheckedAt = Time.realtimeSinceStartupAsDouble;
+            Vector3 progressPosition = replica.PresentedPosition;
+            int stallCount = 0;
+            double recoveryUntil = 0d;
+            Vector3 recoveryDirection = Vector3.zero;
             while (Vector3.Distance(replica.PresentedPosition, target) >
                        radius &&
                    Time.realtimeSinceStartupAsDouble < deadline)
             {
+                double now = Time.realtimeSinceStartupAsDouble;
+                Vector3 current = replica.PresentedPosition;
                 if (Vector3.Distance(replica.PresentedPosition,
                         navigationTarget) <= 0.75f)
+                {
                     navigationTarget = ResolveReachableDestination(
                         target, radius);
-                Vector3 direction = ResolveNavigationDirection(
-                    navigationTarget);
-                float targetYaw = Mathf.Atan2(
-                    direction.x, direction.z) * Mathf.Rad2Deg;
+                    nextRepathAt = 0d;
+                }
+
+                if (now >= nextRepathAt)
+                {
+                    if (TryCalculateCompletePath(current,
+                            navigationTarget, route))
+                    {
+                        corners = route.corners;
+                        waypointIndex = 1;
+                    }
+                    else
+                    {
+                        corners = Array.Empty<Vector3>();
+                        waypointIndex = 0;
+                    }
+                    pathStatus = route.status;
+                    nextRepathAt = now + 2d;
+                }
+
+                waypointIndex = AdvanceWaypointIndex(current, corners,
+                    waypointIndex, 0.8f);
+                Vector3 waypoint = waypointIndex < corners.Length
+                    ? corners[waypointIndex]
+                    : navigationTarget;
+                Vector3 direction = waypoint - current;
+                direction.y = 0f;
+                if (direction.sqrMagnitude <= 0.01f)
+                    direction = navigationTarget - current;
+                direction.y = 0f;
+                direction = direction.sqrMagnitude > 0.01f
+                    ? direction.normalized
+                    : Vector3.forward;
+
+                if (now - progressCheckedAt >= 2.5d)
+                {
+                    float traveled = Vector3.Distance(current,
+                        progressPosition);
+                    if (traveled < 0.3f)
+                    {
+                        stallCount++;
+                        nextRepathAt = 0d;
+                        TraceNavigation("stall", current, target,
+                            navigationTarget, waypoint, route.status,
+                            corners.Length, waypointIndex, traveled,
+                            stallCount);
+                        if (stallCount >= 2 &&
+                            TryResolvePhysicalCombatRecovery(current, direction,
+                                stallCount, out recoveryDirection))
+                        {
+                            recoveryUntil = now + 0.7d;
+                            nextRepathAt = recoveryUntil;
+                            TraceNavigation("sidestep", current, target,
+                                navigationTarget,
+                                current + recoveryDirection * 2f,
+                                route.status, corners.Length,
+                                waypointIndex, traveled, stallCount);
+                        }
+                    }
+                    else
+                        stallCount = 0;
+                    progressPosition = current;
+                    progressCheckedAt = now;
+                }
+                if (now < recoveryUntil)
+                    direction = recoveryDirection;
+                // NavMesh can step over CityNew's low walls, but the formal
+                // player capsule cannot. Use the same physical route and
+                // bounded, normal Jump input as combat navigation.
+                bool jumpRequested = false;
+                if (!CanWalkCombatDirection(current, direction))
+                {
+                    jumpRequested = CanJumpCombatObstacle(current, direction);
+                    if (!jumpRequested)
+                    {
+                        nextRepathAt = 0d;
+                        if (TryResolvePhysicalCombatRecovery(current, direction,
+                                stallCount, out recoveryDirection))
+                        {
+                            direction = recoveryDirection;
+                            recoveryUntil = now + 0.7d;
+                            nextRepathAt = recoveryUntil;
+                        }
+                        else
+                            direction = Vector3.zero;
+                    }
+                }
+                if (now >= nextTraceAt)
+                {
+                    TraceNavigation("progress", current, target,
+                        navigationTarget, waypoint, pathStatus,
+                        corners.Length, waypointIndex, 0f, stallCount);
+                    nextTraceAt = now + 3d;
+                }
+                float targetYaw = direction.sqrMagnitude > 0.01f
+                    ? Mathf.Atan2(direction.x, direction.z) * Mathf.Rad2Deg
+                    : replica.PresentedAimYaw;
                 float yaw = Mathf.MoveTowardsAngle(
                     replica.PresentedAimYaw, targetYaw, 12f);
                 Vector2 localMovement = WorldDirectionToLocal(
                     direction, yaw);
                 SetInputFrame(localMovement, yaw, 0f,
-                    false, false, localMovement.y > 0.1f,
+                    false, jumpRequested, localMovement.y > 0.1f,
                     false, false);
                 yield return null;
             }
             SetInputFrame(Vector2.zero, replica.PresentedAimYaw, 0f,
                 false, false, false, false, false);
+            TraceNavigation("end", replica.PresentedPosition, target,
+                navigationTarget, navigationTarget, pathStatus,
+                corners.Length, waypointIndex, 0f, stallCount);
             yield return new WaitForSecondsRealtime(0.15f);
+        }
+
+        private static bool TryCalculateCompletePath(Vector3 current,
+            Vector3 target, NavMeshPath route)
+        {
+            return NavMesh.SamplePosition(current, out NavMeshHit from,
+                       2.5f, NavMesh.AllAreas) &&
+                   NavMesh.SamplePosition(target, out NavMeshHit to,
+                       2.5f, NavMesh.AllAreas) &&
+                   NavMesh.CalculatePath(from.position, to.position,
+                       NavMesh.AllAreas, route) &&
+                   route.status == NavMeshPathStatus.PathComplete &&
+                   route.corners.Length > 1;
+        }
+
+        private static int AdvanceWaypointIndex(Vector3 current,
+            Vector3[] corners, int next, float arrivalRadius)
+        {
+            if (corners == null || corners.Length == 0) return 0;
+            next = Mathf.Clamp(next, 1, corners.Length);
+            current.y = 0f;
+            while (next < corners.Length)
+            {
+                Vector3 corner = corners[next];
+                corner.y = 0f;
+                if (Vector3.Distance(current, corner) <= arrivalRadius)
+                {
+                    next++;
+                    continue;
+                }
+                Vector3 previous = corners[next - 1];
+                previous.y = 0f;
+                Vector3 segment = corner - previous;
+                float lengthSquared = segment.sqrMagnitude;
+                if (lengthSquared <= 0.001f) return next;
+                float along = Vector3.Dot(current - previous, segment) /
+                    lengthSquared;
+                float lateral = Vector3.Distance(current,
+                    previous + segment * along);
+                if (along < 1f || lateral > arrivalRadius * 1.5f)
+                    break;
+                next++;
+            }
+            return next;
+        }
+
+        private static bool TryResolveRecoveryDirection(Vector3 current,
+            Vector3 intended, int stallCount, out Vector3 direction)
+        {
+            direction = Vector3.zero;
+            if (!NavMesh.SamplePosition(current, out NavMeshHit from,
+                    2.5f, NavMesh.AllAreas))
+                return false;
+            Vector3 lateral = new Vector3(intended.z, 0f, -intended.x);
+            float firstSide = stallCount % 2 == 0 ? 1f : -1f;
+            for (int index = 0; index < 2; index++)
+            {
+                float side = index == 0 ? firstSide : -firstSide;
+                Vector3 candidate = current + lateral * (side * 2f);
+                if (!NavMesh.SamplePosition(candidate, out NavMeshHit to,
+                        0.75f, NavMesh.AllAreas) ||
+                    NavMesh.Raycast(from.position, to.position,
+                        out _, NavMesh.AllAreas))
+                    continue;
+                Vector3 delta = to.position - current;
+                delta.y = 0f;
+                if (delta.sqrMagnitude < 0.25f) continue;
+                direction = delta.normalized;
+                return true;
+            }
+            return false;
+        }
+
+        private void TraceNavigation(string reason, Vector3 current,
+            Vector3 target, Vector3 destination, Vector3 waypoint,
+            NavMeshPathStatus status, int cornerCount, int waypointIndex,
+            float traveled, int stallCount)
+        {
+            lastNavigationTrace =
+                $"navReason={reason};position={current};" +
+                $"target={target};destination={destination};" +
+                $"waypoint={waypoint};path={status};" +
+                $"corners={cornerCount};waypointIndex={waypointIndex};" +
+                $"traveled={traveled:F2};stalls={stallCount};" +
+                $"commandAck={replica.PresentedAcknowledgedSequence};" +
+                $"sentCommands={sentCommands}";
+            Debug.Log("[ISSUE100][NAV] " +
+                      $"step={evidence.CurrentStep};" +
+                      $"tick={Tick()};player={replica.PlayerId};" +
+                      lastNavigationTrace);
         }
 
         private Vector3 ResolveReachableDestination(
@@ -1260,12 +1566,13 @@ namespace FPS.Networking.Acceptance
                 return;
             }
             bool clearLine = HasClearCombatLine(target);
+            combatJumpRequested = false;
             SetInputFrame(approach
                     ? ResolveCombatMovement(
                         target, yaw, horizontal, clearLine)
                     : Vector2.zero,
                 yaw, pitch, fire,
-                false, approach &&
+                combatJumpRequested, approach &&
                        (horizontal > 9f || !clearLine), false, true);
             // Off-screen recording can make rendered frames much slower than
             // the network tick accumulator. Submit the requested shot now so
@@ -1289,40 +1596,186 @@ namespace FPS.Networking.Acceptance
             // close enough to exercise the cooperative revive loop instead
             // of drifting to opposite sides of CityNew.
             const float side = 0.55f;
+            Vector2 movement;
             if (replica.PresentedHealth <= 35f)
-                return new Vector2(side, -1f).normalized;
-            if (targetDistance > 9f)
-                return new Vector2(side * 0.25f, 0.97f).normalized;
-            if (targetDistance < 7f)
-                return new Vector2(side, -0.76f).normalized;
-            return new Vector2(side, 0.15f).normalized;
+                movement = new Vector2(side, -1f).normalized;
+            else if (targetDistance > 9f)
+                movement = new Vector2(side * 0.25f, 0.97f).normalized;
+            else if (targetDistance < 7f)
+                movement = new Vector2(side, -0.76f).normalized;
+            else
+                movement = new Vector2(side, 0.15f).normalized;
+            Vector3 preferred = Quaternion.Euler(0f, aimYaw, 0f) *
+                new Vector3(movement.x, 0f, movement.y);
+            if (CanWalkCombatDirection(replica.PresentedPosition, preferred))
+                return movement;
+            if (CanJumpCombatObstacle(replica.PresentedPosition, preferred))
+            {
+                combatJumpRequested = true;
+                return movement;
+            }
+            return WorldDirectionToLocal(ResolveNavigationDirection(target), aimYaw);
         }
 
         private Vector3 ResolveNavigationDirection(Vector3 target)
         {
             navigationPath ??= new NavMeshPath();
             Vector3 current = replica.PresentedPosition;
-            if (NavMesh.SamplePosition(current, out NavMeshHit from,
-                    2.5f, NavMesh.AllAreas) &&
-                NavMesh.SamplePosition(target, out NavMeshHit to,
-                    4f, NavMesh.AllAreas) &&
-                NavMesh.CalculatePath(from.position, to.position,
-                    NavMesh.AllAreas, navigationPath) &&
-                navigationPath.status != NavMeshPathStatus.PathInvalid &&
-                navigationPath.corners.Length > 1)
+            double now = Time.realtimeSinceStartupAsDouble;
+            if (combatProgressCheckedAt < 0d)
             {
-                Vector3 corner = navigationPath.corners[1];
-                Vector3 pathDelta = corner - current;
-                pathDelta.y = 0f;
-                if (pathDelta.sqrMagnitude > 0.01f)
-                    return pathDelta.normalized;
+                combatProgressPosition = current;
+                combatProgressCheckedAt = now;
             }
-            Vector3 direct = target - current;
-            direct.y = 0f;
-            return direct.sqrMagnitude > 0.01f
-                ? direct.normalized
-                : Vector3.forward;
+            if (now - combatProgressCheckedAt >= 1d)
+            {
+                float traveled = Vector3.Distance(current, combatProgressPosition);
+                combatStallCount = traveled < 0.15f ? combatStallCount + 1 : 0;
+                if (combatStallCount > 0) combatNextRepathAt = 0d;
+                combatProgressPosition = current;
+                combatProgressCheckedAt = now;
+                if (evidence != null)
+                    TraceNavigation("combat-progress", current, target, target,
+                        combatWaypointIndex < combatCorners.Length ? combatCorners[combatWaypointIndex] : target,
+                        navigationPath.status, combatCorners.Length, combatWaypointIndex,
+                        traveled, combatStallCount);
+            }
+            if (now >= combatNextRepathAt || (target - combatRouteTarget).sqrMagnitude > 1f)
+            {
+                combatCorners = TryCalculateCompletePath(current, target, navigationPath)
+                    ? navigationPath.corners : Array.Empty<Vector3>();
+                combatWaypointIndex = combatCorners.Length > 1 ? 1 : 0;
+                combatRouteTarget = target;
+                combatNextRepathAt = now + 1.5d;
+            }
+            combatWaypointIndex = AdvanceWaypointIndex(current, combatCorners,
+                combatWaypointIndex, 0.4f);
+            Vector3 waypoint = combatWaypointIndex < combatCorners.Length
+                ? combatCorners[combatWaypointIndex] : target;
+            Vector3 intended = waypoint - current;
+            intended.y = 0f;
+            if (intended.sqrMagnitude <= 0.01f) return Vector3.zero;
+            intended.Normalize();
+            if (now < combatRecoveryUntil && CanWalkCombatDirection(current, combatRecoveryDirection))
+                return combatRecoveryDirection;
+            // A Partial path is never consumed as a complete route. Its direct
+            // fallback and every real corner are subject to the same authority
+            // capsule sweep, including the low obstacles NavMesh can step over.
+            // Historical stalls request a replan above, but cannot veto a
+            // presently safe route forever while waiting for movement to clear them.
+            if (CanWalkCombatDirection(current, intended))
+                return intended;
+            if (CanJumpCombatObstacle(current, intended))
+            {
+                combatJumpRequested = true;
+                return intended;
+            }
+            if (TryResolvePhysicalCombatRecovery(current, intended, combatStallCount,
+                    out Vector3 recovery))
+            {
+                combatRecoveryDirection = recovery;
+                combatRecoveryUntil = now + 0.7d;
+                combatNextRepathAt = combatRecoveryUntil;
+                return recovery;
+            }
+            return Vector3.zero;
         }
+
+        private bool CanWalkCombatDirection(Vector3 current, Vector3 direction)
+        {
+            Vector3 requested = direction.normalized * CombatProbeDistance;
+            Vector3 resolved = combatMovementCollision.ResolveHorizontalDisplacement(current, requested);
+            return (resolved - requested).sqrMagnitude < 0.0004f;
+        }
+
+        private bool TryResolvePhysicalCombatRecovery(Vector3 current, Vector3 intended,
+            int stallCount, out Vector3 direction)
+        {
+            direction = Vector3.zero;
+            // Retain MoveTo's deterministic side preference, but do not accept
+            // its NavMesh-only recovery unless the actual player capsule fits.
+            if (TryResolveRecoveryDirection(current, intended, stallCount,
+                    out Vector3 lateral) && CanWalkCombatDirection(current, lateral))
+            {
+                direction = lateral;
+                return true;
+            }
+            if (!NavMesh.SamplePosition(current, out NavMeshHit from, 2.5f, NavMesh.AllAreas))
+                return false;
+            float firstSide = stallCount % 2 == 0 ? 1f : -1f;
+            for (int angleIndex = 0; angleIndex < 3; angleIndex++)
+            for (int sideIndex = 0; sideIndex < 2; sideIndex++)
+            {
+                float side = sideIndex == 0 ? firstSide : -firstSide;
+                Vector3 candidate = Quaternion.Euler(0f, side * (45f + angleIndex * 45f), 0f) * intended;
+                Vector3 destination = current + candidate * 1.25f;
+                if (!NavMesh.SamplePosition(destination, out NavMeshHit to, 0.4f, NavMesh.AllAreas) ||
+                    (to.position - destination).sqrMagnitude > 0.16f ||
+                    NavMesh.Raycast(from.position, to.position, out _, NavMesh.AllAreas) ||
+                    !CanWalkCombatDirection(current, candidate))
+                    continue;
+                direction = candidate.normalized;
+                return true;
+            }
+            return false;
+        }
+
+        private bool CanJumpCombatObstacle(Vector3 current, Vector3 direction)
+        {
+            if (!replica.PresentedGrounded || authority?.Rules == null ||
+                direction.sqrMagnitude < 0.01f || CanWalkCombatDirection(current, direction))
+                return false;
+            direction.Normalize();
+            // Jump is a normal input, never a step-up/teleport. Limit it to a
+            // low obstacle with clear full jump-apex headroom and a real landing
+            // at the server's existing ground level (vertical terrain is not
+            // invented by this acceptance driver).
+            const float lowObstacleClearance = 0.7f;
+            const float landingDistance = 1.6f;
+            Vector3 raised = current + Vector3.up * lowObstacleClearance;
+            Vector3 crossing = direction * landingDistance;
+            if ((combatMovementCollision.ResolveHorizontalDisplacement(raised, crossing) - crossing)
+                .sqrMagnitude > 0.0004f)
+                return false;
+            float apex = (float)(authority.Rules.JumpSpeed * authority.Rules.JumpSpeed /
+                (2d * authority.Rules.Gravity));
+            Vector3 bottom = current + Vector3.up *
+                (CoopPlayerMovementCollision.CapsuleRadius + CoopPlayerMovementCollision.CapsuleSkin);
+            Vector3 top = current + Vector3.up *
+                (CoopPlayerMovementCollision.CapsuleHeight - CoopPlayerMovementCollision.CapsuleRadius -
+                 CoopPlayerMovementCollision.CapsuleSkin);
+            if (HasWorldCapsuleHit(bottom, top, Vector3.up, apex + CoopPlayerMovementCollision.CapsuleSkin) ||
+                HasWorldCapsuleHit(bottom + crossing, top + crossing, Vector3.up,
+                    apex + CoopPlayerMovementCollision.CapsuleSkin) ||
+                HasWorldCapsuleHit(bottom + Vector3.up * apex, top + Vector3.up * apex,
+                    direction, landingDistance))
+                return false;
+            Vector3 landing = current + crossing;
+            int count = Physics.RaycastNonAlloc(landing + Vector3.up * 0.9f, Vector3.down,
+                combatLineHits, 1.4f, Physics.DefaultRaycastLayers, QueryTriggerInteraction.Ignore);
+            RaycastHit? ground = null;
+            for (int index = 0; index < count; index++)
+            {
+                RaycastHit hit = combatLineHits[index];
+                if (!IsCombatWorldCollider(hit.collider)) continue;
+                if (ground == null || hit.distance < ground.Value.distance) ground = hit;
+            }
+            return ground != null && ground.Value.normal.y >= 0.7f &&
+                Mathf.Abs(ground.Value.point.y - current.y) <= 0.25f;
+        }
+
+        private bool HasWorldCapsuleHit(Vector3 bottom, Vector3 top, Vector3 direction, float distance)
+        {
+            int count = Physics.CapsuleCastNonAlloc(bottom, top, CoopPlayerMovementCollision.CapsuleRadius,
+                direction, combatLineHits, distance, Physics.DefaultRaycastLayers, QueryTriggerInteraction.Ignore);
+            for (int index = 0; index < count; index++)
+                if (IsCombatWorldCollider(combatLineHits[index].collider)) return true;
+            return false;
+        }
+
+        private static bool IsCombatWorldCollider(Collider value) => value != null &&
+            value.GetComponentInParent<NetworkPlayerReplica>() == null &&
+            value.GetComponentInParent<CharacterController>() == null;
 
         private static Vector2 WorldDirectionToLocal(
             Vector3 worldDirection,
@@ -1416,10 +1869,10 @@ namespace FPS.Networking.Acceptance
 
         private static Vector3 AimPoint(NetcodeTargetState target)
         {
-            // Aim into the upper half of the authoritative body sphere. The
-            // root position is near ground level in CityNew; aiming exactly
-            // at that root makes the floor look like an obstruction even
-            // though the enemy is in front of the player.
+            if (AuthoritativeHitGeometry.HasBox(NetcodeConversions.ToDomain(target.BodyHalfExtents)))
+                return target.Position + Quaternion.Euler(0f, target.YawDegrees, 0f) * target.BodyOffset;
+            // Legacy diagnostic targets have no calibration; only those keep
+            // their original sphere aiming rule.
             return target.Position + Vector3.up * Mathf.Min(
                 Mathf.Max(0.25f, target.Radius * 0.45f),
                 target.Radius * 0.8f);
@@ -1444,6 +1897,42 @@ namespace FPS.Networking.Acceptance
             IsAimAligned(target, toleranceDegrees) &&
             HasClearCombatLine(target);
 
+        private void TraceCombatDecision(Vector3 target, bool fireDue,
+            bool eligible, bool fireRequested)
+        {
+            int generation = authority.WorldState.RunGeneration;
+            if (combatDecisionRunGeneration != generation)
+            {
+                combatDecisionRunGeneration = generation;
+                combatDecisionSampleCount = 0;
+                nextCombatDecisionAt = 0d;
+            }
+            double now = Time.realtimeSinceStartupAsDouble;
+            if (combatDecisionSampleCount >= 128 || now < nextCombatDecisionAt)
+                return;
+            combatDecisionSampleCount++;
+            nextCombatDecisionAt = now + 1d;
+            Vector3 origin = replica.PresentedPosition + Vector3.up * PredictedShotOriginHeight;
+            Vector3 delta = target - origin;
+            float horizontal = new Vector2(delta.x, delta.z).magnitude;
+            float targetYaw = Mathf.Atan2(delta.x, delta.z) * Mathf.Rad2Deg;
+            float targetPitch = -Mathf.Atan2(delta.y, horizontal) * Mathf.Rad2Deg;
+            NetcodePlayerCommand lastWire = input.LastSubmittedCommand;
+            // fireRequested is this decision, not a claim that RPC delivery
+            // succeeded. The separately identified last actual wire command
+            // lets process evidence distinguish aiming from input delivery.
+            Debug.Log("[ISSUE100][COMBAT] " +
+                $"step={evidence.CurrentStep};tick={Tick()};run={generation};player={replica.PlayerId};" +
+                $"position={replica.PresentedPosition};targetId={lockedCombatTargetId};target={target};" +
+                $"yaw={replica.PresentedAimYaw:F3};pitch={replica.PresentedAimPitch:F3};" +
+                $"targetYaw={targetYaw:F3};targetPitch={targetPitch:F3};" +
+                $"yawError={Mathf.Abs(Mathf.DeltaAngle(replica.PresentedAimYaw, targetYaw)):F3};" +
+                $"pitchError={Mathf.Abs(replica.PresentedAimPitch - targetPitch):F3};" +
+                $"clear={HasClearCombatLine(target)};eligible={eligible};fireDue={fireDue};fireRequested={fireRequested};" +
+                $"inputTick={input.ClientTick};wireHas={input.HasSubmittedCommand};" +
+                $"wireTick={lastWire.ClientTick};wireSeq={lastWire.Sequence};wireFire={lastWire.Fire}");
+        }
+
         private bool HasClearCombatLine(Vector3 target)
         {
             Vector3 origin = replica.PresentedPosition + Vector3.up *
@@ -1461,9 +1950,7 @@ namespace FPS.Networking.Acceptance
             for (int index = 0; index < count; index++)
             {
                 Collider collider = combatLineHits[index].collider;
-                if (collider == null ||
-                    collider.GetComponentInParent<NetworkPlayerReplica>() !=
-                    null)
+                if (!IsCombatWorldCollider(collider))
                     continue;
                 return false;
             }
@@ -1484,6 +1971,18 @@ namespace FPS.Networking.Acceptance
             return count;
         }
 
+        private int CountOwnedItemQuantity(string itemId)
+        {
+            int quantity = 0;
+            for (int index = 0; index < authority.ReplicatedInventorySlotCount; index++)
+            {
+                NetcodeInventorySlotState slot = authority.GetReplicatedInventorySlot(index);
+                if (slot.PlayerId == replica.PlayerId && slot.ItemId.ToString() == itemId)
+                    quantity += slot.Quantity;
+            }
+            return quantity;
+        }
+
         private NetcodeInventorySlotState FindOwnedItem()
         {
             for (int index = 0;
@@ -1491,7 +1990,8 @@ namespace FPS.Networking.Acceptance
             {
                 NetcodeInventorySlotState slot =
                     authority.GetReplicatedInventorySlot(index);
-                if (slot.PlayerId == replica.PlayerId && slot.Quantity > 0)
+                if (slot.PlayerId == replica.PlayerId && slot.Quantity > 0 &&
+                    CanUseConsumable(slot.ItemId.ToString()))
                     return slot;
             }
             return default;
@@ -1507,6 +2007,26 @@ namespace FPS.Networking.Acceptance
                     replica.PlayerId) count++;
             }
             return count;
+        }
+
+        private bool CanUseConsumable(string itemId) => itemId switch
+        {
+            "medical_kit" or "medkit" => replica.PresentedHealth < replica.PresentedMaximumHealth,
+            "armor_pack" or "armor_plate" => replica.PresentedArmor < replica.PresentedMaximumArmor,
+            "rifle_ammo" or "handgun_ammo" => true,
+            _ => false
+        };
+
+        private int CountOwnedUpgradeLevel(string upgradeId)
+        {
+            int levels = 0;
+            for (int index = 0; index < authority.ReplicatedUpgradeCount; index++)
+            {
+                NetcodeUpgradeStackState stack = authority.GetReplicatedUpgrade(index);
+                if (stack.PlayerId == replica.PlayerId && stack.UpgradeId.ToString() == upgradeId)
+                    levels += stack.Level;
+            }
+            return levels;
         }
 
         private NetcodeProgressionState Progression()

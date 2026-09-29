@@ -51,6 +51,8 @@ namespace FPS.Tests.PlayMode.Issue65
             Assert.That(bootstrap.IsListening, Is.False);
             Assert.That(bootstrap.NetworkManager.IsServer, Is.False);
             Assert.That(bootstrap.NetworkManager.IsClient, Is.False);
+            Assert.That(bootstrap.NetworkManager.NetworkConfig.ProtocolVersion,
+                Is.EqualTo(CoopWireProtocol.NetworkConfigVersion));
         }
 
         [UnityTest]
@@ -111,7 +113,7 @@ namespace FPS.Tests.PlayMode.Issue65
         }
 
         [Test]
-        public void InputDriver_WaitsWhenClientTickReachesServerFutureBudget()
+        public void InputDriverDoesNotGenerateTwoCommandsForSameClockTick()
         {
             NetworkCoopSessionAuthority authority = CreateAuthority();
             authority.RegisterPlayerClient(10, 1);
@@ -130,10 +132,10 @@ namespace FPS.Tests.PlayMode.Issue65
             clientTick.SetValue(driver, 1L);
 
             Assert.That(driver.CanSubmitCurrentFrame, Is.False,
-                "客户端不得发送超过服务端允许未来窗口的输入 Tick。");
+                "客户端不得在同一时钟 Tick 重复生成输入。");
             authority.ServerStep();
             Assert.That(driver.CanSubmitCurrentFrame, Is.True,
-                "服务端 Tick 推进后应重新开放一个输入发送配额。");
+                "新的服务端时钟观测应推进输入时间原点。");
         }
 
         [UnityTest]

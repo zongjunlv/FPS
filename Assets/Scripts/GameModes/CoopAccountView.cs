@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using FPS.Core.GameModes;
@@ -6,6 +7,7 @@ using FPS.Networking.Session;
 using TMPro;
 using UnityEngine;
 using UnityEngine.EventSystems;
+using UnityEngine.InputSystem;
 
 [DisallowMultipleComponent]
 public sealed class CoopAccountView : MonoBehaviour
@@ -17,7 +19,7 @@ public sealed class CoopAccountView : MonoBehaviour
     private static readonly Color RaisedPanel =
         TacticalUiTheme.SurfaceRaised;
     private static readonly Color Field =
-        new(0.012f, 0.03f, 0.044f, 1f);
+        new(0.075f, 0.09f, 0.10f, 1f);
     private static readonly Color Cyan =
         TacticalUiTheme.Cyan;
     private static readonly Color TextPrimary =
@@ -40,6 +42,8 @@ public sealed class CoopAccountView : MonoBehaviour
     private GameObject lobbyPanel;
     private GameObject lobbyEntryPanel;
     private GameObject lobbyRoomPanel;
+    private GameObject lobbyEntryActionsPanel;
+    private GameObject lobbyRosterPanel;
     private TMP_Text authModeTitle;
     private TMP_Text authModeDescription;
     private TMP_Text loginTabLabel;
@@ -124,6 +128,18 @@ public sealed class CoopAccountView : MonoBehaviour
         return view;
     }
 
+    public bool SignOutToAuthentication()
+    {
+        if (!authenticationGateOnly || Controller == null ||
+            !Controller.IsSignedIn || Controller.IsBusy)
+            return false;
+        authenticationCompletionRaised = false;
+        gameObject.SetActive(true);
+        Logout();
+        StartCoroutine(FocusAuthenticationAfterFrame());
+        return !Controller.IsSignedIn;
+    }
+
     private void Build(GameModeFlowController configuredFlow,
         ICoopAuthenticationGateway gateway, bool allowDevelopmentAnonymous,
         CoopSessionController configuredSession,
@@ -144,7 +160,14 @@ public sealed class CoopAccountView : MonoBehaviour
         font = ModeUiFactory.CreateChineseFont(out ownsFont);
 
         RectTransform canvas = (RectTransform)transform;
-        ModeUiFactory.CreateImage("深空背景", canvas, Background, true);
+        UnityEngine.UI.Image backdrop = ModeUiFactory.CreateImage(
+            "整备室背景", canvas, Background, true);
+        TacticalUiTheme.ApplyMenuArt(backdrop, "lobby-backdrop",
+            new Color(0.74f, 0.81f, 0.85f, 1f), false);
+        UnityEngine.UI.Image dimmer = ModeUiFactory.CreateImage(
+            "背景调暗", canvas,
+            new Color(0.008f, 0.017f, 0.024f, 0.32f), true);
+        dimmer.raycastTarget = false;
         BuildBackdrop(canvas);
         BuildNavigation(canvas);
         BuildAuthenticationPanel(canvas);
@@ -174,50 +197,29 @@ public sealed class CoopAccountView : MonoBehaviour
 
     private void BuildBackdrop(RectTransform canvas)
     {
-        UnityEngine.UI.Image leftGlow = ModeUiFactory.CreateImage(
-            "左侧氛围色块", canvas,
-            new Color(0.025f, 0.14f, 0.16f, 0.36f), false);
-        ModeUiFactory.SetRect(leftGlow.rectTransform, Vector2.zero,
-            new Vector2(0.43f, 1f), new Vector2(0f, 0.5f), Vector2.zero,
+        UnityEngine.UI.Image leftField = ModeUiFactory.CreateImage(
+            "哑光侧背景", canvas,
+            new Color(0.055f, 0.075f, 0.088f, 0.72f), false);
+        ModeUiFactory.SetRect(leftField.rectTransform, Vector2.zero,
+            new Vector2(0.54f, 1f), new Vector2(0f, 0.5f), Vector2.zero,
             Vector2.zero);
 
-        for (int index = 0; index < 8; index++)
-        {
-            RectTransform line = ModeUiFactory.CreateRect(
-                $"战术网格竖线 {index + 1}", canvas);
-            ModeUiFactory.SetRect(line,
-                new Vector2(index / 8f, 0f),
-                new Vector2(index / 8f, 1f),
-                new Vector2(0.5f, 0.5f),
-                new Vector2(1f, 0f), Vector2.zero);
-            UnityEngine.UI.Image image =
-                line.gameObject.AddComponent<UnityEngine.UI.Image>();
-            image.color = new Color(0.18f, 0.52f, 0.55f, 0.055f);
-            image.raycastTarget = false;
-        }
-
-        for (int index = 0; index < 5; index++)
-        {
-            RectTransform line = ModeUiFactory.CreateRect(
-                $"战术网格横线 {index + 1}", canvas);
-            ModeUiFactory.SetRect(line,
-                new Vector2(0f, index / 5f),
-                new Vector2(1f, index / 5f),
-                new Vector2(0.5f, 0.5f),
-                new Vector2(0f, 1f), Vector2.zero);
-            UnityEngine.UI.Image image =
-                line.gameObject.AddComponent<UnityEngine.UI.Image>();
-            image.color = new Color(0.18f, 0.52f, 0.55f, 0.045f);
-            image.raycastTarget = false;
-        }
+        RectTransform divider = ModeUiFactory.CreateRect("背景分界", canvas);
+        ModeUiFactory.SetRect(divider, new Vector2(0.54f, 0f),
+            new Vector2(0.54f, 1f), new Vector2(0.5f, 0.5f),
+            new Vector2(1f, 0f), Vector2.zero);
+        UnityEngine.UI.Image dividerImage =
+            divider.gameObject.AddComponent<UnityEngine.UI.Image>();
+        dividerImage.color = new Color(0.38f, 0.48f, 0.5f, 0.18f);
+        dividerImage.raycastTarget = false;
 
         RectTransform topAccent = ModeUiFactory.CreateRect("顶部高亮线", canvas);
         ModeUiFactory.SetRect(topAccent, new Vector2(0f, 1f),
             new Vector2(1f, 1f), new Vector2(0.5f, 1f),
-            new Vector2(0f, 3f), Vector2.zero);
+            new Vector2(0f, 2f), Vector2.zero);
         UnityEngine.UI.Image accent =
             topAccent.gameObject.AddComponent<UnityEngine.UI.Image>();
-        accent.color = Cyan;
+        accent.color = new Color(Cyan.r, Cyan.g, Cyan.b, 0.72f);
         accent.raycastTarget = false;
     }
 
@@ -247,39 +249,32 @@ public sealed class CoopAccountView : MonoBehaviour
     private void BuildAuthenticationHero(RectTransform root)
     {
         RectTransform hero = CreatePanel(root, "合作行动介绍",
-            new Vector2(690f, 800f), new Vector2(-470f, -5f),
-            new Color(0.018f, 0.07f, 0.083f, 0.78f));
-        TacticalUiTheme.AddSurfaceChrome(hero, Cyan);
+            new Vector2(820f, 800f), new Vector2(470f, -5f),
+            new Color(0f, 0f, 0f, 0f));
 
-        TacticalUiTheme.CreateIcon("合作行动水印", hero, "multiplayer",
-            new Color(Cyan.r, Cyan.g, Cyan.b, 0.065f),
-            new Vector2(1f, 0f), new Vector2(1f, 0f),
-            new Vector2(1f, 0f), new Vector2(310f, 310f),
-            new Vector2(-34f, 28f));
-
-        TMP_Text badge = CreateText(hero, "模式标签", "统一作战账号 · 安全会话",
+        TMP_Text badge = CreateText(hero, "模式标签", "FPS / TACTICAL OPERATIONS",
             17f, TextAlignmentOptions.MidlineLeft, Cyan);
         ModeUiFactory.SetRect(badge.rectTransform, new Vector2(0f, 1f),
             new Vector2(0f, 1f), new Vector2(0f, 1f),
             new Vector2(580f, 36f), new Vector2(54f, -58f));
 
         TMP_Text title = CreateText(hero, "模式标题",
-            "FPS 生存行动\n作战终端", 54f, TextAlignmentOptions.TopLeft,
+            "整备就绪。\n进入战区。", 52f, TextAlignmentOptions.TopLeft,
             TextPrimary);
         title.fontStyle = FontStyles.Bold;
         title.lineSpacing = -10f;
         ModeUiFactory.SetRect(title.rectTransform, new Vector2(0f, 1f),
             new Vector2(0f, 1f), new Vector2(0f, 1f),
-            new Vector2(580f, 150f), new Vector2(54f, -118f));
+            new Vector2(680f, 170f), new Vector2(54f, -118f));
 
         TMP_Text description = CreateText(hero, "模式说明",
-            "登录后进入模式选择大厅，可选择新手教学、\n单人战斗或联机 PVE，并保留同一账号会话。",
+            "一个账号，三种作战方式。完成训练、挑战单人战局，\n或与队友组成双人小队。",
             20f, TextAlignmentOptions.TopLeft, TextSecondary);
         description.enableWordWrapping = true;
         description.lineSpacing = 5f;
         ModeUiFactory.SetRect(description.rectTransform, new Vector2(0f, 1f),
             new Vector2(0f, 1f), new Vector2(0f, 1f),
-            new Vector2(580f, 90f), new Vector2(54f, -286f));
+            new Vector2(680f, 90f), new Vector2(54f, -296f));
 
         CreateFeature(hero, "01", "新手教学",
             "学习移动、射击、换弹与不同部位伤害。", -410f);
@@ -289,12 +284,12 @@ public sealed class CoopAccountView : MonoBehaviour
             "浏览公开房间或创建小队，与队友协同通关。", -630f);
 
         TMP_Text footer = CreateText(hero, "安全说明",
-            "认证凭据不会写入项目存档", 16f,
+            "01 / 身份验证     02 / 选择行动     03 / 进入战区", 16f,
             TextAlignmentOptions.MidlineLeft,
             new Color(0.46f, 0.62f, 0.65f));
         ModeUiFactory.SetRect(footer.rectTransform, new Vector2(0f, 0f),
             new Vector2(0f, 0f), new Vector2(0f, 0f),
-            new Vector2(560f, 36f), new Vector2(54f, 36f));
+            new Vector2(720f, 36f), new Vector2(54f, 36f));
     }
 
     private void CreateFeature(Transform parent, string index, string title,
@@ -332,7 +327,9 @@ public sealed class CoopAccountView : MonoBehaviour
     private void BuildAuthenticationCard(RectTransform root)
     {
         RectTransform card = CreatePanel(root, "账号操作卡片",
-            new Vector2(700f, 800f), new Vector2(430f, -5f), Panel);
+            new Vector2(700f, 800f), new Vector2(-430f, -5f), Panel);
+        TacticalUiTheme.ApplyMenuArt(card.GetComponent<UnityEngine.UI.Image>(),
+            "nescia-panel-wide", Color.white);
         TacticalUiTheme.AddSurfaceChrome(card, Cyan);
 
         TacticalUiTheme.CreateIcon("账号安全图标", card, "locked", Cyan,
@@ -364,7 +361,7 @@ public sealed class CoopAccountView : MonoBehaviour
 
         RectTransform tabs = CreatePanel(card, "登录注册切换",
             new Vector2(584f, 58f), new Vector2(0f, 203f),
-            new Color(0.012f, 0.03f, 0.044f, 1f));
+            new Color(0.075f, 0.09f, 0.10f, 1f));
         LoginTabButton = CreateButton(tabs, "登录页签", "登录",
             new Vector2(0f, 0.5f), new Vector2(0.5f, 0.5f),
             new Vector2(0f, 0.5f), new Vector2(-3f, 50f),
@@ -396,6 +393,9 @@ public sealed class CoopAccountView : MonoBehaviour
             out UnityEngine.UI.Button confirmationVisibility,
             out _);
         ConfirmationVisibilityButton = confirmationVisibility;
+        UsernameInput.onValueChanged.AddListener(_ => RefreshCredentialSubmission());
+        PasswordInput.onValueChanged.AddListener(_ => RefreshCredentialSubmission());
+        ConfirmationInput.onValueChanged.AddListener(_ => RefreshCredentialSubmission());
 
         LoginButton = CreateButton(card, "登录", "登录并进入模式大厅",
             new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f),
@@ -415,7 +415,7 @@ public sealed class CoopAccountView : MonoBehaviour
 
         RectTransform status = CreatePanel(card, "账号状态",
             new Vector2(584f, 72f), new Vector2(0f, -341f),
-            new Color(0.025f, 0.12f, 0.14f, 0.88f));
+            new Color(0.10f, 0.14f, 0.15f, 0.96f));
         statusBackground = status.GetComponent<UnityEngine.UI.Image>();
         statusText = CreateText(status, "状态文字",
             Controller.StatusMessage, 16f, TextAlignmentOptions.Center,
@@ -430,35 +430,31 @@ public sealed class CoopAccountView : MonoBehaviour
         ModeUiFactory.Stretch(root, 78f, 88f);
         lobbyPanel = root.gameObject;
 
-        TMP_Text kicker = CreateText(root, "大厅标签", "双人合作",
-            16f, TextAlignmentOptions.MidlineLeft, Cyan);
-        ModeUiFactory.SetRect(kicker.rectTransform, new Vector2(0f, 1f),
-            new Vector2(0f, 1f), new Vector2(0f, 1f),
-            new Vector2(600f, 28f), new Vector2(0f, -20f));
-
         TMP_Text title = CreateText(root, "大厅标题", "行动整备大厅",
             38f, TextAlignmentOptions.MidlineLeft, TextPrimary);
         title.fontStyle = FontStyles.Bold;
         ModeUiFactory.SetRect(title.rectTransform, new Vector2(0f, 1f),
             new Vector2(0f, 1f), new Vector2(0f, 1f),
-            new Vector2(620f, 60f), new Vector2(0f, -52f));
+            new Vector2(620f, 60f), new Vector2(0f, -10f));
 
         lobbyAccountText = CreateText(root, "当前账号", string.Empty,
             16f, TextAlignmentOptions.MidlineRight, TextSecondary);
         ModeUiFactory.SetRect(lobbyAccountText.rectTransform,
             new Vector2(1f, 1f), new Vector2(1f, 1f),
             new Vector2(1f, 1f), new Vector2(520f, 30f),
-            new Vector2(0f, -31f));
+            new Vector2(0f, -3f));
         lobbyConnectionText = CreateText(root, "连接状态", string.Empty,
             18f, TextAlignmentOptions.MidlineRight, Cyan);
         lobbyConnectionText.fontStyle = FontStyles.Bold;
         ModeUiFactory.SetRect(lobbyConnectionText.rectTransform,
             new Vector2(1f, 1f), new Vector2(1f, 1f),
             new Vector2(1f, 1f), new Vector2(520f, 36f),
-            new Vector2(0f, -66f));
+            new Vector2(0f, -38f));
 
         RectTransform summary = CreatePanel(root, "房间摘要",
-            new Vector2(1764f, 72f), new Vector2(0f, 318f), RaisedPanel);
+            new Vector2(1764f, 72f), new Vector2(0f, 312f), RaisedPanel);
+        TacticalUiTheme.ApplyMenuArt(summary.GetComponent<UnityEngine.UI.Image>(),
+            "nescia-panel-strip", Color.white);
         TacticalUiTheme.AddSurfaceChrome(summary, Cyan, false);
         TacticalUiTheme.CreateIcon("摘要网络图标", summary, "signal3",
             TacticalUiTheme.Green, new Vector2(0f, 0.5f),
@@ -470,19 +466,24 @@ public sealed class CoopAccountView : MonoBehaviour
         ModeUiFactory.Stretch(lobbySummaryText.rectTransform, 66f, 8f);
 
         RectTransform left = CreatePanel(root, "房间操作区域",
-            new Vector2(690f, 620f), new Vector2(-537f, -40f), Panel);
+            new Vector2(1080f, 620f), new Vector2(-340f, -40f), Panel);
+        TacticalUiTheme.ApplyMenuArt(left.GetComponent<UnityEngine.UI.Image>(),
+            "nescia-panel-wide", Color.white);
         TacticalUiTheme.AddSurfaceChrome(left, Cyan);
         BuildLobbyEntryPanel(left);
         BuildLobbyRoomPanel(left);
 
         RectTransform right = CreatePanel(root, "队伍与角色区域",
-            new Vector2(1030f, 620f), new Vector2(347f, -40f), Panel);
+            new Vector2(650f, 620f), new Vector2(555f, -40f), Panel);
+        TacticalUiTheme.ApplyMenuArt(right.GetComponent<UnityEngine.UI.Image>(),
+            "nescia-panel-wide", Color.white);
         TacticalUiTheme.AddSurfaceChrome(right, TacticalUiTheme.Blue);
+        BuildLobbyEntryActions(right);
         BuildRosterPanel(right);
 
         RectTransform status = CreatePanel(root, "大厅状态",
             new Vector2(1764f, 58f), new Vector2(0f, -388f),
-            new Color(0.025f, 0.12f, 0.14f, 0.9f));
+            new Color(0.10f, 0.14f, 0.15f, 0.96f));
         lobbyStatusText = CreateText(status, "大厅状态文字", string.Empty,
             16f, TextAlignmentOptions.Center, Cyan);
         lobbyStatusText.enableWordWrapping = true;
@@ -495,12 +496,12 @@ public sealed class CoopAccountView : MonoBehaviour
         ModeUiFactory.Stretch(root);
         lobbyEntryPanel = root.gameObject;
 
-        TMP_Text title = CreateText(root, "进入房间标题", "公开房间大厅",
-            28f, TextAlignmentOptions.MidlineLeft, TextPrimary);
+        TMP_Text title = CreateText(root, "进入房间标题", "公开房间",
+            30f, TextAlignmentOptions.MidlineLeft, TextPrimary);
         title.fontStyle = FontStyles.Bold;
         ModeUiFactory.SetRect(title.rectTransform, new Vector2(0f, 1f),
             new Vector2(0f, 1f), new Vector2(0f, 1f),
-            new Vector2(360f, 45f), new Vector2(46f, -42f));
+            new Vector2(700f, 45f), new Vector2(46f, -42f));
 
         TacticalUiTheme.CreateIcon("大厅图标", root, "multiplayer", Cyan,
             new Vector2(0f, 1f), new Vector2(0f, 1f),
@@ -514,44 +515,88 @@ public sealed class CoopAccountView : MonoBehaviour
             RefreshPublicRooms, 16f);
 
         TMP_Text description = CreateText(root, "进入房间说明",
-            "选择仍有空位的公开小队，或创建自己的双人房间。",
+            "浏览进行中的整备小队，选择有空位的房间加入。",
             17f, TextAlignmentOptions.TopLeft, TextSecondary);
         ModeUiFactory.SetRect(description.rectTransform,
             new Vector2(0f, 1f), new Vector2(0f, 1f),
-            new Vector2(0f, 1f), new Vector2(580f, 50f),
+            new Vector2(0f, 1f), new Vector2(900f, 50f),
             new Vector2(46f, -95f));
 
         BuildPublicRoomScrollView(root);
 
+        TMP_Text listHint = CreateText(root, "房间列表提示",
+            "选择一个有空位的房间，再在右侧确认加入。", 16f,
+            TextAlignmentOptions.MidlineLeft, TextSecondary);
+        ModeUiFactory.SetRect(listHint.rectTransform,
+            new Vector2(0f, 0f), new Vector2(0f, 0f),
+            new Vector2(0f, 0f), new Vector2(920f, 36f),
+            new Vector2(46f, 36f));
+    }
+
+    private void BuildLobbyEntryActions(RectTransform parent)
+    {
+        RectTransform root = ModeUiFactory.CreateRect("房间操作", parent);
+        ModeUiFactory.Stretch(root);
+        lobbyEntryActionsPanel = root.gameObject;
+
+        TMP_Text kicker = CreateText(root, "操作标签", "小队 / 部署",
+            16f, TextAlignmentOptions.MidlineLeft, Cyan);
+        ModeUiFactory.SetRect(kicker.rectTransform,
+            new Vector2(0f, 1f), new Vector2(0f, 1f),
+            new Vector2(0f, 1f), new Vector2(540f, 30f),
+            new Vector2(42f, -34f));
+        TMP_Text title = CreateText(root, "操作标题", "选择加入方式",
+            26f, TextAlignmentOptions.MidlineLeft, TextPrimary);
+        title.fontStyle = FontStyles.Bold;
+        ModeUiFactory.SetRect(title.rectTransform,
+            new Vector2(0f, 1f), new Vector2(0f, 1f),
+            new Vector2(0f, 1f), new Vector2(560f, 44f),
+            new Vector2(42f, -70f));
+
+        TMP_Text publicLabel = CreateText(root, "公开房间操作标签",
+            "公开匹配", 16f, TextAlignmentOptions.MidlineLeft,
+            TextSecondary);
+        ModeUiFactory.SetRect(publicLabel.rectTransform,
+            new Vector2(0f, 1f), new Vector2(0f, 1f),
+            new Vector2(0f, 1f), new Vector2(560f, 28f),
+            new Vector2(42f, -154f));
+
         CreateRoomButton = CreateButton(root, "创建房间", "创建公开房间",
-            new Vector2(0f, 0.5f), new Vector2(0f, 0.5f),
-            new Vector2(0f, 0.5f), new Vector2(280f, 56f),
-            new Vector2(46f, -100f), ButtonTone.Primary, CreateRoom, 18f);
+            new Vector2(0.5f, 1f), new Vector2(0.5f, 1f),
+            new Vector2(0.5f, 1f), new Vector2(566f, 58f),
+            new Vector2(0f, -194f), ButtonTone.Primary, CreateRoom, 18f);
         JoinSelectedRoomButton = CreateButton(root, "加入所选房间",
-            "加入所选房间", new Vector2(1f, 0.5f),
-            new Vector2(1f, 0.5f), new Vector2(1f, 0.5f),
-            new Vector2(280f, 56f), new Vector2(-46f, -100f),
+            "加入所选房间", new Vector2(0.5f, 1f),
+            new Vector2(0.5f, 1f), new Vector2(0.5f, 1f),
+            new Vector2(566f, 58f), new Vector2(0f, -264f),
             ButtonTone.Secondary, JoinSelectedPublicRoom, 18f);
 
+        TMP_Text inviteLabel = CreateText(root, "邀请码操作标签",
+            "好友邀请", 16f, TextAlignmentOptions.MidlineLeft,
+            TextSecondary);
+        ModeUiFactory.SetRect(inviteLabel.rectTransform,
+            new Vector2(0f, 1f), new Vector2(0f, 1f),
+            new Vector2(0f, 1f), new Vector2(560f, 28f),
+            new Vector2(42f, -358f));
         JoinCodeInput = CreateInput(root, "Room Join Code", "邀请代码（可选）",
-            "输入好友分享的代码", new Vector2(-92f, -215f),
+            "输入好友分享的代码", new Vector2(0f, -140f),
             TMP_InputField.ContentType.Alphanumeric, 12, false,
             out _, out _);
         RectTransform codeRoot = JoinCodeInput.transform.parent as RectTransform;
-        if (codeRoot != null) codeRoot.sizeDelta = new Vector2(400f, 94f);
+        if (codeRoot != null) codeRoot.sizeDelta = new Vector2(566f, 94f);
         JoinCodeInput.onValueChanged.AddListener(_ => Refresh());
 
         JoinRoomButton = CreateButton(root, "加入房间", "使用代码进入",
             new Vector2(1f, 0f), new Vector2(1f, 0f),
-            new Vector2(1f, 0f), new Vector2(170f, 54f),
-            new Vector2(-46f, 39f), ButtonTone.Ghost, JoinRoom, 16f);
+            new Vector2(1f, 0f), new Vector2(190f, 50f),
+            new Vector2(-42f, 34f), ButtonTone.Ghost, JoinRoom, 16f);
 
         TMP_Text rule = CreateText(root, "房间规则",
-            "2 名玩家 · 角色选择 · 全员准备 · 房主开始",
+            "最多 2 人  /  房主发起战局",
             15f, TextAlignmentOptions.MidlineLeft, TextSecondary);
         ModeUiFactory.SetRect(rule.rectTransform, new Vector2(0f, 0f),
             new Vector2(0f, 0f), new Vector2(0f, 0f),
-            new Vector2(390f, 54f), new Vector2(46f, 39f));
+            new Vector2(340f, 54f), new Vector2(42f, 34f));
     }
 
     private void BuildPublicRoomScrollView(RectTransform parent)
@@ -563,10 +608,11 @@ public sealed class CoopAccountView : MonoBehaviour
         RectTransform scrollRect = (RectTransform)scrollObject.transform;
         ModeUiFactory.SetRect(scrollRect, new Vector2(0.5f, 0.5f),
             new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f),
-            new Vector2(598f, 230f), new Vector2(0f, 60f));
+            new Vector2(984f, 370f), new Vector2(0f, -45f));
         UnityEngine.UI.Image background =
             scrollObject.GetComponent<UnityEngine.UI.Image>();
-        background.color = Field;
+        TacticalUiTheme.ApplyMenuArt(background,
+            "nescia-panel-wide", Color.white);
         background.raycastTarget = true;
 
         RectTransform viewport = ModeUiFactory.CreateRect("Viewport", scrollRect);
@@ -624,7 +670,7 @@ public sealed class CoopAccountView : MonoBehaviour
             16f, TextAlignmentOptions.MidlineLeft, TextSecondary);
         ModeUiFactory.SetRect(label.rectTransform, new Vector2(0f, 1f),
             new Vector2(0f, 1f), new Vector2(0f, 1f),
-            new Vector2(580f, 30f), new Vector2(46f, -44f));
+            new Vector2(880f, 30f), new Vector2(46f, -44f));
         lobbyJoinCodeText = CreateText(root, "当前加入码", "------",
             38f, TextAlignmentOptions.MidlineLeft, Cyan);
         lobbyJoinCodeText.fontStyle = FontStyles.Bold;
@@ -634,96 +680,109 @@ public sealed class CoopAccountView : MonoBehaviour
             new Vector2(0f, 1f), new Vector2(580f, 62f),
             new Vector2(46f, -79f));
 
+        TMP_Text roomHeading = CreateText(root, "房间整备标题",
+            "小队整备", 28f, TextAlignmentOptions.MidlineLeft,
+            TextPrimary);
+        roomHeading.fontStyle = FontStyles.Bold;
+        ModeUiFactory.SetRect(roomHeading.rectTransform,
+            new Vector2(0f, 1f), new Vector2(0f, 1f),
+            new Vector2(0f, 1f), new Vector2(880f, 48f),
+            new Vector2(46f, -158f));
+
         TMP_Text flowText = CreateText(root, "房间流程",
-            "整备流程\n选择角色  →  全员准备  →  房主开始战局",
+            "选择角色  /  完成准备  /  房主开始战局",
             17f, TextAlignmentOptions.TopLeft, TextSecondary);
         flowText.lineSpacing = 10f;
         ModeUiFactory.SetRect(flowText.rectTransform,
             new Vector2(0f, 1f), new Vector2(0f, 1f),
-            new Vector2(0f, 1f), new Vector2(580f, 90f),
-            new Vector2(46f, -180f));
+            new Vector2(0f, 1f), new Vector2(900f, 48f),
+            new Vector2(46f, -219f));
 
         ReadyButton = CreateButton(root, "准备状态", "确认角色并准备",
             new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f),
-            new Vector2(0.5f, 0.5f), new Vector2(582f, 60f),
+            new Vector2(0.5f, 0.5f), new Vector2(956f, 60f),
             new Vector2(0f, -30f), ButtonTone.Primary, ToggleReady, 19f);
         StartRoomButton = CreateButton(root, "开始战局", "房主开始战局",
             new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f),
-            new Vector2(0.5f, 0.5f), new Vector2(582f, 58f),
+            new Vector2(0.5f, 0.5f), new Vector2(956f, 58f),
             new Vector2(0f, -104f), ButtonTone.Secondary, StartRoom, 18f);
         LeaveRoomButton = CreateButton(root, "离开房间", "离开当前房间",
-            new Vector2(0.5f, 0f), new Vector2(0.5f, 0f),
-            new Vector2(0.5f, 0f), new Vector2(250f, 48f),
-            new Vector2(0f, 35f), ButtonTone.Danger, LeaveRoom, 16f);
+            new Vector2(1f, 0f), new Vector2(1f, 0f),
+            new Vector2(1f, 0f), new Vector2(250f, 48f),
+            new Vector2(-46f, 35f), ButtonTone.Danger, LeaveRoom, 16f);
     }
 
     private void BuildRosterPanel(RectTransform parent)
     {
-        TMP_Text rosterTitle = CreateText(parent, "小队标题", "当前小队",
+        RectTransform root = ModeUiFactory.CreateRect("小队整备", parent);
+        ModeUiFactory.Stretch(root);
+        lobbyRosterPanel = root.gameObject;
+
+        TMP_Text rosterTitle = CreateText(root, "小队标题", "当前小队",
             25f, TextAlignmentOptions.MidlineLeft, TextPrimary);
         rosterTitle.fontStyle = FontStyles.Bold;
         ModeUiFactory.SetRect(rosterTitle.rectTransform,
             new Vector2(0f, 1f), new Vector2(0f, 1f),
-            new Vector2(0f, 1f), new Vector2(500f, 44f),
-            new Vector2(44f, -36f));
+            new Vector2(0f, 1f), new Vector2(520f, 44f),
+            new Vector2(42f, -36f));
 
-        TacticalUiTheme.CreateIcon("小队图标", parent, "multiplayer",
+        TacticalUiTheme.CreateIcon("小队图标", root, "multiplayer",
             TacticalUiTheme.Blue, new Vector2(0f, 1f),
             new Vector2(0f, 1f), new Vector2(0f, 1f),
             new Vector2(34f, 34f), new Vector2(0f, -41f));
 
-        RectTransform members = CreatePanel(parent, "玩家席位",
-            new Vector2(942f, 190f), new Vector2(0f, 140f), RaisedPanel);
+        RectTransform members = CreatePanel(root, "玩家席位",
+            new Vector2(566f, 210f), new Vector2(0f, 110f), RaisedPanel);
         AddOutline(members, new Color(0.15f, 0.34f, 0.43f, 0.55f), 1f);
         lobbyMembersText = CreateText(members, "房间成员", string.Empty,
-            18f, TextAlignmentOptions.TopLeft, TextPrimary);
+            16f, TextAlignmentOptions.TopLeft, TextPrimary);
         lobbyMembersText.enableWordWrapping = true;
-        lobbyMembersText.lineSpacing = 12f;
-        ModeUiFactory.Stretch(lobbyMembersText.rectTransform, 82f, 18f);
+        lobbyMembersText.lineSpacing = 8f;
+        ModeUiFactory.Stretch(lobbyMembersText.rectTransform, 68f, 12f);
         TacticalUiTheme.CreateIcon("玩家席位图标 1", members,
             "singleplayer", Cyan, new Vector2(0f, 0.5f),
             new Vector2(0f, 0.5f), new Vector2(0f, 0.5f),
-            new Vector2(38f, 38f), new Vector2(24f, 45f));
+            new Vector2(30f, 30f), new Vector2(20f, 48f));
         TacticalUiTheme.CreateIcon("玩家席位图标 2", members,
             "singleplayer", TextSecondary, new Vector2(0f, 0.5f),
             new Vector2(0f, 0.5f), new Vector2(0f, 0.5f),
-            new Vector2(38f, 38f), new Vector2(24f, -45f));
+            new Vector2(30f, 30f), new Vector2(20f, -48f));
 
-        TMP_Text appearanceTitle = CreateText(parent, "角色选择标题",
+        TMP_Text appearanceTitle = CreateText(root, "角色选择标题",
             "出战角色", 18f, TextAlignmentOptions.MidlineLeft, TextSecondary);
         ModeUiFactory.SetRect(appearanceTitle.rectTransform,
             new Vector2(0f, 0.5f), new Vector2(0f, 0.5f),
-            new Vector2(0f, 0.5f), new Vector2(260f, 32f),
-            new Vector2(44f, 5f));
+            new Vector2(0f, 0.5f), new Vector2(480f, 32f),
+            new Vector2(42f, -24f));
 
-        lobbyAppearanceText = CreateText(parent, "已选角色", string.Empty,
+        lobbyAppearanceText = CreateText(root, "已选角色", string.Empty,
             28f, TextAlignmentOptions.MidlineLeft, Cyan);
         lobbyAppearanceText.fontStyle = FontStyles.Bold;
         ModeUiFactory.SetRect(lobbyAppearanceText.rectTransform,
             new Vector2(0f, 0.5f), new Vector2(0f, 0.5f),
-            new Vector2(0f, 0.5f), new Vector2(500f, 50f),
-            new Vector2(44f, -32f));
+            new Vector2(0f, 0.5f), new Vector2(540f, 50f),
+            new Vector2(42f, -75f));
 
-        PreviousAppearanceButton = CreateButton(parent, "上一个角色",
+        PreviousAppearanceButton = CreateButton(root, "上一个角色",
             "上一个角色", new Vector2(0f, 0.5f), new Vector2(0f, 0.5f),
-            new Vector2(0f, 0.5f), new Vector2(205f, 54f),
-            new Vector2(44f, -95f), ButtonTone.Ghost,
+            new Vector2(0f, 0.5f), new Vector2(270f, 54f),
+            new Vector2(42f, -132f), ButtonTone.Ghost,
             PreviousLobbyAppearance, 17f);
-        NextAppearanceButton = CreateButton(parent, "下一个角色",
-            "下一个角色", new Vector2(0f, 0.5f), new Vector2(0f, 0.5f),
-            new Vector2(0f, 0.5f), new Vector2(205f, 54f),
-            new Vector2(265f, -95f), ButtonTone.Ghost,
+        NextAppearanceButton = CreateButton(root, "下一个角色",
+            "下一个角色", new Vector2(1f, 0.5f), new Vector2(1f, 0.5f),
+            new Vector2(1f, 0.5f), new Vector2(270f, 54f),
+            new Vector2(-42f, -132f), ButtonTone.Ghost,
             NextLobbyAppearance, 17f);
 
-        TMP_Text tip = CreateText(parent, "角色提示",
+        TMP_Text tip = CreateText(root, "角色提示",
             "角色外观将在进入战区后同步给所有队员。\n准备后仍可取消准备并重新选择。",
             16f, TextAlignmentOptions.TopLeft, TextSecondary);
         tip.enableWordWrapping = true;
         tip.lineSpacing = 6f;
         ModeUiFactory.SetRect(tip.rectTransform,
             new Vector2(0f, 0f), new Vector2(0f, 0f),
-            new Vector2(0f, 0f), new Vector2(890f, 72f),
-            new Vector2(44f, 38f));
+            new Vector2(0f, 0f), new Vector2(560f, 72f),
+            new Vector2(42f, 38f));
     }
 
     private TMP_InputField CreateInput(Transform parent, string objectName,
@@ -759,7 +818,7 @@ public sealed class CoopAccountView : MonoBehaviour
         background.color = Field;
         UnityEngine.UI.Outline outline =
             inputObject.GetComponent<UnityEngine.UI.Outline>();
-        outline.effectColor = new Color(0.15f, 0.28f, 0.33f, 1f);
+        outline.effectColor = new Color(0.24f, 0.30f, 0.32f, 0.78f);
         outline.effectDistance = new Vector2(1f, -1f);
 
         string inputIconName = objectName == "Username"
@@ -846,6 +905,17 @@ public sealed class CoopAccountView : MonoBehaviour
         UnityEngine.UI.Button button =
             buttonObject.GetComponent<UnityEngine.UI.Button>();
         ConfigureButton(button, image, tone);
+        if (tone == ButtonTone.Ghost || tone == ButtonTone.Secondary)
+        {
+            TacticalUiTheme.ApplyMenuArt(image, "nescia-button", Color.white);
+            UnityEngine.UI.ColorBlock artColors = button.colors;
+            artColors.normalColor = Color.white;
+            artColors.highlightedColor = new Color(0.79f, 1f, 0.97f, 1f);
+            artColors.selectedColor = artColors.highlightedColor;
+            artColors.pressedColor = new Color(0.63f, 0.79f, 0.78f, 1f);
+            artColors.disabledColor = new Color(0.38f, 0.42f, 0.43f, 0.72f);
+            button.colors = artColors;
+        }
         button.onClick.AddListener(action);
         TMP_Text text = CreateText(buttonObject.transform, "按钮文字", label,
             fontSize, TextAlignmentOptions.Center,
@@ -894,17 +964,17 @@ public sealed class CoopAccountView : MonoBehaviour
         Color normal = tone switch
         {
             ButtonTone.Primary => Cyan,
-            ButtonTone.Secondary => new Color(0.08f, 0.34f, 0.42f, 1f),
-            ButtonTone.Danger => new Color(0.29f, 0.105f, 0.105f, 0.95f),
-            ButtonTone.Inline => new Color(0.025f, 0.07f, 0.085f, 0.96f),
-            ButtonTone.Tab => new Color(0.025f, 0.07f, 0.085f, 0.96f),
-            _ => new Color(0.035f, 0.12f, 0.14f, 0.94f)
+            ButtonTone.Secondary => new Color(0.18f, 0.28f, 0.30f, 1f),
+            ButtonTone.Danger => new Color(0.27f, 0.13f, 0.13f, 1f),
+            ButtonTone.Inline => new Color(0.09f, 0.12f, 0.13f, 1f),
+            ButtonTone.Tab => new Color(0.09f, 0.12f, 0.13f, 1f),
+            _ => new Color(0.10f, 0.14f, 0.15f, 1f)
         };
         image.color = normal;
         UnityEngine.UI.ColorBlock colors = button.colors;
         colors.normalColor = normal;
         colors.highlightedColor = tone == ButtonTone.Primary
-            ? new Color(0.38f, 1f, 0.93f, 1f)
+            ? new Color(0.56f, 0.90f, 0.84f, 1f)
             : new Color(Mathf.Min(1f, normal.r + 0.04f),
                 Mathf.Min(1f, normal.g + 0.07f),
                 Mathf.Min(1f, normal.b + 0.07f), normal.a);
@@ -951,6 +1021,27 @@ public sealed class CoopAccountView : MonoBehaviour
     {
         await Controller.RestoreAsync();
         RefreshRoomsAfterAuthentication();
+        if (this != null && !Controller.IsSignedIn)
+            StartCoroutine(FocusAuthenticationAfterFrame());
+    }
+
+    private IEnumerator FocusAuthenticationAfterFrame()
+    {
+        yield return null;
+        if (Controller == null || Controller.IsBusy ||
+            Controller.IsSignedIn || accountPanel == null ||
+            !accountPanel.activeInHierarchy ||
+            UsernameInput.isFocused || PasswordInput.isFocused ||
+            ConfirmationInput.isFocused)
+            yield break;
+        FocusInput(UsernameInput);
+    }
+
+    private void OnApplicationFocus(bool hasFocus)
+    {
+        if (hasFocus && Controller != null && !Controller.IsSignedIn &&
+            accountPanel != null && accountPanel.activeInHierarchy)
+            StartCoroutine(FocusAuthenticationAfterFrame());
     }
 
     private async void Login()
@@ -1048,6 +1139,29 @@ public sealed class CoopAccountView : MonoBehaviour
         input.Select();
         input.ActivateInputField();
         SetInputFocused(input, true);
+    }
+
+    private void LateUpdate()
+    {
+        Keyboard keyboard = Keyboard.current;
+        if (keyboard == null || !keyboard.tabKey.wasPressedThisFrame ||
+            Controller == null || Controller.IsBusy || Controller.IsSignedIn ||
+            accountPanel == null || !accountPanel.activeInHierarchy)
+            return;
+
+        TMP_InputField[] fields = registerMode
+            ? new[] { UsernameInput, PasswordInput, ConfirmationInput }
+            : new[] { UsernameInput, PasswordInput };
+        GameObject selected = EventSystem.current != null
+            ? EventSystem.current.currentSelectedGameObject
+            : null;
+        int current = Array.FindIndex(fields,
+            field => field != null && field.gameObject == selected);
+        bool reverse = keyboard.leftShiftKey.isPressed ||
+                       keyboard.rightShiftKey.isPressed;
+        int next = current < 0 ? 0 :
+            (current + (reverse ? fields.Length - 1 : 1)) % fields.Length;
+        FocusInput(fields[next]);
     }
 
     private void SetInputFocused(TMP_InputField input, bool focused)
@@ -1217,7 +1331,7 @@ public sealed class CoopAccountView : MonoBehaviour
             {
                 UnityEngine.UI.Image image =
                     button.GetComponent<UnityEngine.UI.Image>();
-                Color selectedColor = new(0.08f, 0.31f, 0.31f, 1f);
+                Color selectedColor = new(0.18f, 0.28f, 0.30f, 1f);
                 image.color = selectedColor;
                 UnityEngine.UI.ColorBlock selectedColors = button.colors;
                 selectedColors.normalColor = selectedColor;
@@ -1303,11 +1417,9 @@ public sealed class CoopAccountView : MonoBehaviour
 
         accountPanel.SetActive(!signedIn);
         if (lobbyPanel != null) lobbyPanel.SetActive(signedIn);
-        LogoutButton.gameObject.SetActive(!authenticationGateOnly && signedIn &&
-            (session == null || !session.IsConnected));
-        LogoutButton.interactable = signedIn && !Controller.IsBusy;
-        ReturnButton.interactable = !authenticationGateOnly &&
-                                    !Controller.IsBusy && flow != null &&
+        LogoutButton.gameObject.SetActive(false);
+        ReturnButton.gameObject.SetActive(!authenticationGateOnly && signedIn);
+        ReturnButton.interactable = signedIn && !Controller.IsBusy && flow != null &&
                                     !flow.IsLoading;
 
         SetInputActive(UsernameInput, !signedIn);
@@ -1315,8 +1427,7 @@ public sealed class CoopAccountView : MonoBehaviour
         SetInputActive(ConfirmationInput, !signedIn && registerMode);
         LoginButton.gameObject.SetActive(!signedIn && !registerMode);
         RegisterButton.gameObject.SetActive(!signedIn && registerMode);
-        LoginButton.interactable = inputsEnabled;
-        RegisterButton.interactable = inputsEnabled;
+        RefreshCredentialSubmission();
         DevelopmentAnonymousButton.gameObject.SetActive(!signedIn &&
             Controller.AllowDevelopmentAnonymous);
         DevelopmentAnonymousButton.interactable = inputsEnabled;
@@ -1326,7 +1437,7 @@ public sealed class CoopAccountView : MonoBehaviour
         statusText.color = failed ? Error : Cyan;
         statusBackground.color = failed
             ? new Color(0.25f, 0.055f, 0.052f, 0.94f)
-            : new Color(0.025f, 0.12f, 0.14f, 0.88f);
+            : new Color(0.10f, 0.14f, 0.15f, 0.96f);
         RefreshAuthenticationMode(inputsEnabled);
         if (authenticationGateOnly)
         {
@@ -1339,6 +1450,32 @@ public sealed class CoopAccountView : MonoBehaviour
             return;
         }
         RefreshLobby(signedIn);
+    }
+
+    private void RefreshCredentialSubmission()
+    {
+        if (Controller == null || LoginButton == null || RegisterButton == null)
+            return;
+        bool credentialsPresent = !Controller.IsBusy &&
+            !Controller.IsSignedIn &&
+            !string.IsNullOrWhiteSpace(UsernameInput.text) &&
+            !string.IsNullOrWhiteSpace(PasswordInput.text);
+        LoginButton.interactable = credentialsPresent;
+        RegisterButton.interactable = credentialsPresent &&
+            !string.IsNullOrWhiteSpace(ConfirmationInput.text);
+        RefreshSubmissionVisual(LoginButton);
+        RefreshSubmissionVisual(RegisterButton);
+    }
+
+    private static void RefreshSubmissionVisual(UnityEngine.UI.Button button)
+    {
+        Color contentColor = button.interactable ? Background : TextSecondary;
+        TMP_Text label = button.GetComponentInChildren<TMP_Text>(true);
+        if (label != null)
+            label.color = contentColor;
+        Transform icon = button.transform.Find("按钮图标");
+        if (icon != null && icon.TryGetComponent(out UnityEngine.UI.Image image))
+            image.color = contentColor;
     }
 
     private void RefreshAuthenticationMode(bool inputsEnabled)
@@ -1357,8 +1494,8 @@ public sealed class CoopAccountView : MonoBehaviour
         UnityEngine.UI.Image image, TMP_Text label, bool active,
         bool inputsEnabled)
     {
-        Color inactive = new(0.025f, 0.07f, 0.085f, 0.96f);
-        Color selected = new(0.08f, 0.31f, 0.31f, 1f);
+        Color inactive = new(0.09f, 0.12f, 0.13f, 1f);
+        Color selected = new(0.18f, 0.28f, 0.30f, 1f);
         UnityEngine.UI.ColorBlock colors = button.colors;
         colors.normalColor = inactive;
         colors.disabledColor = active ? selected : inactive;
@@ -1397,6 +1534,8 @@ public sealed class CoopAccountView : MonoBehaviour
             lobbySummaryText.text = "无法读取房间服务，请返回模式选择后重试。";
             lobbyEntryPanel.SetActive(true);
             lobbyRoomPanel.SetActive(false);
+            lobbyEntryActionsPanel.SetActive(true);
+            lobbyRosterPanel.SetActive(false);
             SetLobbyControlsInteractable(false);
             lobbyMembersText.text = "玩家席位 1  等待服务\n\n玩家席位 2  等待服务";
             lobbyAppearanceText.text = "角色服务未就绪";
@@ -1419,6 +1558,8 @@ public sealed class CoopAccountView : MonoBehaviour
         lobbyConnectionText.color = busy ? new Color(1f, 0.77f, 0.3f) : Cyan;
         lobbyEntryPanel.SetActive(!connected);
         lobbyRoomPanel.SetActive(connected);
+        lobbyEntryActionsPanel.SetActive(!connected);
+        lobbyRosterPanel.SetActive(connected);
         JoinCodeInput.gameObject.SetActive(!connected);
         CreateRoomButton.gameObject.SetActive(!connected);
         JoinRoomButton.gameObject.SetActive(!connected);

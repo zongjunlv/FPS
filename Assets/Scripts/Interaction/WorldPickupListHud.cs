@@ -3,6 +3,18 @@ using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
 
+public readonly struct WorldPickupListEntry
+{
+    public WorldPickupListEntry(string name, int quantity)
+    {
+        Name = name;
+        Quantity = quantity;
+    }
+
+    public string Name { get; }
+    public int Quantity { get; }
+}
+
 public sealed class WorldPickupListHud : MonoBehaviour
 {
     private const int MaximumVisibleRows = 6;
@@ -11,6 +23,7 @@ public sealed class WorldPickupListHud : MonoBehaviour
     private RectTransform root;
     private TMP_FontAsset fontAsset;
     private TMP_FontAsset runtimeChineseFontAsset;
+    private readonly List<WorldPickupListEntry> localEntries = new();
 
     public bool IsVisible => root != null && root.gameObject.activeSelf;
     public int SelectedIndex { get; private set; } = -1;
@@ -60,6 +73,26 @@ public sealed class WorldPickupListHud : MonoBehaviour
         IReadOnlyList<WorldItemPickup> pickups,
         int selectedIndex)
     {
+        localEntries.Clear();
+        if (pickups != null)
+        {
+            for (int index = 0; index < pickups.Count; index++)
+            {
+                WorldItemPickup pickup = pickups[index];
+                localEntries.Add(new WorldPickupListEntry(
+                    pickup != null && pickup.Definition != null
+                        ? pickup.Definition.DisplayName : "未知物品",
+                    pickup != null ? pickup.RemainingQuantity : 0));
+            }
+        }
+        RefreshEntries(localEntries, selectedIndex);
+    }
+
+    /// <summary>Read-only list data, also usable by server-replicated drops.</summary>
+    public void RefreshEntries(
+        IReadOnlyList<WorldPickupListEntry> pickups,
+        int selectedIndex)
+    {
         RefreshCount++;
         int count = pickups?.Count ?? 0;
 
@@ -88,12 +121,11 @@ public sealed class WorldPickupListHud : MonoBehaviour
             }
 
             int itemIndex = first + rowIndex;
-            WorldItemPickup pickup = pickups[itemIndex];
+            WorldPickupListEntry pickup = pickups[itemIndex];
             bool selected = itemIndex == SelectedIndex;
-            string itemName = pickup != null && pickup.Definition != null
-                ? pickup.Definition.DisplayName
-                : "未知物品";
-            int quantity = pickup != null ? pickup.RemainingQuantity : 0;
+            string itemName = string.IsNullOrWhiteSpace(pickup.Name)
+                ? "未知物品" : pickup.Name;
+            int quantity = pickup.Quantity;
             rowTexts[rowIndex].text =
                 $"{(selected ? "▶" : "  ")} {itemName}    ×{quantity}";
             rowTexts[rowIndex].color = selected
@@ -126,6 +158,9 @@ public sealed class WorldPickupListHud : MonoBehaviour
 
     private void OnDestroy()
     {
+        // The view root belongs to this presenter even though its parent is the
+        // HUD layer. Clean it when a co-op projection is replaced on reconnect.
+        if (root != null) Destroy(root.gameObject);
         if (runtimeChineseFontAsset != null)
         {
             Destroy(runtimeChineseFontAsset);

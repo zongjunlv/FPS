@@ -7,12 +7,13 @@ using NUnit.Framework;
 using TMPro;
 using UnityEngine;
 using UnityEngine.EventSystems;
+using UnityEngine.InputSystem;
 using UnityEngine.SceneManagement;
 using UnityEngine.TestTools;
 
 namespace FPS.Tests.PlayMode.Issue69
 {
-    public sealed class Issue84CoopAccountViewTests
+    public sealed class Issue84CoopAccountViewTests : InputTestFixture
     {
         [UnityTest]
         public IEnumerator AuthenticationSurfaceSeparatesModesAndShowsInputFocus()
@@ -30,12 +31,18 @@ namespace FPS.Tests.PlayMode.Issue69
             Assert.That(view.LobbyPanel.activeSelf, Is.False);
             Assert.That(view.IsRegisterMode, Is.False);
             Assert.That(view.LoginButton.gameObject.activeSelf, Is.True);
+            Assert.That(view.LoginButton.interactable, Is.False,
+                "空账号与密码不应允许提交登录。");
             Assert.That(view.RegisterButton.gameObject.activeSelf, Is.False);
             Assert.That(view.ConfirmationInput.gameObject.activeSelf, Is.False);
+            Assert.That(view.ReturnButton.gameObject.activeSelf, Is.False,
+                "未登录页面不应出现返回模式选择。");
             Assert.That(EventSystem.current.currentSelectedGameObject,
                 Is.EqualTo(view.UsernameInput.gameObject));
             Assert.That(view.UsernameInput.customCaretColor, Is.True);
             Assert.That(view.UsernameInput.caretWidth, Is.GreaterThanOrEqualTo(3));
+            Assert.That(view.UsernameInput.isFocused, Is.True,
+                "首次打开登录页时用户名输入框应真正激活光标。");
             Assert.That(view.AuthenticationPanel
                 .GetComponentsInChildren<UnityEngine.UI.Image>(true)
                 .Any(image => image.gameObject.name == "字段图标" &&
@@ -45,6 +52,8 @@ namespace FPS.Tests.PlayMode.Issue69
             Assert.That(view.IsRegisterMode, Is.True);
             Assert.That(view.LoginButton.gameObject.activeSelf, Is.False);
             Assert.That(view.RegisterButton.gameObject.activeSelf, Is.True);
+            Assert.That(view.RegisterButton.interactable, Is.False,
+                "空注册表单不应允许提交。");
             Assert.That(view.ConfirmationInput.gameObject.activeSelf, Is.True);
 
             Assert.That(view.PasswordInput.contentType,
@@ -57,6 +66,129 @@ namespace FPS.Tests.PlayMode.Issue69
                 Is.EqualTo(TMP_InputField.ContentType.Password));
 
             Object.Destroy(view.gameObject);
+            yield return null;
+        }
+
+        [UnityTest]
+        public IEnumerator CredentialsEnableSubmitAndTabMovesBetweenFields()
+        {
+            Keyboard keyboard = InputSystem.AddDevice<Keyboard>();
+            try
+            {
+                yield return SceneManager.LoadSceneAsync(
+                    GameModeScenePaths.Entry, LoadSceneMode.Single);
+                yield return null;
+                CoopAccountView view = CoopAccountView.Create(
+                    GameModeFlowController.Instance, new FakeGateway(), false);
+                yield return null;
+
+                Assert.That(view.LoginButton.interactable, Is.False);
+                view.UsernameInput.text = "Player_84";
+                Assert.That(view.LoginButton.interactable, Is.False);
+                view.PasswordInput.text = "StrongPass1";
+                Assert.That(view.LoginButton.interactable, Is.True);
+                view.PasswordInput.text = string.Empty;
+                Assert.That(view.LoginButton.interactable, Is.False);
+
+                view.UsernameInput.Select();
+                view.UsernameInput.ActivateInputField();
+                yield return null;
+                Press(keyboard.tabKey);
+                yield return null;
+                Release(keyboard.tabKey);
+                yield return null;
+                Assert.That(EventSystem.current.currentSelectedGameObject,
+                    Is.EqualTo(view.PasswordInput.gameObject),
+                    "Tab 应从用户名切到密码。");
+                Assert.That(view.PasswordInput.isFocused, Is.True);
+
+                view.RegisterTabButton.onClick.Invoke();
+                view.UsernameInput.text = "Player_84";
+                view.PasswordInput.text = "StrongPass1";
+                view.PasswordInput.Select();
+                view.PasswordInput.ActivateInputField();
+                yield return null;
+                Press(keyboard.tabKey);
+                yield return null;
+                Release(keyboard.tabKey);
+                yield return null;
+                Assert.That(EventSystem.current.currentSelectedGameObject,
+                    Is.EqualTo(view.ConfirmationInput.gameObject),
+                    "注册页 Tab 应能到确认密码。");
+                Assert.That(view.RegisterButton.interactable, Is.False);
+                view.ConfirmationInput.text = "StrongPass1";
+                Assert.That(view.RegisterButton.interactable, Is.True);
+
+                Press(keyboard.leftShiftKey);
+                Press(keyboard.tabKey);
+                yield return null;
+                Release(keyboard.tabKey);
+                Release(keyboard.leftShiftKey);
+                yield return null;
+                Assert.That(EventSystem.current.currentSelectedGameObject,
+                    Is.EqualTo(view.PasswordInput.gameObject),
+                    "Shift+Tab 应反向回到密码。");
+
+                Object.Destroy(view.gameObject);
+                yield return null;
+            }
+            finally
+            {
+                InputSystem.RemoveDevice(keyboard);
+            }
+        }
+
+        [UnityTest]
+        public IEnumerator InitialAndPostLogoutAuthenticationFocusIsConsistent()
+        {
+            yield return SceneManager.LoadSceneAsync(
+                GameModeScenePaths.Entry, LoadSceneMode.Single);
+            yield return null;
+            CoopAccountView view = CoopAccountView.Create(
+                GameModeFlowController.Instance, new FakeGateway(), false);
+            yield return null;
+            yield return null;
+
+            Assert.That(view.UsernameInput.isFocused, Is.True,
+                "首次登录应与退出账号后的输入光标一致。");
+            Assert.That(view.ReturnButton.gameObject.activeSelf, Is.False);
+
+            view.RegisterTabButton.onClick.Invoke();
+            view.UsernameInput.text = "Player_84";
+            view.PasswordInput.text = "StrongPass1";
+            view.ConfirmationInput.text = "StrongPass1";
+            view.RegisterButton.onClick.Invoke();
+            yield return null;
+            Assert.That(view.LogoutButton.gameObject.activeSelf, Is.False,
+                "退出账号入口应放在模式大厅，而非联机房间页。");
+
+            Object.Destroy(view.gameObject);
+            yield return null;
+        }
+
+        [UnityTest]
+        public IEnumerator AuthenticationGateRestoresUsernameFocusAfterAsyncSessionCheck()
+        {
+            yield return SceneManager.LoadSceneAsync(
+                GameModeScenePaths.Entry, LoadSceneMode.Single);
+            yield return null;
+            var gateway = new FakeGateway
+            {
+                InitWaiter = new TaskCompletionSource<bool>()
+            };
+            CoopAccountView gate = CoopAccountView.CreateAuthenticationGate(
+                GameModeFlowController.Instance, gateway, () => { });
+            yield return null;
+            gateway.InitWaiter.SetResult(true);
+            yield return new WaitUntil(() => !gate.Controller.IsBusy);
+            yield return null;
+
+            Assert.That(gate.AuthenticationPanel.activeSelf, Is.True);
+            Assert.That(EventSystem.current.currentSelectedGameObject,
+                Is.EqualTo(gate.UsernameInput.gameObject));
+            Assert.That(gate.UsernameInput.isFocused, Is.True,
+                "首次完成异步会话检查后输入框应有光标。");
+            Object.Destroy(gate.gameObject);
             yield return null;
         }
 
@@ -83,7 +215,8 @@ namespace FPS.Tests.PlayMode.Issue69
             Assert.That(gateway.SignUpCalls, Is.EqualTo(1));
             Assert.That(view.PasswordInput.text, Is.Empty);
             Assert.That(view.ConfirmationInput.text, Is.Empty);
-            Assert.That(view.LogoutButton.gameObject.activeSelf, Is.True);
+            Assert.That(view.LogoutButton.gameObject.activeSelf, Is.False);
+            Assert.That(view.ReturnButton.gameObject.activeSelf, Is.True);
             Assert.That(view.LoginButton.gameObject.activeSelf, Is.False);
 
             view.LogoutButton.onClick.Invoke();
@@ -91,7 +224,49 @@ namespace FPS.Tests.PlayMode.Issue69
                 Is.EqualTo(CoopAccountState.SignedOut));
             Assert.That(gateway.ClearedCredentials, Is.True);
             Assert.That(view.LoginButton.gameObject.activeSelf, Is.True);
+            Assert.That(view.ReturnButton.gameObject.activeSelf, Is.False);
             Object.Destroy(view.gameObject);
+        }
+
+        [UnityTest]
+        public IEnumerator ModeGateSignOutReopensAuthenticationForm()
+        {
+            yield return SceneManager.LoadSceneAsync(
+                GameModeScenePaths.Entry, LoadSceneMode.Single);
+            yield return null;
+            var gateway = new FakeGateway();
+            ModeEntryView mode = Object.FindFirstObjectByType<ModeEntryView>();
+            CoopAccountView gate = CoopAccountView.CreateAuthenticationGate(
+                GameModeFlowController.Instance, gateway, () => { });
+            mode.SetAuthenticationUnlocked(false);
+            mode.ConfigureAccountSignOut(() =>
+            {
+                if (gate.SignOutToAuthentication())
+                    mode.SetAuthenticationUnlocked(false);
+            });
+            yield return null;
+            gate.RegisterTabButton.onClick.Invoke();
+            gate.UsernameInput.text = "Player_84";
+            gate.PasswordInput.text = "StrongPass1";
+            gate.ConfirmationInput.text = "StrongPass1";
+            gate.RegisterButton.onClick.Invoke();
+            yield return null;
+
+            Assert.That(gate.gameObject.activeSelf, Is.False);
+            mode.SetAuthenticationUnlocked(true);
+            UnityEngine.UI.Button logout = mode
+                .GetComponentsInChildren<UnityEngine.UI.Button>(true)
+                .Single(button => button.gameObject.name == "退出当前账号");
+            Assert.That(logout.interactable, Is.True);
+            logout.onClick.Invoke();
+            yield return null;
+            Assert.That(gate.Controller.IsSignedIn, Is.False);
+            Assert.That(mode.GetButton(GameModeId.Coop).interactable, Is.False);
+            Assert.That(gate.gameObject.activeSelf, Is.True);
+            Assert.That(gate.AuthenticationPanel.activeSelf, Is.True);
+            Assert.That(gate.UsernameInput.isFocused, Is.True);
+            Assert.That(gate.ReturnButton.gameObject.activeSelf, Is.False);
+            Object.Destroy(gate.gameObject);
         }
 
         [UnityTest]
@@ -129,12 +304,13 @@ namespace FPS.Tests.PlayMode.Issue69
             public bool SignedIn;
             public int SignUpCalls;
             public bool ClearedCredentials;
+            public TaskCompletionSource<bool> InitWaiter;
 
             public bool IsSignedIn => SignedIn;
             public bool HasCachedSession => false;
             public string PlayerId => SignedIn ? "player-84" : string.Empty;
             public string Username => SignedIn ? "Player_84" : string.Empty;
-            public Task InitializeAsync() => Task.CompletedTask;
+            public Task InitializeAsync() => InitWaiter?.Task ?? Task.CompletedTask;
 
             public Task SignUpAsync(string username, string password)
             {

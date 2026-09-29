@@ -10,6 +10,29 @@ namespace FPS.Tests.PlayMode
 {
     public class Issue7FeedbackTests
     {
+        private Scene ownedFeedbackScene;
+
+        [UnityTearDown]
+        public IEnumerator TearDownOwnedFeedbackScene()
+        {
+            if (!ownedFeedbackScene.IsValid() || !ownedFeedbackScene.isLoaded)
+            {
+                ownedFeedbackScene = default;
+                yield break;
+            }
+
+            // Only the CityNew scene explicitly loaded by this fixture is
+            // ours. Do not delete unrelated same-named effects from a scene
+            // supplied by another fixture merely to satisfy an assertion.
+            Scene cleanupScene = SceneManager.CreateScene(
+                "Issue7 Feedback Cleanup-" + Guid.NewGuid().ToString("N"));
+            SceneManager.SetActiveScene(cleanupScene);
+            Scene sceneToUnload = ownedFeedbackScene;
+            ownedFeedbackScene = default;
+            yield return SceneManager.UnloadSceneAsync(sceneToUnload);
+            yield return null;
+        }
+
         [UnityTest]
         public IEnumerator DamageTargetImpactFollowsHitObjectAndReturnsWhenDisabled()
         {
@@ -64,8 +87,10 @@ namespace FPS.Tests.PlayMode
                 poolType.GetMethod("PresentImpact").Invoke(
                     pool,
                     new[] { result });
-                GameObject impact = GameObject.Find("Concrete(Clone)");
-                Assert.That(impact, Is.Not.Null);
+                Assert.That(
+                    (int)poolType.GetProperty("ConcreteActiveCount").GetValue(pool),
+                    Is.EqualTo(1));
+                GameObject impact = FindActiveEffectInPool(pool, "Concrete(Clone)");
                 Vector3 relativePosition =
                     impact.transform.position - hitObject.transform.position;
 
@@ -84,6 +109,10 @@ namespace FPS.Tests.PlayMode
 
                 Assert.That(impact.activeSelf, Is.False,
                     "受击目标失活后，绑定弹痕必须立即回收到对象池。");
+                Assert.That(
+                    (int)poolType.GetProperty("ConcreteActiveCount").GetValue(pool),
+                    Is.Zero,
+                    "目标失活后本次池不能仍占用该混凝土弹痕。");
             }
             finally
             {
@@ -456,6 +485,26 @@ namespace FPS.Tests.PlayMode
         }
 
         [Test]
+        public void MetalImpactIgnoresUnrelatedConcreteFromAnotherPool()
+        {
+            // A different weapon/player may legitimately retain a concrete
+            // impact while this pool presents a metal hit. The assertion must
+            // inspect the pool under test, not every same-named scene object.
+            GameObject unrelatedConcrete = new GameObject("Concrete(Clone)");
+
+            try
+            {
+                MetalImpactDoesNotReuseConcreteVisual();
+                Assert.That(unrelatedConcrete.activeSelf, Is.True,
+                    "检验本次金属命中不能清除其他角色/池仍在显示的混凝土弹痕。");
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(unrelatedConcrete);
+            }
+        }
+
+        [Test]
         public void MetalImpactDoesNotReuseConcreteVisual()
         {
             Type controllerType = RuntimeTypeResolver.GetType(
@@ -491,10 +540,11 @@ namespace FPS.Tests.PlayMode
                 controllerType.GetMethod("Present")
                     .Invoke(controller, new[] { result });
 
-                GameObject metal = GameObject.Find("Metal Impact(Clone)");
-                GameObject sparks = GameObject.Find("Metal Spark Burst");
-                Assert.That(metal, Is.Not.Null);
-                Assert.That(sparks, Is.Not.Null);
+                Component pool = (Component)controllerType
+                    .GetProperty("EffectPool").GetValue(controller);
+                Assert.That(pool, Is.Not.Null);
+                GameObject metal = FindActiveEffectInPool(pool, "Metal Impact(Clone)");
+                GameObject sparks = FindActiveEffectInPool(pool, "Metal Spark Burst");
                 Assert.That(
                     metal.transform.Find("Silver Metal Dent"),
                     Is.Not.Null);
@@ -502,11 +552,12 @@ namespace FPS.Tests.PlayMode
                     metal.transform.Find("Hot Impact Core"),
                     Is.Not.Null);
                 Assert.That(
-                    GameObject.Find("Concrete(Clone)"),
-                    Is.Null);
-
-                UnityEngine.Object.DestroyImmediate(metal);
-                UnityEngine.Object.DestroyImmediate(sparks);
+                    (int)pool.GetType().GetProperty("ConcreteActiveCount").GetValue(pool),
+                    Is.Zero,
+                    "金属命中不得借用本次池的混凝土弹痕。");
+                Assert.That(
+                    (int)pool.GetType().GetProperty("MetalActiveCount").GetValue(pool),
+                    Is.EqualTo(1));
             }
             finally
             {
@@ -591,6 +642,8 @@ namespace FPS.Tests.PlayMode
             yield return SceneManager.LoadSceneAsync(
                 "Assets/ImportPackages/CSAssets2026/Scenes/CityNew.unity",
                 LoadSceneMode.Single);
+            ownedFeedbackScene = SceneManager.GetSceneByPath(
+                "Assets/ImportPackages/CSAssets2026/Scenes/CityNew.unity");
             yield return null;
 
             GameObject player = GameObject.FindGameObjectWithTag("Player");
@@ -618,6 +671,25 @@ namespace FPS.Tests.PlayMode
             Assert.That(
                 player.GetComponents<AudioSource>().Length,
                 Is.GreaterThanOrEqualTo(1));
+        }
+
+        private static GameObject FindActiveEffectInPool(Component pool, string effectName)
+        {
+            GameObject found = null;
+            int activeMatches = 0;
+
+            foreach (Transform child in pool.GetComponentsInChildren<Transform>(true))
+            {
+                if (child.gameObject.activeInHierarchy && child.name == effectName)
+                {
+                    found = child.gameObject;
+                    activeMatches++;
+                }
+            }
+
+            Assert.That(activeMatches, Is.EqualTo(1),
+                $"本次 {pool.gameObject.name} 池应恰好显示一个 {effectName}，不应选中其他池的同名对象。");
+            return found;
         }
 
         private static object CreateShotResult(

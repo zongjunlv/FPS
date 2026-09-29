@@ -12,13 +12,19 @@
   -executeMethod Issue85DedicatedServerBuild.Build \
   -serverBuildTarget linux \
   -buildOutput /srv/fps/build/FPSDedicatedServer.x86_64 \
-  -serverProtocolVersion 1 \
+  -serverProtocolVersion 2 \
   -serverContentVersion citynew-v1 \
   -logFile /tmp/fps-server-build.log \
   -quit
 ```
 
 同目录的 `dedicated-server-build.json` 会记录产品版本、协议版本、内容版本、Unity 版本、产物大小和 SHA-256，可用于发布校验。
+
+当前战斗协议为第二版，必须与客户端和 `/etc/fps/broker.conf` 的
+`FPS_PROTOCOL_VERSION=2` 一致。产品版本与 API 的 `applicationVersion` 是不同字段；
+当前客户端 API 兼容版本仍为 `0.1.0`，不要仅因产品版本 `0.3.0` 就改动它。
+更新已有部署时保留本机地址、数据库、TLS、密钥和其他配置，仅更新明确需要的字段；
+不要直接用示例配置覆盖现有配置。回退时一起恢复旧产物、旧工具和旧协议配置。
 
 ## 2. 在远程主机保存密钥与持久数据
 
@@ -79,7 +85,7 @@ python3 scripts/networking/issue101_server_manager.py start \
   --player player-a=operative-alpha \
   --player player-b=operative-bravo \
   --application-version 1.0.0 \
-  --protocol-version 1 \
+  --protocol-version 2 \
   --content-version citynew-v1 \
   --idle-timeout 120 \
   --allocation-output /secure/runtime/allocation.json

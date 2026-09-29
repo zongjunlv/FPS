@@ -20,7 +20,10 @@ public sealed class CityNewInventoryBootstrap : MonoBehaviour
     {
         if (!GameModeContext.IsActive(
                 GameModeId.SoloBattle,
-                GameModeStage.Battle))
+                GameModeStage.Battle) ||
+            GameModeContext.RequestedMode != GameModeId.SoloBattle ||
+            GameModeContext.RequestedStage != GameModeStage.Battle ||
+            CoopSceneContentIsolation.UsesAuthoritativeGameplay)
         {
             return;
         }
@@ -100,6 +103,7 @@ public sealed class CityNewInventoryBootstrap : MonoBehaviour
 
     private void OnDestroy()
     {
+        ReleaseGeneratedPickups();
         for (int index = 0; index < runtimeMaterials.Count; index++)
         {
             if (runtimeMaterials[index] != null)
@@ -107,6 +111,23 @@ public sealed class CityNewInventoryBootstrap : MonoBehaviour
                 Destroy(runtimeMaterials[index]);
             }
         }
+        runtimeMaterials.Clear();
+    }
+
+    // Supplies deliberately live in world space rather than under the moving
+    // player. Their owning bootstrap must still retire those independent roots.
+    // Deactivation is immediate: deferred Destroy alone leaves colliders in the
+    // client's prediction world for the remainder of this frame.
+    internal void ReleaseGeneratedPickups()
+    {
+        foreach (GameObject pickupObject in pickupObjects)
+        {
+            if (pickupObject == null) continue;
+            pickupObject.SetActive(false);
+            Destroy(pickupObject);
+        }
+        pickupObjects.Clear();
+        pickups = null;
     }
 
     private WorldItemPickup CreatePickup(

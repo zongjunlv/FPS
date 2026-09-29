@@ -55,6 +55,12 @@ namespace FPS.Networking.Domain
 
     public sealed class AuthoritativeWeaponDefinition
     {
+        // PlayerGameplayRig's recoil pivot is capped at 10 degrees vertical and
+        // 3 horizontal (combined deviation < 11). This separate allowance only
+        // provides direction sanity validation; it does not reconstruct recoil
+        // or authorize feeding camera recoil back into movement/base aim.
+        public const double MaxCameraRecoilDeviationDegrees = 11d;
+
         public AuthoritativeWeaponDefinition(
             string weaponId,
             int magazineCapacity,
@@ -65,7 +71,8 @@ namespace FPS.Networking.Domain
             double hitscanRange,
             double baseDamage,
             double headDamageMultiplier,
-            bool automatic)
+            bool automatic,
+            double maxSpreadDegrees = 6d)
         {
             WeaponId = string.IsNullOrWhiteSpace(weaponId)
                 ? throw new ArgumentException("Weapon id is required.",
@@ -89,6 +96,10 @@ namespace FPS.Networking.Domain
                 headDamageMultiplier < 1d)
                 throw new ArgumentOutOfRangeException(
                     nameof(headDamageMultiplier));
+            if (double.IsNaN(maxSpreadDegrees) || double.IsInfinity(maxSpreadDegrees) ||
+                maxSpreadDegrees < 0d ||
+                maxSpreadDegrees + MaxCameraRecoilDeviationDegrees >= 45d)
+                throw new ArgumentOutOfRangeException(nameof(maxSpreadDegrees));
 
             MagazineCapacity = magazineCapacity;
             InitialReserveAmmo = initialReserveAmmo;
@@ -99,6 +110,7 @@ namespace FPS.Networking.Domain
             BaseDamage = baseDamage;
             HeadDamageMultiplier = headDamageMultiplier;
             Automatic = automatic;
+            MaxSpreadDegrees = maxSpreadDegrees;
         }
 
         public string WeaponId { get; }
@@ -111,6 +123,7 @@ namespace FPS.Networking.Domain
         public double BaseDamage { get; }
         public double HeadDamageMultiplier { get; }
         public bool Automatic { get; }
+        public double MaxSpreadDegrees { get; }
 
         public static IReadOnlyList<AuthoritativeWeaponDefinition>
             CreateProjectDefaults(CoopServerRules rules)
@@ -130,7 +143,9 @@ namespace FPS.Networking.Domain
                     rules.HitscanRange,
                     rules.ShotDamage,
                     2d,
-                    automatic: true),
+                    automatic: true,
+                    // AR.asset: max(hip, ADS) + movement + sprint + maximum bloom.
+                    maxSpreadDegrees: 0.55d + 0.75d + 2.5d + 1.4d),
                 new AuthoritativeWeaponDefinition(
                     "weapon.pistol",
                     12,
@@ -141,7 +156,9 @@ namespace FPS.Networking.Domain
                     rules.HitscanRange,
                     20d,
                     2d,
-                    automatic: false)
+                    automatic: false,
+                    // Pistol.asset: retain the sprint bonus as a conservative upper bound.
+                    maxSpreadDegrees: 0.7d + 0.9d + 2.8d + 1.2d)
             };
         }
 

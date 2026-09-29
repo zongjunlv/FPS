@@ -91,12 +91,18 @@ namespace FPS.Tests.PlayMode.Issue65
 
             var feedback = new List<NetcodeShotFeedbackEvent>();
             authority.GetShotEventsAfter(1, 0, feedback);
-            Assert.That(feedback.Count, Is.EqualTo(2));
-            Assert.That(feedback[0].WeaponId.ToString(),
+            Assert.That(feedback.Count, Is.EqualTo(3));
+            Assert.That(feedback.Count(value => !value.Accepted &&
+                value.RejectionReason == CommandRejectionReason.Reloading),
+                Is.EqualTo(1));
+            NetcodeShotFeedbackEvent[] accepted = feedback.Where(
+                value => value.Accepted).ToArray();
+            Assert.That(accepted.Length, Is.EqualTo(2));
+            Assert.That(accepted[0].WeaponId.ToString(),
                 Is.EqualTo("weapon.rifle"));
-            Assert.That(feedback[1].WeaponId.ToString(),
+            Assert.That(accepted[1].WeaponId.ToString(),
                 Is.EqualTo("weapon.pistol"));
-            Assert.That(feedback[1].Kind,
+            Assert.That(accepted[1].Kind,
                 Is.EqualTo(ShotResolutionKind.Killed));
         }
 

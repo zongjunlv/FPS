@@ -1,6 +1,7 @@
 using FPS.Networking.Netcode;
 using Unity.Netcode;
 using UnityEngine;
+using UnityEngine.SceneManagement;
 
 namespace FPS.Networking.Session
 {
@@ -17,6 +18,16 @@ namespace FPS.Networking.Session
 
         public bool IsBlocking => ShouldBlock();
         public bool MenuOverlayVisible { get; set; }
+
+        public void ResetForLobby()
+        {
+            MenuOverlayVisible = false;
+        }
+
+        private void OnDisable()
+        {
+            ResetForLobby();
+        }
 
         private void OnGUI()
         {
@@ -84,7 +95,10 @@ namespace FPS.Networking.Session
                 manager != null && manager.IsClient,
                 manager != null && manager.IsConnectedClient,
                 hasLocalReplica,
-                hasConsumedServerState);
+                hasConsumedServerState,
+                string.Equals(SceneManager.GetActiveScene().path,
+                    DedicatedServerConfiguration.CityNewScenePath,
+                    System.StringComparison.Ordinal));
         }
 
         public static bool ShouldBlockForState(
@@ -94,8 +108,13 @@ namespace FPS.Networking.Session
             bool isNetworkClient,
             bool isConnectedClient,
             bool hasLocalReplica,
-            bool hasConsumedServerState)
+            bool hasConsumedServerState,
+            bool isBattleScene = true)
         {
+            // This object survives scene changes with the session. A failed
+            // connection can leave the room in "battle" briefly after the
+            // client has already returned to CoopLogin; never cover that UI.
+            if (!isBattleScene) return false;
             if (sessionState == CoopSessionState.Reconnecting) return true;
 
             bool networkGameplayPhase = hasActiveSession &&
