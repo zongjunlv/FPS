@@ -430,6 +430,15 @@ namespace FPS.Tests.PlayMode.Issue69
             {
                 yield return null;
             }
+            if (path == GameModeScenePaths.Entry)
+            {
+                // This fixture exercises the mode hub after authentication.
+                // Login focus and the authentication gate have their own tests.
+                foreach (CoopAccountView gate in Object.FindObjectsByType<CoopAccountView>())
+                    Object.Destroy(gate.gameObject);
+                yield return null;
+                Object.FindFirstObjectByType<ModeEntryView>()?.SetAuthenticationUnlocked(true);
+            }
         }
 
         private static IEnumerator WaitForScene(string path)

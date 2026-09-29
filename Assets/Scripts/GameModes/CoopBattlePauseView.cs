@@ -19,6 +19,7 @@ public sealed class CoopBattlePauseView : MonoBehaviour
 
     public Button ContinueButton { get; private set; }
     public Button ReturnButton { get; private set; }
+    public UnityEngine.UI.Button ExitClientButton { get; private set; }
     public bool IsVisible => gameObject.activeSelf;
 
     public static CoopBattlePauseView Create(
@@ -62,6 +63,7 @@ public sealed class CoopBattlePauseView : MonoBehaviour
         }
         if (ContinueButton != null) ContinueButton.interactable = enabled;
         if (ReturnButton != null) ReturnButton.interactable = enabled;
+        if (ExitClientButton != null) ExitClientButton.interactable = enabled;
     }
 
     public void SetStatus(string value)
@@ -104,38 +106,42 @@ public sealed class CoopBattlePauseView : MonoBehaviour
             new Vector2(0.5f, 0.5f),
             new Vector2(0.5f, 0.5f),
             new Vector2(0.5f, 0.5f),
-            new Vector2(650f, 390f),
+            new Vector2(650f, 490f),
             Vector2.zero);
 
         TMP_Text eyebrow = CreateText(
             "Eyebrow", panel, "CO-OP SESSION", 17f,
-            new Vector2(0f, 143f), new Vector2(550f, 28f), AccentColor);
+            new Vector2(0f, 193f), new Vector2(550f, 28f), AccentColor);
         eyebrow.fontStyle = FontStyles.Bold;
         TMP_Text title = CreateText(
             "Title", panel, "联机战斗菜单", 40f,
-            new Vector2(0f, 94f), new Vector2(550f, 56f), Color.white);
+            new Vector2(0f, 144f), new Vector2(550f, 56f), Color.white);
         title.fontStyle = FontStyles.Bold;
         CreateText(
             "Description", panel,
             "菜单只停止本机操作，服务器战局与队友仍会继续运行",
-            18f, new Vector2(0f, 48f), new Vector2(560f, 34f),
+            18f, new Vector2(0f, 98f), new Vector2(560f, 34f),
             new Color(0.76f, 0.84f, 0.87f, 1f));
 
         ContinueButton = CreateButton(
-            panel, "继续联机战斗", new Vector2(0f, -24f),
+            panel, "继续联机战斗", new Vector2(0f, 26f),
             new Color(0.04f, 0.42f, 0.37f, 1f),
             () => controller?.TryContinueBattle());
         ReturnButton = CreateButton(
-            panel, "退出战局并返回模式大厅", new Vector2(0f, -98f),
+            panel, "退出战局并返回模式大厅", new Vector2(0f, -48f),
             new Color(0.05f, 0.16f, 0.19f, 1f),
             () => controller?.TryReturnToModeEntry());
+        ExitClientButton = CreateButton(
+            panel, "退出客户端", new Vector2(0f, -122f),
+            new Color(0.3f, 0.09f, 0.09f, 1f),
+            () => ClientQuitDialog.RequestQuitConfirmation());
         status = CreateText(
             "Status", panel, string.Empty, 15f,
-            new Vector2(0f, -145f), new Vector2(560f, 36f),
+            new Vector2(0f, -184f), new Vector2(560f, 36f),
             new Color(1f, 0.55f, 0.42f, 1f));
         CreateText(
             "Hint", panel, "ESC  继续联机战斗", 15f,
-            new Vector2(0f, -174f), new Vector2(520f, 24f),
+            new Vector2(0f, -224f), new Vector2(520f, 24f),
             new Color(0.54f, 0.66f, 0.7f, 1f));
     }
 

@@ -1143,6 +1143,7 @@ public sealed class CoopAccountView : MonoBehaviour
 
     private void LateUpdate()
     {
+        if (ClientQuitDialog.IsBlockingInput || ClientQuitDialog.EscapeHandledThisFrame) return;
         Keyboard keyboard = Keyboard.current;
         if (keyboard == null || !keyboard.tabKey.wasPressedThisFrame ||
             Controller == null || Controller.IsBusy || Controller.IsSignedIn ||

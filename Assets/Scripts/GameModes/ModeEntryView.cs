@@ -235,7 +235,7 @@ public sealed class ModeEntryView : MonoBehaviour
         TMP_Text help = ModeUiFactory.CreateText(
             "Input Help",
             panel,
-            "W / S 或方向键选择    Enter 确认    鼠标点击",
+            "W / S 或方向键选择    Enter 确认    鼠标点击    ESC 退出客户端",
             16f,
             TextAlignmentOptions.Center,
             font,

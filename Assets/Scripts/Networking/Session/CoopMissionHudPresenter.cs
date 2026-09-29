@@ -11,8 +11,12 @@ namespace FPS.Networking.Session
     {
         public static bool EconomyModalVisible { get; set; }
         public static bool PauseMenuVisible { get; set; }
+        public static bool QuitConfirmationVisible { get; set; }
+        public static int QuitConfirmationTransitionFrame { get; set; } = -1;
+        public static bool QuitConfirmationInputSuppressed =>
+            QuitConfirmationVisible || QuitConfirmationTransitionFrame == Time.frameCount;
         public static bool GameplayInputSuppressed =>
-            EconomyModalVisible || PauseMenuVisible;
+            EconomyModalVisible || PauseMenuVisible || QuitConfirmationInputSuppressed;
     }
 
     /// <summary>
@@ -43,7 +47,8 @@ namespace FPS.Networking.Session
             {
                 presentedRunGeneration = world.RunGeneration;
                 outcomeVisible = false;
-                if (localPlayer.IsLocallyControlled)
+                if (localPlayer.IsLocallyControlled &&
+                    !CoopUiInputGate.GameplayInputSuppressed)
                 {
                     Cursor.lockState = CursorLockMode.Locked;
                     Cursor.visible = false;
@@ -91,6 +96,7 @@ namespace FPS.Networking.Session
 
         private void OnGUI()
         {
+            if (CoopUiInputGate.QuitConfirmationVisible) return;
             if (authority == null || localPlayer == null ||
                 !localPlayer.HasConsumedServerState) return;
             NetcodeWorldState world = authority.WorldState;

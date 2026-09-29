@@ -273,6 +273,7 @@ public sealed class BattleCharacterSelectionView : MonoBehaviour
 
     private void Update()
     {
+        if (ClientQuitDialog.IsBlockingInput || ClientQuitDialog.EscapeHandledThisFrame) return;
         if (catalog == null || flow == null || flow.IsLoading) return;
         Keyboard keyboard = Keyboard.current;
         if (keyboard != null)

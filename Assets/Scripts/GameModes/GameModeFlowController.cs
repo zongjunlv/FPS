@@ -275,6 +275,7 @@ public sealed class GameModeFlowController : MonoBehaviour
         bool gameplayStage = stage == GameModeStage.Tutorial ||
                              stage == GameModeStage.Battle ||
                              stage == GameModeStage.CoopBattle;
+        gameplayStage &= !ClientQuitDialog.IsBlockingInput;
         Cursor.visible = !gameplayStage;
         Cursor.lockState = gameplayStage
             ? CursorLockMode.Locked

@@ -111,7 +111,13 @@ namespace FPS.Networking.Session
         private bool recoveringBattleScene;
         private int battleTransportGeneration;
         private Task transportShutdownTask = Task.CompletedTask;
+        private Task roomOperationCompletion = Task.CompletedTask;
         private bool networkCallbacksBound;
+
+#if UNITY_EDITOR
+        private Func<Task<SelfHostedRoomSnapshot>> roomEntryRequestForTests;
+        private Func<string, Task> roomLeaveRequestForTests;
+#endif
 
         public event Action<CoopSessionState> StateChanged;
         public event Action LobbyChanged;
@@ -376,19 +382,21 @@ namespace FPS.Networking.Session
             modeExitRequested = false;
             int generation = ++operationGeneration;
             operationInProgress = true;
-            SetState(CoopSessionState.Initializing);
+            var completion = new TaskCompletionSource<bool>();
+            roomOperationCompletion = completion.Task;
 
             try
             {
+                SetState(CoopSessionState.Initializing);
                 pendingScenarioSeed = CreateRunSeed();
                 if (!await PrepareNetworkPrerequisiteAsync(true, generation))
                     return false;
                 EnsureSignedIn();
                 if (!IsCurrentOperation(generation)) return false;
                 SetState(CoopSessionState.Hosting);
-                SelfHostedRoomSnapshot created = await EnsureRoomGateway()
-                    .CreateAsync(NormalizeRoomName(roomName), lobbyMapId,
-                        pendingScenarioSeed, pendingAppearanceId);
+                SelfHostedRoomSnapshot created = await SendRoomEntryAsync(gateway =>
+                    gateway.CreateAsync(NormalizeRoomName(roomName), lobbyMapId,
+                        pendingScenarioSeed, pendingAppearanceId));
                 if (!IsCurrentOperation(generation))
                 {
                     await LeaveStaleRoomAsync(created);
@@ -414,6 +422,7 @@ namespace FPS.Networking.Session
                 {
                     operationInProgress = false;
                 }
+                completion.TrySetResult(true);
             }
         }
 
@@ -433,16 +442,18 @@ namespace FPS.Networking.Session
             operationInProgress = true;
             modeExitRequested = false;
             int generation = ++operationGeneration;
-            SetState(CoopSessionState.Initializing);
+            var completion = new TaskCompletionSource<bool>();
+            roomOperationCompletion = completion.Task;
             try
             {
+                SetState(CoopSessionState.Initializing);
                 if (!await PrepareNetworkPrerequisiteAsync(true, generation))
                     return false;
                 EnsureSignedIn();
                 if (!IsCurrentOperation(generation)) return false;
                 SetState(CoopSessionState.Joining);
-                SelfHostedRoomSnapshot joined = await EnsureRoomGateway()
-                    .JoinByCodeAsync(normalized, pendingAppearanceId);
+                SelfHostedRoomSnapshot joined = await SendRoomEntryAsync(gateway =>
+                    gateway.JoinByCodeAsync(normalized, pendingAppearanceId));
                 if (!IsCurrentOperation(generation))
                 {
                     await LeaveStaleRoomAsync(joined);
@@ -468,6 +479,7 @@ namespace FPS.Networking.Session
                 {
                     operationInProgress = false;
                 }
+                completion.TrySetResult(true);
             }
         }
 
@@ -486,16 +498,18 @@ namespace FPS.Networking.Session
             operationInProgress = true;
             modeExitRequested = false;
             int generation = ++operationGeneration;
-            SetState(CoopSessionState.Initializing);
+            var completion = new TaskCompletionSource<bool>();
+            roomOperationCompletion = completion.Task;
             try
             {
+                SetState(CoopSessionState.Initializing);
                 if (!await PrepareNetworkPrerequisiteAsync(true, generation))
                     return false;
                 EnsureSignedIn();
                 if (!IsCurrentOperation(generation)) return false;
                 SetState(CoopSessionState.Joining);
-                SelfHostedRoomSnapshot joined = await EnsureRoomGateway()
-                    .JoinByIdAsync(normalized, pendingAppearanceId);
+                SelfHostedRoomSnapshot joined = await SendRoomEntryAsync(gateway =>
+                    gateway.JoinByIdAsync(normalized, pendingAppearanceId));
                 if (!IsCurrentOperation(generation))
                 {
                     await LeaveStaleRoomAsync(joined);
@@ -517,6 +531,7 @@ namespace FPS.Networking.Session
             {
                 if (generation == operationGeneration)
                     operationInProgress = false;
+                completion.TrySetResult(true);
             }
         }
 
@@ -646,6 +661,7 @@ namespace FPS.Networking.Session
 
         public async Task ShutdownForModeExitAsync()
         {
+            Task pendingRoomOperation = roomOperationCompletion;
             modeExitRequested = true;
             int generation = ++operationGeneration;
             operationInProgress = true;
@@ -655,7 +671,12 @@ namespace FPS.Networking.Session
             activeRoom = null;
             // Invalidate the old join/reconnect immediately, before a control-
             // plane HTTP request can suspend this method for several seconds.
-            Task shutdown = ShutdownDedicatedBattleTransport();
+            // A create/join accepted remotely may not have returned its room
+            // yet. Its stale-generation path must finish LeaveStaleRoomAsync
+            // before callers regard exit as complete. The client quit dialog
+            // still owns the overall real-time deadline.
+            Task shutdown = Task.WhenAll(ShutdownDedicatedBattleTransport(),
+                pendingRoomOperation);
             RestoreLobbyInteraction();
             await CompleteExitAsync(leaving, shutdown, generation);
         }
@@ -688,7 +709,7 @@ namespace FPS.Networking.Session
                 // match on the backend. Retain that control-plane cleanup even
                 // when local shutdown reports an error.
                 if (leaving != null)
-                    await EnsureRoomGateway().LeaveAsync(leaving.id);
+                    await SendRoomLeaveAsync(leaving.id);
             }
             catch (Exception exception)
             {
@@ -1089,7 +1110,7 @@ namespace FPS.Networking.Session
             if (room == null) return;
             try
             {
-                await EnsureRoomGateway().LeaveAsync(room.id);
+                await SendRoomLeaveAsync(room.id);
             }
             catch (Exception)
             {
@@ -1554,6 +1575,35 @@ namespace FPS.Networking.Session
             roomGateway = new SelfHostedRoomGateway(settings);
             return roomGateway;
         }
+
+        private Task<SelfHostedRoomSnapshot> SendRoomEntryAsync(
+            Func<SelfHostedRoomGateway, Task<SelfHostedRoomSnapshot>> request)
+        {
+#if UNITY_EDITOR
+            if (roomEntryRequestForTests != null)
+                return roomEntryRequestForTests();
+#endif
+            return request(EnsureRoomGateway());
+        }
+
+        private Task SendRoomLeaveAsync(string roomId)
+        {
+#if UNITY_EDITOR
+            if (roomLeaveRequestForTests != null)
+                return roomLeaveRequestForTests(roomId);
+#endif
+            return EnsureRoomGateway().LeaveAsync(roomId);
+        }
+
+#if UNITY_EDITOR
+        /// <summary>Local request substitutes; authentication and transport preparation still run.</summary>
+        public void ConfigureRoomGatewayForTests(
+            Func<Task<SelfHostedRoomSnapshot>> enter, Func<string, Task> leave)
+        {
+            roomEntryRequestForTests = enter ?? throw new ArgumentNullException(nameof(enter));
+            roomLeaveRequestForTests = leave ?? throw new ArgumentNullException(nameof(leave));
+        }
+#endif
 
         private void BindRoom(SelfHostedRoomSnapshot room)
         {

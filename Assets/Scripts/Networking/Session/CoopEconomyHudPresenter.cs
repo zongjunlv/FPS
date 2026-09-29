@@ -110,7 +110,8 @@ namespace FPS.Networking.Session
                 status = "仍在等待服务器确认，请勿重复操作";
             }
 
-            bool paused = CoopUiInputGate.PauseMenuVisible;
+            bool paused = CoopUiInputGate.PauseMenuVisible ||
+                          CoopUiInputGate.QuitConfirmationInputSuppressed;
             bool choosing = progression.PendingUpgradeChoices > 0;
             Keyboard keyboard = Keyboard.current;
             if (!paused && !choosing && keyboard != null &&
@@ -189,7 +190,8 @@ namespace FPS.Networking.Session
         private bool SubmitIntent(CoopEconomyIntent intent)
         {
             if (!isActiveAndEnabled || requests.IsPending ||
-                CoopUiInputGate.PauseMenuVisible || authority == null ||
+                CoopUiInputGate.PauseMenuVisible ||
+                CoopUiInputGate.QuitConfirmationInputSuppressed || authority == null ||
                 localPlayer == null || !localPlayer.HasConsumedServerState ||
                 !authority.IsReplicatedSnapshotComplete ||
                 IsOutcome(authority.WorldState) ||
@@ -283,7 +285,8 @@ namespace FPS.Networking.Session
             // its acknowledgement arrives. Retain the cursor lease so the next
             // complete frame can restore gameplay even if modalVisible is false.
             if ((changed || economyCursorOwned) && !visible && restoreGameplayCursor &&
-                !CoopUiInputGate.PauseMenuVisible && authority != null &&
+                !CoopUiInputGate.PauseMenuVisible &&
+                !CoopUiInputGate.QuitConfirmationVisible && authority != null &&
                 !IsOutcome(authority.WorldState))
             {
                 Cursor.lockState = CursorLockMode.Locked;

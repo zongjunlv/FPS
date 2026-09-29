@@ -5,14 +5,30 @@ using NUnit.Framework;
 using TMPro;
 using UnityEngine;
 using UnityEngine.InputSystem;
+using UnityEngine.InputSystem.Controls;
+using UnityEngine.InputSystem.LowLevel;
 using UnityEngine.SceneManagement;
 using UnityEngine.TestTools;
 using UnityEngine.UI;
 
 namespace FPS.Tests.PlayMode
 {
-    public sealed class Issue79TutorialPauseMenuTests : TutorialInputTestFixture
+    public sealed class Issue79TutorialPauseMenuTests
     {
+        // Drive the normal player loop without resetting the editor's global
+        // input manager while a persistent client UI exists between scenes.
+        private static void Press(ButtonControl control) => QueueButton(control, 1f);
+        private static void Release(ButtonControl control) => QueueButton(control, 0f);
+
+        private static void QueueButton(ButtonControl control, float value)
+        {
+            using (DeltaStateEvent.From(control, out var inputEvent))
+            {
+                control.WriteValueIntoEvent(value, inputEvent);
+                InputSystem.QueueEvent(inputEvent);
+            }
+        }
+
         [UnityTest]
         public IEnumerator EscapePauseCanContinueCurrentTutorialStep()
         {

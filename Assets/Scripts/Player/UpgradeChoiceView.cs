@@ -180,6 +180,7 @@ public sealed class UpgradeChoiceView : MonoBehaviour
 
     private void Update()
     {
+        if (ClientQuitDialog.IsBlockingInput || ClientQuitDialog.EscapeHandledThisFrame) return;
         if (!IsVisible || IsSuspended || selectionCommitted ||
             Keyboard.current == null)
         {

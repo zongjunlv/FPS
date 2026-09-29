@@ -71,7 +71,7 @@ namespace FPS.Networking.Session
         private bool ShouldBlock()
         {
             session ??= GetComponent<CoopSessionController>();
-            if (MenuOverlayVisible) return false;
+            if (MenuOverlayVisible || CoopUiInputGate.QuitConfirmationVisible) return false;
             NetworkManager manager = NetworkManager.Singleton;
             bool hasLocalReplica = false;
             bool hasConsumedServerState = false;

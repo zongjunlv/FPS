@@ -46,7 +46,8 @@ public sealed class CoopNetworkInputBridge : MonoBehaviour
 
     public bool LocalMenuSuppressed => localMenuSuppressed;
     public bool GameplayInputSuppressed => localMenuSuppressed ||
-        CoopUiInputGate.EconomyModalVisible || overlaySuppressed;
+        CoopUiInputGate.EconomyModalVisible ||
+        CoopUiInputGate.QuitConfirmationVisible || overlaySuppressed;
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
     private static void Install()
@@ -80,6 +81,7 @@ public sealed class CoopNetworkInputBridge : MonoBehaviour
         ResolveOverlay();
         SetOverlaySuppressed(localMenuSuppressed ||
                              CoopUiInputGate.EconomyModalVisible ||
+                             CoopUiInputGate.QuitConfirmationVisible ||
                              overlay != null && overlay.IsVisible);
         bool coopBattle = GameModeContext.IsActive(
                               GameModeId.Coop,
@@ -161,6 +163,7 @@ public sealed class CoopNetworkInputBridge : MonoBehaviour
         localMenuSuppressed = suppressed;
         SetOverlaySuppressed(suppressed ||
                              CoopUiInputGate.EconomyModalVisible ||
+                             CoopUiInputGate.QuitConfirmationVisible ||
                              overlay != null && overlay.IsVisible);
     }
 

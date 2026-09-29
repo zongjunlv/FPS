@@ -47,6 +47,18 @@ public sealed class CityNewMissionController : MonoBehaviour
     public bool IsRestarting { get; private set; }
     public MissionRunSummary OutcomeSummary { get; private set; }
     public MissionOutcomeView OutcomeView => outcomeView;
+    public Rect ExitClientButtonRect
+    {
+        get
+        {
+            Rect panel = GetPausePanelScreenRect(out float scale);
+            return new Rect(
+                panel.x + 110f * scale,
+                panel.y + 406f * scale,
+                260f * scale,
+                46f * scale);
+        }
+    }
 
     private void Awake()
     {
@@ -64,6 +76,7 @@ public sealed class CityNewMissionController : MonoBehaviour
 
     private void Update()
     {
+        if (ClientQuitDialog.IsBlockingInput || ClientQuitDialog.EscapeHandledThisFrame) return;
         if (!configured)
         {
             return;
@@ -247,6 +260,11 @@ public sealed class CityNewMissionController : MonoBehaviour
     {
         snapshotMenu ??= GetComponent<RunSnapshotMenu>();
         return snapshotMenu != null && snapshotMenu.StartNewGame();
+    }
+
+    public void QuitClient()
+    {
+        ClientQuitDialog.RequestQuitConfirmation();
     }
 
     public MissionFlowRestoreState CaptureMissionState()
@@ -670,6 +688,7 @@ public sealed class CityNewMissionController : MonoBehaviour
 
     private void OnGUI()
     {
+        if (ClientQuitDialog.IsBlockingInput || ClientQuitDialog.EscapeHandledThisFrame) return;
         if (!configured)
         {
             return;
@@ -806,7 +825,24 @@ public sealed class CityNewMissionController : MonoBehaviour
     {
         GUI.depth = -90;
         DrawScreenDim();
-        Rect panel = CenterPanel(480f, 560f);
+        Rect screenPanel = GetPausePanelScreenRect(out float scale);
+        Matrix4x4 previousMatrix = GUI.matrix;
+        GUI.matrix = previousMatrix * Matrix4x4.TRS(
+            new Vector3(screenPanel.x, screenPanel.y, 0f),
+            Quaternion.identity,
+            new Vector3(scale, scale, 1f));
+        try
+        {
+            DrawPausePanelContents(new Rect(0f, 0f, 480f, 630f));
+        }
+        finally
+        {
+            GUI.matrix = previousMatrix;
+        }
+    }
+
+    private void DrawPausePanelContents(Rect panel)
+    {
         DrawPanel(panel);
         GUI.Label(
             new Rect(panel.x, panel.y + 24f, panel.width, 58f),
@@ -860,14 +896,22 @@ public sealed class CityNewMissionController : MonoBehaviour
             RequestQuit();
         }
 
+        if (GUI.Button(
+                new Rect(buttonX, buttonY + buttonStep * 5f, 260f, 46f),
+                "退出客户端",
+                buttonStyle))
+        {
+            QuitClient();
+        }
+
         float musicVolume = BattleMusicController.MusicVolume;
         GUI.Label(
-            new Rect(panel.x + 70f, panel.y + 394f,
+            new Rect(panel.x + 70f, panel.y + 470f,
                 panel.width - 140f, 24f),
             $"背景音乐  {Mathf.RoundToInt(musicVolume * 100f)}%",
             headerStyle);
         float changedVolume = GUI.HorizontalSlider(
-            new Rect(panel.x + 70f, panel.y + 421f,
+            new Rect(panel.x + 70f, panel.y + 497f,
                 panel.width - 140f, 20f),
             musicVolume, 0f, 1f);
         if (!Mathf.Approximately(changedVolume, musicVolume))
@@ -878,13 +922,30 @@ public sealed class CityNewMissionController : MonoBehaviour
             ? snapshotMenu.StatusMessage
             : "存档系统尚未就绪。";
         GUI.Label(
-            new Rect(panel.x + 35f, panel.y + 451f, panel.width - 70f, 54f),
+            new Rect(panel.x + 35f, panel.y + 527f, panel.width - 70f, 54f),
             status,
             objectiveStyle);
         GUI.Label(
-            new Rect(panel.x + 35f, panel.y + 515f, panel.width - 70f, 24f),
+            new Rect(panel.x + 35f, panel.y + 599f, panel.width - 70f, 24f),
             "ESC  返回游戏",
             headerStyle);
+    }
+
+    private static Rect GetPausePanelScreenRect(out float scale)
+    {
+        // Scale the entire design, not only the panel, so all six buttons
+        // and the footer remain inside the panel on smaller client windows.
+        scale = Mathf.Max(0.01f, Mathf.Min(
+            1f,
+            Mathf.Min(Screen.width * 0.86f / 480f,
+                Screen.height * 0.82f / 630f)));
+        float width = 480f * scale;
+        float height = 630f * scale;
+        return new Rect(
+            (Screen.width - width) * 0.5f,
+            (Screen.height - height) * 0.5f,
+            width,
+            height);
     }
 
     private static void DrawScreenDim()
@@ -905,17 +966,6 @@ public sealed class CityNewMissionController : MonoBehaviour
             : new Color(0.02f, 0.025f, 0.03f, 0.96f);
         GUI.DrawTexture(panel, Texture2D.whiteTexture);
         GUI.color = previous;
-    }
-
-    private static Rect CenterPanel(float width, float height)
-    {
-        width = Mathf.Min(width, Screen.width * 0.86f);
-        height = Mathf.Min(height, Screen.height * 0.82f);
-        return new Rect(
-            (Screen.width - width) * 0.5f,
-            (Screen.height - height) * 0.5f,
-            width,
-            height);
     }
 
     private void EnsureStyles()

@@ -50,33 +50,44 @@ public class PlayerInputReader : MonoBehaviour
     private bool replayQuickUseConsumed;
 
     public event Action<PlayerInputSample> InputSampled;
+    private static bool QuitDialogSuppressesInput =>
+        ClientQuitDialog.IsBlockingInput || ClientQuitDialog.EscapeHandledThisFrame;
 
     // 其他脚本只能读取输入结果，不需要直接管理 Input Action。
-    public Vector2 Move => replayActive ? replaySample.Move : moveAction.action.ReadValue<Vector2>();
-    public bool JumpPressed => replayActive ? replaySample.JumpPressed : jumpAction.action.WasPressedThisFrame();
-    public Vector2 Look => replayActive ? replaySample.Look : lookAction.action.ReadValue<Vector2>();
-    public bool SprintHeld => replayActive ? replaySample.SprintHeld : sprintAction.action.IsPressed();
-    public bool InteractPressed => replayActive ? replaySample.InteractPressed : interactAction.action.WasPressedThisFrame();
-    public bool InteractHeld => replayActive ? replaySample.InteractHeld : interactAction.action.IsPressed();
+    public Vector2 Move => QuitDialogSuppressesInput ? Vector2.zero :
+        replayActive ? replaySample.Move : moveAction.action.ReadValue<Vector2>();
+    public bool JumpPressed => !QuitDialogSuppressesInput &&
+        (replayActive ? replaySample.JumpPressed : jumpAction.action.WasPressedThisFrame());
+    public Vector2 Look => QuitDialogSuppressesInput ? Vector2.zero :
+        replayActive ? replaySample.Look : lookAction.action.ReadValue<Vector2>();
+    public bool SprintHeld => !QuitDialogSuppressesInput &&
+        (replayActive ? replaySample.SprintHeld : sprintAction.action.IsPressed());
+    public bool InteractPressed => !QuitDialogSuppressesInput &&
+        (replayActive ? replaySample.InteractPressed : interactAction.action.WasPressedThisFrame());
+    public bool InteractHeld => !QuitDialogSuppressesInput &&
+        (replayActive ? replaySample.InteractHeld : interactAction.action.IsPressed());
     public bool InteractReleased =>
-        replayActive ? replaySample.InteractReleased : interactAction.action.WasReleasedThisFrame();
-    public bool AttackPressed => replayActive ? replaySample.AttackPressed : attackAction.action.WasPressedThisFrame();
-    public bool AttackHeld => replayActive ? replaySample.AttackHeld : attackAction.action.IsPressed();
-    public bool AimingPressed => replayActive ? replaySample.AimingPressed : aimingPressed;
-    public bool AimingHeld => replayActive ? replaySample.AimingHeld : aimingAction.action.IsPressed();
+        !QuitDialogSuppressesInput && (replayActive ? replaySample.InteractReleased : interactAction.action.WasReleasedThisFrame());
+    public bool AttackPressed => !QuitDialogSuppressesInput &&
+        (replayActive ? replaySample.AttackPressed : attackAction.action.WasPressedThisFrame());
+    public bool AttackHeld => !QuitDialogSuppressesInput &&
+        (replayActive ? replaySample.AttackHeld : attackAction.action.IsPressed());
+    public bool AimingPressed => !QuitDialogSuppressesInput && (replayActive ? replaySample.AimingPressed : aimingPressed);
+    public bool AimingHeld => !QuitDialogSuppressesInput &&
+        (replayActive ? replaySample.AimingHeld : aimingAction.action.IsPressed());
     public bool CrouchPressed =>
-        replayActive ? replaySample.CrouchPressed : crouchAction != null && crouchAction.WasPressedThisFrame();
+        !QuitDialogSuppressesInput && (replayActive ? replaySample.CrouchPressed : crouchAction != null && crouchAction.WasPressedThisFrame());
     public bool PausePressed =>
-        replayActive ? replaySample.PausePressed : pauseAction != null && pauseAction.WasPressedThisFrame();
+        !QuitDialogSuppressesInput && (replayActive ? replaySample.PausePressed : pauseAction != null && pauseAction.WasPressedThisFrame());
     public bool InventoryPressed =>
-        replayActive ? replaySample.InventoryPressed : inventoryAction != null && inventoryAction.WasPressedThisFrame();
+        !QuitDialogSuppressesInput && (replayActive ? replaySample.InventoryPressed : inventoryAction != null && inventoryAction.WasPressedThisFrame());
     public bool InventoryActionEnabled =>
         inventoryAction != null && inventoryAction.enabled;
     public bool PickupPressed =>
-        replayActive ? replaySample.PickupPressed : pickupAction != null && pickupAction.WasPressedThisFrame();
-    public bool ReloadPressed => replayActive ? replaySample.ReloadPressed : reloadPressed;
-    public int WeaponSelection => replayActive ? replaySample.WeaponSelection : weaponSelection;
-    public int WeaponCycleDirection => replayActive ? replaySample.WeaponCycleDirection : weaponCycleDirections.Count > 0
+        !QuitDialogSuppressesInput && (replayActive ? replaySample.PickupPressed : pickupAction != null && pickupAction.WasPressedThisFrame());
+    public bool ReloadPressed => !QuitDialogSuppressesInput && (replayActive ? replaySample.ReloadPressed : reloadPressed);
+    public int WeaponSelection => QuitDialogSuppressesInput ? -1 : replayActive ? replaySample.WeaponSelection : weaponSelection;
+    public int WeaponCycleDirection => QuitDialogSuppressesInput ? 0 : replayActive ? replaySample.WeaponCycleDirection : weaponCycleDirections.Count > 0
         ? weaponCycleDirections.Peek()
         : 0;
     public InputActionAsset ActionsAsset => moveAction?.asset;
@@ -106,7 +117,7 @@ public class PlayerInputReader : MonoBehaviour
             ReloadPressed,
             WeaponSelection,
             WeaponCycleDirection,
-            replayActive ? replaySample.QuickUseSelection : quickUseSelection);
+            QuitDialogSuppressesInput ? -1 : replayActive ? replaySample.QuickUseSelection : quickUseSelection);
     }
 
     public void SetGameplayActionsEnabled(bool enabled)
@@ -135,6 +146,7 @@ public class PlayerInputReader : MonoBehaviour
 
     public bool ConsumeAimingPressed()
     {
+        if (QuitDialogSuppressesInput) { aimingPressed = false; return false; }
         if (replayActive)
         {
             bool value = !replayAimingConsumed && replaySample.AimingPressed;
@@ -148,6 +160,7 @@ public class PlayerInputReader : MonoBehaviour
 
     public bool ConsumeReloadPressed()
     {
+        if (QuitDialogSuppressesInput) { reloadPressed = false; return false; }
         if (replayActive)
         {
             bool value = !replayReloadConsumed && replaySample.ReloadPressed;
@@ -161,6 +174,7 @@ public class PlayerInputReader : MonoBehaviour
 
     public int ConsumeWeaponSelection()
     {
+        if (QuitDialogSuppressesInput) { weaponSelection = -1; return -1; }
         if (replayActive)
         {
             int value = replayWeaponSelectionConsumed ? -1 : replaySample.WeaponSelection;
@@ -174,6 +188,7 @@ public class PlayerInputReader : MonoBehaviour
 
     public int ConsumeWeaponCycleDirection()
     {
+        if (QuitDialogSuppressesInput) { weaponCycleDirections.Clear(); return 0; }
         if (replayActive)
         {
             int value = replayWeaponCycleConsumed ? 0 : replaySample.WeaponCycleDirection;
@@ -187,6 +202,7 @@ public class PlayerInputReader : MonoBehaviour
 
     public int ConsumeQuickUse()
     {
+        if (QuitDialogSuppressesInput) { quickUseSelection = -1; return -1; }
         if (replayActive)
         {
             int value = replayQuickUseConsumed ? -1 : replaySample.QuickUseSelection;
@@ -257,6 +273,7 @@ public class PlayerInputReader : MonoBehaviour
 
     private void Update()
     {
+        if (QuitDialogSuppressesInput) ClearBufferedGameplayInput();
         if (!replayActive) InputSampled?.Invoke(CaptureSample());
     }
 

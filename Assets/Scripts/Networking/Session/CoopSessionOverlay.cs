@@ -26,6 +26,7 @@ namespace FPS.Networking.Session
 
         private void Update()
         {
+            if (CoopUiInputGate.QuitConfirmationInputSuppressed) return;
             if (Keyboard.current == null ||
                 !Keyboard.current.f6Key.wasPressedThisFrame) return;
             SetVisible(!visible);
@@ -42,6 +43,7 @@ namespace FPS.Networking.Session
 
         private void OnGUI()
         {
+            if (CoopUiInputGate.QuitConfirmationVisible) return;
             if (!visible || controller == null) return;
             windowRect = GUI.Window(
                 WindowId,

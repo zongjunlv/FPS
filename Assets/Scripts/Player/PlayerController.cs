@@ -385,6 +385,7 @@ public class PlayerController : MonoBehaviour
             hasFocus &&
             GameplayInputEnabled &&
             !IsPaused &&
+            !ClientQuitDialog.IsBlockingInput &&
             (gameplayLocks == null || !gameplayLocks.IsLocked) &&
             Time.timeScale > 0f;
 

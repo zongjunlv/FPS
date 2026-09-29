@@ -18,6 +18,7 @@ public sealed class TutorialPauseView : MonoBehaviour
 
     public Button ContinueButton { get; private set; }
     public Button ReturnButton { get; private set; }
+    public UnityEngine.UI.Button ExitClientButton { get; private set; }
     public bool IsVisible => gameObject.activeSelf;
 
     public static TutorialPauseView Create(
@@ -42,6 +43,7 @@ public sealed class TutorialPauseView : MonoBehaviour
 
     public void SetVisible(bool visible)
     {
+        bool newlyVisible = visible && !gameObject.activeSelf;
         if (gameObject.activeSelf != visible)
         {
             gameObject.SetActive(visible);
@@ -56,8 +58,8 @@ public sealed class TutorialPauseView : MonoBehaviour
         Cursor.lockState = CursorLockMode.None;
         Cursor.visible = true;
         ModeUiFactory.EnsureEventSystem();
-        EventSystem.current?.SetSelectedGameObject(
-            ContinueButton.gameObject);
+        if (newlyVisible && !ClientQuitDialog.IsBlockingInput)
+            EventSystem.current?.SetSelectedGameObject(ContinueButton.gameObject);
     }
 
     public void SetInteractionEnabled(bool enabled)
@@ -76,6 +78,11 @@ public sealed class TutorialPauseView : MonoBehaviour
         if (ReturnButton != null)
         {
             ReturnButton.interactable = enabled;
+        }
+
+        if (ExitClientButton != null)
+        {
+            ExitClientButton.interactable = enabled;
         }
     }
 
@@ -118,7 +125,7 @@ public sealed class TutorialPauseView : MonoBehaviour
             new Vector2(0.5f, 0.5f),
             new Vector2(0.5f, 0.5f),
             new Vector2(0.5f, 0.5f),
-            new Vector2(620f, 350f),
+            new Vector2(620f, 450f),
             Vector2.zero);
 
         TMP_Text eyebrow = CreateText(
@@ -126,7 +133,7 @@ public sealed class TutorialPauseView : MonoBehaviour
             panel,
             "TRAINING PAUSED",
             17f,
-            new Vector2(0f, 124f),
+            new Vector2(0f, 174f),
             new Vector2(540f, 28f),
             AccentColor);
         eyebrow.fontStyle = FontStyles.Bold;
@@ -135,38 +142,44 @@ public sealed class TutorialPauseView : MonoBehaviour
             panel,
             "教学已暂停",
             40f,
-            new Vector2(0f, 78f),
+            new Vector2(0f, 128f),
             new Vector2(540f, 56f),
             Color.white);
         title.fontStyle = FontStyles.Bold;
         CreateText(
             "Description",
             panel,
-            "可以继续当前步骤，或中途退出并返回模式大厅",
+            "继续教学、返回模式大厅，或退出客户端",
             19f,
-            new Vector2(0f, 33f),
+            new Vector2(0f, 83f),
             new Vector2(540f, 34f),
             new Color(0.76f, 0.84f, 0.87f, 1f));
 
         ContinueButton = CreateButton(
             panel,
             "继续教学",
-            new Vector2(0f, -35f),
+            new Vector2(0f, 15f),
             new Color(0.04f, 0.42f, 0.37f, 1f),
             () => tutorial?.ResumeTutorial());
         ReturnButton = CreateButton(
             panel,
             "退出教学并返回大厅",
-            new Vector2(0f, -108f),
+            new Vector2(0f, -58f),
             new Color(0.05f, 0.16f, 0.19f, 1f),
             () => tutorial?.TryReturnToModeEntry());
+        ExitClientButton = CreateButton(
+            panel,
+            "退出客户端",
+            new Vector2(0f, -131f),
+            new Color(0.3f, 0.09f, 0.09f, 1f),
+            () => ClientQuitDialog.RequestQuitConfirmation());
 
         CreateText(
             "Hint",
             panel,
             "ESC  继续教学",
             15f,
-            new Vector2(0f, -157f),
+            new Vector2(0f, -197f),
             new Vector2(520f, 24f),
             new Color(0.54f, 0.66f, 0.7f, 1f));
     }
