@@ -63,7 +63,15 @@ public static class ClientReleaseBuild
         };
         Write(manifestPath, manifest);
         SessionState.SetBool(PendingKey, true);
-        EditorApplication.delayCall += () => Build(manifestPath, destination, target, manifest);
+        // delayCall depends on Inspector updates and can stall in an unfocused Editor.
+        // The Pipeline dispatcher already pumps update; use one idle update instead.
+        EditorApplication.CallbackFunction start = null;
+        start = () =>
+        {
+            EditorApplication.update -= start;
+            Build(manifestPath, destination, target, manifest);
+        };
+        EditorApplication.update += start;
         return manifestPath;
     }
 
