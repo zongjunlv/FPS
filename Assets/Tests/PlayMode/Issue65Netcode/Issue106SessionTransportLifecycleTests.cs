@@ -132,6 +132,13 @@ namespace FPS.Tests.PlayMode.Issue65
             CoopSessionController session = sessionObject.AddComponent<CoopSessionController>();
             SetShutdownPromise(session, Task.FromException(new TimeoutException(
                 "模拟旧关闭任务失败")));
+            // 此测试必须显式隔离认证状态；初始化另一个网关已不再清除
+            // 正在使用的进程会话，否则旧场景可能误伤新登录的账号。
+            MethodInfo resetSession = typeof(SelfHostedAuthenticationGateway)
+                .GetMethod("ResetForNewPlaySession",
+                    BindingFlags.Static | BindingFlags.NonPublic);
+            Assert.That(resetSession, Is.Not.Null);
+            resetSession.Invoke(null, null);
             // Initialization is local-only. Leave the account deliberately
             // unauthenticated so this regression cannot issue a real room call.
             Task initialize = new SelfHostedAuthenticationGateway().InitializeAsync();

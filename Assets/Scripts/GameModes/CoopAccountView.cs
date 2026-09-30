@@ -191,7 +191,8 @@ public sealed class CoopAccountView : MonoBehaviour
         }
         registerMode = false;
         Refresh();
-        FocusInput(UsernameInput);
+        if (!Controller.IsSignedIn)
+            FocusInput(UsernameInput);
         RestoreSession();
     }
 
@@ -1020,8 +1021,9 @@ public sealed class CoopAccountView : MonoBehaviour
     private async void RestoreSession()
     {
         await Controller.RestoreAsync();
+        if (this == null) return;
         RefreshRoomsAfterAuthentication();
-        if (this != null && !Controller.IsSignedIn)
+        if (!Controller.IsSignedIn)
             StartCoroutine(FocusAuthenticationAfterFrame());
     }
 
@@ -1143,6 +1145,8 @@ public sealed class CoopAccountView : MonoBehaviour
 
     private void LateUpdate()
     {
+        if (Controller != null && Controller.SyncGatewaySession())
+            StartCoroutine(FocusAuthenticationAfterFrame());
         if (ClientQuitDialog.IsBlockingInput || ClientQuitDialog.EscapeHandledThisFrame) return;
         Keyboard keyboard = Keyboard.current;
         if (keyboard == null || !keyboard.tabKey.wasPressedThisFrame ||

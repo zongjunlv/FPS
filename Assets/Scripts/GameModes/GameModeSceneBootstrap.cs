@@ -68,7 +68,7 @@ public sealed class GameModeSceneBootstrap : MonoBehaviour
             {
                 entry.SetAuthenticationUnlocked(false);
                 CoopAccountView gate = CoopAccountView.CreateAuthenticationGate(Flow,
-                    new SelfHostedAuthenticationGateway(),
+                    SelfHostedAuthenticationGateway.ForCurrentProcess(),
                     () => entry.SetAuthenticationUnlocked(true));
                 entry.ConfigureAccountSignOut(() =>
                 {
@@ -90,7 +90,7 @@ public sealed class GameModeSceneBootstrap : MonoBehaviour
                 Resources.Load<PlayerAppearanceCatalog>(
                     PlayerAppearanceCatalog.ResourcesPath);
             View = CoopAccountView.Create(Flow,
-                new SelfHostedAuthenticationGateway(),
+                SelfHostedAuthenticationGateway.ForCurrentProcess(),
                 false,
                 coopSession,
                 appearances);

@@ -24,16 +24,16 @@
 
 ## 下载客户端
 
-当前客户端版本为 **v0.3.3**，包含 ESC 退出客户端确认窗口、自建账号、房间与战局分配接口，以及 CityNew 联机表现与同步修复。建议两名玩家都安装本版；v0.3.2 与本版使用相同战斗协议，但不包含新的退出窗口。v0.3.0 使用旧战斗协议，v0.2.x 仍使用 Unity 云端账号/房间流程，均不适用于当前战斗服务。
+当前客户端版本为 **v0.3.4**，修复登录后在模式大厅与联机大厅之间切换时反复显示登录页的问题，并改进 CityNew 场景就绪确认。建议两名玩家都安装本版；本版与 v0.3.3 使用相同战斗协议。v0.3.0 使用旧战斗协议，v0.2.x 仍使用 Unity 云端账号/房间流程，均不适用于当前战斗服务。
 
 - [前往 Releases 页面](https://github.com/zongjunlv/FPS/releases/latest)
-- [直接下载 macOS Universal 客户端](https://github.com/zongjunlv/FPS/releases/download/v0.3.3/FPS-PVE-Demo-v0.3.3-macOS-universal.zip)
-- [直接下载 Windows x86_64 客户端](https://github.com/zongjunlv/FPS/releases/download/v0.3.3/FPS-PVE-Demo-v0.3.3-Windows-x86_64.zip)
-- [SHA-256 校验清单](https://github.com/zongjunlv/FPS/releases/download/v0.3.3/SHA256SUMS.txt)；同页附两平台构建清单，可核对源码提交、场景和协议版本。
+- [直接下载 macOS Universal 客户端](https://github.com/zongjunlv/FPS/releases/download/v0.3.4/FPS-PVE-Demo-v0.3.4-macOS-universal.zip)
+- [直接下载 Windows x86_64 客户端](https://github.com/zongjunlv/FPS/releases/download/v0.3.4/FPS-PVE-Demo-v0.3.4-Windows-x86_64.zip)
+- [SHA-256 校验清单](https://github.com/zongjunlv/FPS/releases/download/v0.3.4/SHA256SUMS.txt)；同页附两平台构建清单，可核对源码提交、场景和协议版本。
 
 Windows 解压后运行 `FPS-PVE-Demo.exe`；请保留 EXE、`FPS-PVE-Demo_Data`、`UnityPlayer.dll` 和 `MonoBleedingEdge` 在同一目录。macOS 解压后运行 `FPS-PVE-Demo.app`；当前 macOS 客户端采用 ad-hoc 签名，尚未经过 Apple 公证，如果首次启动被 Gatekeeper 拦截，请在 Finder 中右键应用并选择“打开”。联机模式依赖网络服务，公开服务可能因维护临时不可用。
 
-**当前已知限制：公网联机延迟仍偏高，本版不包含针对此问题的新优化。** 用户已在公网确认多数模型、命中、掉落和升级表现问题修复；双人公网全流程与延迟表现仍待继续测试，不将本地自动化通过等同于公网体验完全达标。详见 [本版发布说明](docs/releases/v0.3.3.md)。
+**当前已知限制：公网联机延迟仍偏高，本版不包含针对此问题的新优化。** 双人公网全流程与延迟表现仍待继续测试，不将本地自动化通过等同于公网体验完全达标。详见 [本版发布说明](docs/releases/v0.3.4.md)。
 
 ## 完整游戏流程
 
@@ -116,7 +116,7 @@ flowchart LR
 
 房间上限为两人，所有已加入玩家完成选角并准备后由房主开始。为便于功能验证，只有房主一人时也允许创建并启动联机战局。
 
-账号和房间持久化于服务端 SQLite，使用参数化路径及版本化 schema；迁移服务器时备份并恢复数据库、配置及认证密钥，再切换客户端 HTTPS 地址或域名。旧版 Unity Authentication 账号不会自动迁入新的账号库，需重新注册；正在运行中的战斗进程也不做跨机器热迁移。当前战斗服务使用协议第二版，推荐使用 v0.3.3 客户端；已注册的自建账号继续使用，无需重新注册。
+账号和房间持久化于服务端 SQLite，使用参数化路径及版本化 schema；迁移服务器时备份并恢复数据库、配置及认证密钥，再切换客户端 HTTPS 地址或域名。旧版 Unity Authentication 账号不会自动迁入新的账号库，需重新注册；正在运行中的战斗进程也不做跨机器热迁移。当前战斗服务使用协议第二版，推荐使用 v0.3.4 客户端；已注册的自建账号继续使用，无需重新注册。
 
 更详细的权威规则和多进程验收边界见：
 

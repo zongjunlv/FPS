@@ -117,6 +117,7 @@ namespace FPS.Networking.Session
 #if UNITY_EDITOR
         private Func<Task<SelfHostedRoomSnapshot>> roomEntryRequestForTests;
         private Func<string, Task> roomLeaveRequestForTests;
+        private Func<string, string, Task<SelfHostedRoomSnapshot>> sceneReadyRequestForTests;
 #endif
 
         public event Action<CoopSessionState> StateChanged;
@@ -180,6 +181,21 @@ namespace FPS.Networking.Session
         public int SceneSeed => activeRoom?.seed ?? 0;
         public string LobbyPhase => activeRoom?.phase ?? PhaseLobby;
         public string SceneLoadFailure => sceneLoadFailure;
+        public bool IsSceneReadyRetrying { get; private set; }
+
+        public void SetSceneReadyRetryState(string roomId, string epoch,
+            bool retrying, string failure)
+        {
+            if (modeExitRequested || !IsConnected || sceneCancellationInProgress ||
+                activeRoom == null ||
+                !string.Equals(activeRoom.id, roomId, StringComparison.Ordinal) ||
+                !string.Equals(SceneLoadEpoch, epoch, StringComparison.Ordinal) ||
+                !string.Equals(LobbyPhase, PhaseLoading, StringComparison.Ordinal))
+                return;
+            IsSceneReadyRetrying = retrying;
+            if (!string.IsNullOrWhiteSpace(failure))
+                sceneLoadFailure = failure.Trim();
+        }
 
         /// <summary>
         /// Idempotent battle-scene watchdog. Session change notifications can
@@ -900,6 +916,7 @@ namespace FPS.Networking.Session
                 return FailLobby(failure);
             lobbyOperationInProgress = true;
             string roomId = activeRoom.id;
+            int generation = operationGeneration;
             try
             {
                 int seed = SceneSeed > 0
@@ -910,9 +927,7 @@ namespace FPS.Networking.Session
                 CoopDedicatedServerAllocation allocation =
                     await gateway.AllocateAsync(roomId, seed,
                         lobbyRoster.Members);
-                if (modeExitRequested || activeRoom == null ||
-                    !string.Equals(activeRoom.id, roomId,
-                        StringComparison.Ordinal))
+                if (!IsCurrentRoomOperation(generation, roomId))
                 {
                     // An exit may race with a long server startup. The
                     // backend idle lease remains a safety net if release is
@@ -935,9 +950,18 @@ namespace FPS.Networking.Session
                 // into loading and assigns a server-generated load epoch.
                 SelfHostedRoomSnapshot loading = await EnsureRoomGateway()
                     .GetAsync(roomId);
-                if (!string.Equals(loading.phase, PhaseLoading,
-                        StringComparison.Ordinal) ||
-                    string.IsNullOrWhiteSpace(loading.loadEpoch))
+                if (!IsCurrentRoomOperation(generation, roomId)) return false;
+                // The polling path can load the scene and acknowledge it while
+                // this refresh is still in flight. Battle is a valid newer
+                // result of the same allocation, not a failed allocation.
+                if ((!string.Equals(loading.phase, PhaseLoading,
+                         StringComparison.Ordinal) &&
+                     !string.Equals(loading.phase, PhaseBattle,
+                         StringComparison.Ordinal)) ||
+                    string.IsNullOrWhiteSpace(loading.loadEpoch) ||
+                    loading.serverAllocation == null ||
+                    !string.Equals(loading.serverAllocation.matchId,
+                        allocation.connection.matchId, StringComparison.Ordinal))
                     throw new InvalidOperationException(
                         "服务器已分配战局，但未设置有效加载阶段。 ");
                 ApplyRoom(loading);
@@ -947,52 +971,70 @@ namespace FPS.Networking.Session
             }
             catch (Exception exception)
             {
+                if (!IsCurrentRoomOperation(generation, roomId)) return false;
                 RefreshLobbyFromRoom();
                 return FailLobby(exception);
             }
             finally
             {
-                lobbyOperationInProgress = false;
-                NotifyLobbyChanged();
+                if (generation == operationGeneration && this != null)
+                {
+                    lobbyOperationInProgress = false;
+                    NotifyLobbyChanged();
+                }
             }
         }
 
         public async Task<bool> ReportSceneReadyAsync(string epoch)
         {
-            if (!CanMutateLobby()) return false;
+            // Lifecycle acknowledgements must not share the user-action lock:
+            // StartLobbyGameAsync can still be refreshing the room after a
+            // concurrent poll has already started and finished scene loading.
+            if (activeRoom == null) return false;
             int generation = operationGeneration;
             string roomId = activeRoom.id;
-            if (!string.Equals(SceneLoadEpoch, epoch,
-                    StringComparison.Ordinal))
-                return FailSceneLoad("场景就绪回报已过期，服务器已忽略。");
+            if (!IsCurrentSceneReadyOperation(generation, roomId, epoch))
+                return false;
             if (recoveringBattleScene &&
                 string.Equals(LobbyPhase, PhaseBattle,
                     StringComparison.Ordinal))
             {
                 recoveringBattleScene = false;
                 await EnsureDedicatedBattleTransportAsync();
-                return IsCurrentRoomOperation(generation, roomId) &&
-                       string.Equals(SceneLoadEpoch, epoch, StringComparison.Ordinal) &&
+                return IsCurrentSceneReadyOperation(generation, roomId, epoch) &&
                        IsBattleTransportConnected;
             }
             if (!string.Equals(LobbyPhase, PhaseLoading,
                     StringComparison.Ordinal))
-                return FailSceneLoad("场景就绪回报已过期，服务器已忽略。");
+                return false;
             try
             {
-                SelfHostedRoomSnapshot changed = await EnsureRoomGateway()
-                    .ReportReadyEpochAsync(roomId, epoch);
-                if (!IsCurrentRoomOperation(generation, roomId) ||
-                    !string.Equals(SceneLoadEpoch, epoch, StringComparison.Ordinal))
+                SelfHostedRoomSnapshot changed = await SendSceneReadyReportAsync(roomId, epoch);
+                if (!IsCurrentSceneReadyOperation(generation, roomId, epoch))
                     return false;
                 ApplyRoom(changed);
+                if (!IsCurrentSceneReadyOperation(generation, roomId, epoch))
+                    return false;
+                if (!(activeRoom.players ?? Array.Empty<SelfHostedRoomPlayer>()).Any(
+                        player => player != null &&
+                                  string.Equals(player.accountId, LocalPlayerId,
+                                      StringComparison.Ordinal) &&
+                                  string.Equals(player.readyEpoch, epoch,
+                                      StringComparison.Ordinal)))
+                    return FailSceneLoad("服务器尚未确认本地场景就绪，将重新尝试确认。");
                 await EvaluateHostSceneLoadBarrierAsync();
-                return IsCurrentRoomOperation(generation, roomId) &&
-                       string.Equals(SceneLoadEpoch, epoch, StringComparison.Ordinal);
+                if (!IsCurrentSceneReadyOperation(generation, roomId, epoch))
+                    return false;
+                sceneLoadFailure = string.Empty;
+                IsSceneReadyRetrying = false;
+                Debug.Log("[COOP_SCENE_LOAD][READY_CONFIRMED] 本地场景就绪已确认。", this);
+                NotifyLobbyChanged();
+                return true;
             }
             catch (Exception exception)
             {
-                if (!IsCurrentRoomOperation(generation, roomId)) return false;
+                if (!IsCurrentSceneReadyOperation(generation, roomId, epoch))
+                    return false;
                 return FailSceneLoad(exception.Message);
             }
         }
@@ -1078,6 +1120,16 @@ namespace FPS.Networking.Session
         {
             return IsCurrentOperation(generation) && activeRoom != null &&
                    string.Equals(activeRoom.id, roomId, StringComparison.Ordinal);
+        }
+
+        private bool IsCurrentSceneReadyOperation(int generation, string roomId,
+            string epoch)
+        {
+            return IsCurrentRoomOperation(generation, roomId) && IsConnected &&
+                   !sceneCancellationInProgress && !string.IsNullOrWhiteSpace(epoch) &&
+                   string.Equals(SceneLoadEpoch, epoch, StringComparison.Ordinal) &&
+                   (string.Equals(LobbyPhase, PhaseLoading, StringComparison.Ordinal) ||
+                    string.Equals(LobbyPhase, PhaseBattle, StringComparison.Ordinal));
         }
 
         private bool IsCurrentBattleOperation(int generation, int roomGeneration,
@@ -1595,6 +1647,16 @@ namespace FPS.Networking.Session
             return EnsureRoomGateway().LeaveAsync(roomId);
         }
 
+        private Task<SelfHostedRoomSnapshot> SendSceneReadyReportAsync(string roomId,
+            string epoch)
+        {
+#if UNITY_EDITOR
+            if (sceneReadyRequestForTests != null)
+                return sceneReadyRequestForTests(roomId, epoch);
+#endif
+            return EnsureRoomGateway().ReportReadyEpochAsync(roomId, epoch);
+        }
+
 #if UNITY_EDITOR
         /// <summary>Local request substitutes; authentication and transport preparation still run.</summary>
         public void ConfigureRoomGatewayForTests(
@@ -1602,6 +1664,13 @@ namespace FPS.Networking.Session
         {
             roomEntryRequestForTests = enter ?? throw new ArgumentNullException(nameof(enter));
             roomLeaveRequestForTests = leave ?? throw new ArgumentNullException(nameof(leave));
+        }
+
+        /// <summary>Substitutes only the scene-ready HTTP boundary in local tests.</summary>
+        public void ConfigureSceneReadyRequestForTests(
+            Func<string, string, Task<SelfHostedRoomSnapshot>> report)
+        {
+            sceneReadyRequestForTests = report ?? throw new ArgumentNullException(nameof(report));
         }
 #endif
 
@@ -1782,12 +1851,15 @@ namespace FPS.Networking.Session
                 lobbyMapId = activeRoom.mapId;
             string phase = LobbyPhase;
             string loadEpoch = SceneLoadEpoch;
+            if (!string.Equals(phase, PhaseLoading, StringComparison.Ordinal))
+                IsSceneReadyRetrying = false;
             if (string.Equals(phase, PhaseLoading, StringComparison.Ordinal) &&
                 !string.Equals(observedLoadEpoch, loadEpoch,
                     StringComparison.Ordinal))
             {
                 observedLoadEpoch = loadEpoch;
                 sceneLoadFailure = string.Empty;
+                IsSceneReadyRetrying = false;
                 battleReadyEventRaised = false;
                 sceneCancellationEventRaised = false;
             }
@@ -1921,9 +1993,13 @@ namespace FPS.Networking.Session
         private void ResetLobbyState()
         {
             lobbyRoster.Reset(Array.Empty<CoopLobbyMemberSnapshot>(), false);
+            // Invalidated requests cannot release a newer generation's lock.
+            // Exit owns clearing the old lock before another room is entered.
+            lobbyOperationInProgress = false;
             LobbyFailureMessage = string.Empty;
             lobbyStartEventRaised = false;
             sceneLoadFailure = string.Empty;
+            IsSceneReadyRetrying = false;
             observedLoadEpoch = string.Empty;
             sceneBarrierEvaluationInProgress = false;
             sceneCancellationInProgress = false;

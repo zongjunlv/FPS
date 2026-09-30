@@ -12,6 +12,9 @@ using UnityEngine.SceneManagement;
 [RequireComponent(typeof(CoopSessionController))]
 public sealed class CoopSceneLoadCoordinator : MonoBehaviour
 {
+    private const float SceneReadyRetryTimeoutSeconds = 30f;
+    private const float InitialSceneReadyRetryDelaySeconds = 0.5f;
+    private const float MaximumSceneReadyRetryDelaySeconds = 2f;
     private const string CoopLoginScenePath =
         "Assets/Scenes/Modes/CoopLogin.unity";
 
@@ -19,11 +22,13 @@ public sealed class CoopSceneLoadCoordinator : MonoBehaviour
     private Coroutine loadRoutine;
     private Coroutine returnRoutine;
     private bool returningToLobby;
+    private string loadingRoomId = string.Empty;
     private string loadingEpoch = string.Empty;
     private int loadGeneration;
     private AsyncOperation pendingBattleSceneLoad;
 
     public bool IsLoading => loadRoutine != null;
+    public bool IsRetryingSceneReady { get; private set; }
     public string LastFailure { get; private set; } = string.Empty;
 
     private void Awake()
@@ -61,6 +66,9 @@ public sealed class CoopSceneLoadCoordinator : MonoBehaviour
 
     private void Update()
     {
+        if (loadRoutine != null && !IsCurrentLoad(
+                loadingRoomId, loadingEpoch, loadGeneration))
+            CancelPendingLoad();
         session?.TickSceneLoadTimeout(Time.realtimeSinceStartupAsDouble);
         session?.EnsureBattleTransportForCurrentPhase();
     }
@@ -69,7 +77,10 @@ public sealed class CoopSceneLoadCoordinator : MonoBehaviour
     {
         if (state == CoopSessionState.Leaving || state == CoopSessionState.Offline ||
             state == CoopSessionState.Failed)
+        {
+            CancelPendingLoad();
             RestoreLobbyInteraction();
+        }
     }
 
     private void HandleLoadRequested()
@@ -77,22 +88,26 @@ public sealed class CoopSceneLoadCoordinator : MonoBehaviour
         if (session == null || string.IsNullOrWhiteSpace(
                 session.SceneLoadEpoch)) return;
         if (returningToLobby) return;
-        if (loadRoutine != null && string.Equals(loadingEpoch,
-                session.SceneLoadEpoch, StringComparison.Ordinal)) return;
+        if (loadRoutine != null && string.Equals(loadingRoomId,
+                session.ActiveSession?.id, StringComparison.Ordinal) &&
+            string.Equals(loadingEpoch, session.SceneLoadEpoch,
+                StringComparison.Ordinal)) return;
         CancelPendingLoad();
+        loadingRoomId = session.ActiveSession?.id ?? string.Empty;
         loadingEpoch = session.SceneLoadEpoch;
         loadRoutine = StartCoroutine(LoadCityNew(loadingEpoch, loadGeneration));
     }
 
     private IEnumerator LoadCityNew(string epoch, int generation)
     {
+        string roomId = session.ActiveSession?.id ?? string.Empty;
         LastFailure = string.Empty;
         // Stopping a coroutine does not cancel Unity's native scene operation.
         // Serialize scene loads so a cancelled CityNew cannot land after lobby.
         while (pendingBattleSceneLoad != null && !pendingBattleSceneLoad.isDone)
             yield return null;
         pendingBattleSceneLoad = null;
-        if (!IsCurrentLoad(epoch, generation)) yield break;
+        if (!IsCurrentLoad(roomId, epoch, generation)) yield break;
         if (!GameModeContext.IsActive(GameModeId.Coop,
                 GameModeStage.CoopBattle))
             GameModeContext.BeginTransition(GameModeId.Coop,
@@ -116,7 +131,7 @@ public sealed class CoopSceneLoadCoordinator : MonoBehaviour
             pendingBattleSceneLoad = null;
         }
         yield return null;
-        if (!IsCurrentLoad(epoch, generation)) yield break;
+        if (!IsCurrentLoad(roomId, epoch, generation)) yield break;
 
         if (!GameModeContext.IsActive(GameModeId.Coop,
                 GameModeStage.CoopBattle) &&
@@ -136,9 +151,9 @@ public sealed class CoopSceneLoadCoordinator : MonoBehaviour
             float environmentDeadline = Time.realtimeSinceStartup + 30f;
             while (!CoopEnvironmentReadinessRegistry.IsCityNewReady &&
                    Time.realtimeSinceStartup < environmentDeadline &&
-                   IsCurrentLoad(epoch, generation))
+                   IsCurrentLoad(roomId, epoch, generation))
                 yield return null;
-            if (!IsCurrentLoad(epoch, generation)) yield break;
+            if (!IsCurrentLoad(roomId, epoch, generation)) yield break;
             if (!CoopEnvironmentReadinessRegistry.IsCityNewReady)
             {
                 LastFailure = "CityNew 导航环境准备超时，已阻止不完整战局启动。";
@@ -148,13 +163,103 @@ public sealed class CoopSceneLoadCoordinator : MonoBehaviour
             }
         }
 
-        Task<bool> report = session.ReportSceneReadyAsync(epoch);
-        while (!report.IsCompleted && IsCurrentLoad(epoch, generation))
-            yield return null;
-        if (!IsCurrentLoad(epoch, generation)) yield break;
-        if (report.IsFaulted || !report.Result)
-            LastFailure = session.SceneLoadFailure;
-        loadRoutine = null;
+        yield return ReportReadyUntilAcknowledged(roomId, epoch, generation);
+        if (generation == loadGeneration)
+            loadRoutine = null;
+    }
+
+    private IEnumerator ReportReadyUntilAcknowledged(
+        string roomId, string epoch, int generation)
+    {
+        if (!IsCurrentLoad(roomId, epoch, generation)) yield break;
+        PublishSceneReadyRetryState(roomId, epoch, false);
+        float deadline = Time.realtimeSinceStartup + SceneReadyRetryTimeoutSeconds;
+        float retryDelay = InitialSceneReadyRetryDelaySeconds;
+        while (IsCurrentLoad(roomId, epoch, generation))
+        {
+            // A recovered battle performs its transport handshake once through
+            // ReportSceneReadyAsync. Readiness retries are loading-phase only.
+            bool wasLoading = string.Equals(session.LobbyPhase,
+                CoopSessionController.PhaseLoading, StringComparison.Ordinal);
+            if (wasLoading && Time.realtimeSinceStartup >= deadline)
+            {
+                StopSceneReadyRetriesAtDeadline(roomId, epoch);
+                yield break;
+            }
+            Task<bool> report = session.ReportSceneReadyAsync(epoch);
+            while (!report.IsCompleted &&
+                   IsCurrentLoad(roomId, epoch, generation) &&
+                   Time.realtimeSinceStartup < deadline)
+                yield return null;
+            if (!IsCurrentLoad(roomId, epoch, generation)) yield break;
+            if (report.IsCompletedSuccessfully && report.Result)
+            {
+                LastFailure = string.Empty;
+                PublishSceneReadyRetryState(roomId, epoch, false);
+                yield break;
+            }
+
+            if (!wasLoading || !string.Equals(session.LobbyPhase,
+                    CoopSessionController.PhaseLoading, StringComparison.Ordinal))
+            {
+                LastFailure = ResolveSceneReadyFailure(report);
+                PublishSceneReadyRetryState(roomId, epoch, false, LastFailure);
+                yield break;
+            }
+            if (Time.realtimeSinceStartup >= deadline)
+            {
+                // Keep the existing host barrier and cancellation rules. An
+                // unfinished HTTP task is not duplicated by a new attempt.
+                StopSceneReadyRetriesAtDeadline(roomId, epoch);
+                yield break;
+            }
+
+            LastFailure = ResolveSceneReadyFailure(report);
+            PublishSceneReadyRetryState(roomId, epoch, true, LastFailure);
+            float retryAt = Mathf.Min(deadline,
+                Time.realtimeSinceStartup + retryDelay);
+            while (Time.realtimeSinceStartup < retryAt &&
+                   IsCurrentLoad(roomId, epoch, generation) &&
+                   string.Equals(session.LobbyPhase,
+                       CoopSessionController.PhaseLoading, StringComparison.Ordinal))
+                yield return null;
+            if (!IsCurrentLoad(roomId, epoch, generation)) yield break;
+            if (!string.Equals(session.LobbyPhase,
+                    CoopSessionController.PhaseLoading, StringComparison.Ordinal))
+            {
+                LastFailure = string.Empty;
+                PublishSceneReadyRetryState(roomId, epoch, false);
+                yield break;
+            }
+            retryDelay = Mathf.Min(MaximumSceneReadyRetryDelaySeconds,
+                retryDelay * 2f);
+        }
+    }
+
+    private void StopSceneReadyRetriesAtDeadline(string roomId, string epoch)
+    {
+        LastFailure = "CityNew 已加载，但场景就绪确认超时，已停止重试。";
+        PublishSceneReadyRetryState(roomId, epoch, false, LastFailure);
+        _ = session.CancelSceneLoadAsync(LastFailure);
+    }
+
+    private void PublishSceneReadyRetryState(
+        string roomId, string epoch, bool retrying, string failure = "")
+    {
+        IsRetryingSceneReady = retrying;
+        session?.SetSceneReadyRetryState(roomId, epoch, retrying, failure);
+    }
+
+    private string ResolveSceneReadyFailure(Task<bool> report)
+    {
+        if (!string.IsNullOrWhiteSpace(session.SceneLoadFailure))
+            return session.SceneLoadFailure;
+        if (report.IsFaulted)
+            return report.Exception?.GetBaseException().Message ??
+                   "场景就绪确认请求失败。";
+        return report.IsCanceled
+            ? "场景就绪确认请求被中断。"
+            : "场景已加载，服务器尚未确认就绪。";
     }
 
     private void HandleBattleReady()
@@ -283,16 +388,22 @@ public sealed class CoopSceneLoadCoordinator : MonoBehaviour
 
     private void CancelPendingLoad()
     {
+        PublishSceneReadyRetryState(loadingRoomId, loadingEpoch, false);
         loadGeneration++;
         if (loadRoutine != null) StopCoroutine(loadRoutine);
         loadRoutine = null;
+        loadingRoomId = string.Empty;
         loadingEpoch = string.Empty;
     }
 
-    private bool IsCurrentLoad(string epoch, int generation)
+    private bool IsCurrentLoad(string roomId, string epoch, int generation)
     {
         return isActiveAndEnabled && session != null &&
                generation == loadGeneration && session.HasActiveSession &&
+               session.State != CoopSessionState.Leaving &&
+               session.State != CoopSessionState.Offline &&
+               session.State != CoopSessionState.Failed &&
+               string.Equals(roomId, session.ActiveSession.id, StringComparison.Ordinal) &&
                string.Equals(epoch, session.SceneLoadEpoch, StringComparison.Ordinal) &&
                (string.Equals(session.LobbyPhase, CoopSessionController.PhaseLoading,
                     StringComparison.Ordinal) ||

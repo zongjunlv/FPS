@@ -62,7 +62,14 @@ namespace FPS.Networking.Session
             if (string.Equals(session.LobbyPhase,
                     CoopSessionController.PhaseLoading,
                     System.StringComparison.Ordinal))
+            {
+                string failure = session.SceneLoadFailure;
+                if (!string.IsNullOrWhiteSpace(failure))
+                    return session.IsSceneReadyRetrying
+                        ? $"CityNew 已加载，正在重试场景就绪确认…\n{failure}"
+                        : $"CityNew 场景准备未完成\n{failure}";
                 return "正在加载 CityNew 并等待队友…";
+            }
             return session.IsBattleTransportConnected
                 ? "正在同步服务器战局…"
                 : "正在连接专用服务器…";

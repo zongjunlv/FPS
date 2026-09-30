@@ -131,11 +131,20 @@ namespace FPS.Networking.Session
             gateway = configuredGateway ?? throw new ArgumentNullException(
                 nameof(configuredGateway));
             allowDevelopmentAnonymous = configuredDevelopmentAnonymous;
+            if (gateway.IsSignedIn)
+                CompleteSignIn("已登录。");
         }
 
         public async Task<bool> RestoreAsync()
         {
             if (IsBusy) return false;
+            // 新场景中的控制器可直接继承本进程已验证的会话，无需再次走缓存恢复。
+            if (gateway.IsSignedIn)
+            {
+                if (State != CoopAccountState.SignedIn)
+                    CompleteSignIn("已登录。");
+                return true;
+            }
             SetState(CoopAccountState.Restoring, "正在恢复登录会话……", string.Empty);
             try
             {
@@ -233,6 +242,17 @@ namespace FPS.Networking.Session
             gateway.SignOut(true);
             SetState(CoopAccountState.SignedOut,
                 "已注销并清除本地登录会话。", string.Empty);
+            return true;
+        }
+
+        // 网关可能因服务端撤销令牌或令牌自然过期而在场景存活期间失效。
+        // 仅同步本地状态，不在每帧发起网络请求。
+        public bool SyncGatewaySession()
+        {
+            if (State != CoopAccountState.SignedIn || gateway.IsSignedIn)
+                return false;
+            const string message = "登录会话已失效，请重新登录。";
+            SetState(CoopAccountState.SignedOut, message, message);
             return true;
         }
 

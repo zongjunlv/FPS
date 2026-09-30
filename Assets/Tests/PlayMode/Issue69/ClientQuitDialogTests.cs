@@ -29,6 +29,9 @@ namespace FPS.Tests.PlayMode.Issue69
         private readonly List<InputAction> suspendedExternalActions = new();
         private Keyboard keyboard;
         private Keyboard previousKeyboard;
+        private InputSettings previousInputSettings;
+        private InputSettings isolatedInputSettings;
+        private bool previousRunInBackground;
         private Scene hostScene;
         private Scene isolatedScene;
 
@@ -46,9 +49,26 @@ namespace FPS.Tests.PlayMode.Issue69
                     suspendedExternalActions.Add(action);
                     action.Disable();
                 }
+                if (Application.isBatchMode)
+                {
+                    // A headless Editor has no focused Game View. Route only
+                    // this fixture's synthetic events through player updates;
+                    // never edit or save the project's real settings asset.
+                    previousInputSettings = InputSystem.settings;
+                    previousRunInBackground = Application.runInBackground;
+                    Application.runInBackground = true;
+                    isolatedInputSettings = Object.Instantiate(previousInputSettings);
+                    isolatedInputSettings.hideFlags = HideFlags.HideAndDontSave;
+                    isolatedInputSettings.backgroundBehavior =
+                        InputSettings.BackgroundBehavior.IgnoreFocus;
+                    isolatedInputSettings.editorInputBehaviorInPlayMode =
+                        InputSettings.EditorInputBehaviorInPlayMode.AllDeviceInputAlwaysGoesToGameView;
+                    InputSystem.settings = isolatedInputSettings;
+                }
             }
             catch
             {
+                RestoreInputSettings();
                 ResumeOtherRoots();
                 throw;
             }
@@ -70,6 +90,12 @@ namespace FPS.Tests.PlayMode.Issue69
             GameModeContext.ResetForTests();
             keyboard = InputSystem.AddDevice<Keyboard>();
             keyboard.MakeCurrent();
+            if (Application.isBatchMode)
+            {
+                InputSystem.EnableDevice(keyboard);
+                Assert.That(keyboard.enabled, Is.True,
+                    "后台测试必须启用自身的合成键盘，不可依赖 Game View 焦点。");
+            }
             // ModeUiFactory must find this owned module rather than reuse
             // a native module, or create a root that survives our teardown.
             Own(new GameObject("Quit Test EventSystem",
@@ -130,8 +156,22 @@ namespace FPS.Tests.PlayMode.Issue69
             }
             finally
             {
+                RestoreInputSettings();
                 ResumeOtherRoots();
             }
+        }
+
+        private void RestoreInputSettings()
+        {
+            if (previousInputSettings != null)
+            {
+                InputSystem.settings = previousInputSettings;
+                Application.runInBackground = previousRunInBackground;
+            }
+            previousInputSettings = null;
+            if (isolatedInputSettings != null)
+                Object.DestroyImmediate(isolatedInputSettings);
+            isolatedInputSettings = null;
         }
 
         [UnityTest]

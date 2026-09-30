@@ -270,6 +270,131 @@ namespace FPS.Tests.PlayMode.Issue69
         }
 
         [UnityTest]
+        public IEnumerator AlreadySignedInAccountEntersCoopWithoutLoginFlashOrRevalidation()
+        {
+            yield return SceneManager.LoadSceneAsync(
+                GameModeScenePaths.Entry, LoadSceneMode.Single);
+            yield return null;
+
+            var gateway = new FakeGateway();
+            GameModeFlowController flow = GameModeFlowController.Instance;
+            CoopAccountView gate = CoopAccountView.CreateAuthenticationGate(
+                flow, gateway, () => { });
+            CoopAccountView lobby = null;
+            try
+            {
+                yield return null;
+                gate.RegisterTabButton.onClick.Invoke();
+                gate.UsernameInput.text = "Player_Gate";
+                gate.PasswordInput.text = "StrongPass1";
+                gate.ConfirmationInput.text = "StrongPass1";
+                gate.RegisterButton.onClick.Invoke();
+                yield return null;
+                Assert.That(gate.Controller.IsSignedIn, Is.True);
+                Assert.That(gate.gameObject.activeSelf, Is.False);
+
+                // A slow account endpoint must not send an already signed-in
+                // player back through the login form on a mode transition.
+                gateway.InitWaiter = new TaskCompletionSource<bool>();
+                int initializationCount = gateway.InitializeCalls;
+                lobby = CoopAccountView.Create(flow, gateway, false);
+
+                Assert.That(lobby.AuthenticationPanel.activeSelf, Is.False,
+                    "已登录用户进入联机大厅时，登录表单不能闪现。");
+                Assert.That(lobby.LobbyPanel.activeSelf, Is.True,
+                    "已登录用户应立即看到联机大厅。");
+                Assert.That(gateway.InitializeCalls,
+                    Is.EqualTo(initializationCount),
+                    "场景切换不应重新等待账号服务验证已登录会话。");
+                Assert.That(gateway.RestoreCachedSessionCalls, Is.Zero,
+                    "同一进程内已验证的账号不应重复恢复缓存令牌。");
+
+                Assert.That(gate.SignOutToAuthentication(), Is.True);
+                Assert.That(gate.AuthenticationPanel.activeSelf, Is.True,
+                    "只有显式退出账号才应再次显示登录表单。");
+            }
+            finally
+            {
+                gateway.InitWaiter?.TrySetResult(true);
+                if (lobby != null) Object.Destroy(lobby.gameObject);
+                if (gate != null) Object.Destroy(gate.gameObject);
+            }
+            yield return null;
+        }
+
+        [UnityTest]
+        public IEnumerator ReturningFromCoopToModesDoesNotReopenLoginGate()
+        {
+            yield return SceneManager.LoadSceneAsync(
+                GameModeScenePaths.Entry, LoadSceneMode.Single);
+            yield return null;
+
+            var gateway = new FakeGateway
+            {
+                SignedIn = true,
+                InitWaiter = new TaskCompletionSource<bool>()
+            };
+            int authenticationCompleted = 0;
+            CoopAccountView gate = null;
+            try
+            {
+                gate = CoopAccountView.CreateAuthenticationGate(
+                    GameModeFlowController.Instance, gateway,
+                    () => authenticationCompleted++);
+
+                Assert.That(authenticationCompleted, Is.EqualTo(1),
+                    "从联机返回模式大厅时，已验证账号应立即解锁模式。");
+                Assert.That(gate.gameObject.activeSelf, Is.False,
+                    "返回模式大厅不应短暂显示登录页。");
+                Assert.That(gateway.InitializeCalls, Is.Zero,
+                    "返回模式大厅不应重新请求账号服务。");
+                Assert.That(gateway.RestoreCachedSessionCalls, Is.Zero);
+
+                Assert.That(gate.SignOutToAuthentication(), Is.True);
+                Assert.That(gate.AuthenticationPanel.activeSelf, Is.True,
+                    "显式退出账号仍应回到登录表单。");
+            }
+            finally
+            {
+                gateway.InitWaiter.TrySetResult(true);
+                if (gate != null) Object.Destroy(gate.gameObject);
+            }
+            yield return null;
+        }
+
+        [UnityTest]
+        public IEnumerator RevokedSessionReopensLoginOnlyAfterGatewayLosesIdentity()
+        {
+            yield return SceneManager.LoadSceneAsync(
+                GameModeScenePaths.Entry, LoadSceneMode.Single);
+            yield return null;
+
+            var gateway = new FakeGateway { SignedIn = true };
+            CoopAccountView lobby = CoopAccountView.Create(
+                GameModeFlowController.Instance, gateway, false);
+            try
+            {
+                Assert.That(lobby.LobbyPanel.activeSelf, Is.True);
+                Assert.That(lobby.AuthenticationPanel.activeSelf, Is.False);
+
+                gateway.SignedIn = false;
+                yield return null;
+
+                Assert.That(lobby.Controller.State,
+                    Is.EqualTo(CoopAccountState.SignedOut));
+                Assert.That(lobby.AuthenticationPanel.activeSelf, Is.True,
+                    "网关确认会话失效后，应提示重新登录。");
+                Assert.That(lobby.LobbyPanel.activeSelf, Is.False);
+                Assert.That(lobby.VisibleStatus, Does.Contain("会话已失效"));
+            }
+            finally
+            {
+                Object.Destroy(lobby.gameObject);
+            }
+            yield return null;
+        }
+
+        [UnityTest]
         public IEnumerator AuthenticationGateUnlocksModesOnlyAfterSignIn()
         {
             yield return SceneManager.LoadSceneAsync(
@@ -303,6 +428,8 @@ namespace FPS.Tests.PlayMode.Issue69
         {
             public bool SignedIn;
             public int SignUpCalls;
+            public int InitializeCalls;
+            public int RestoreCachedSessionCalls;
             public bool ClearedCredentials;
             public TaskCompletionSource<bool> InitWaiter;
 
@@ -310,7 +437,11 @@ namespace FPS.Tests.PlayMode.Issue69
             public bool HasCachedSession => false;
             public string PlayerId => SignedIn ? "player-84" : string.Empty;
             public string Username => SignedIn ? "Player_84" : string.Empty;
-            public Task InitializeAsync() => InitWaiter?.Task ?? Task.CompletedTask;
+            public Task InitializeAsync()
+            {
+                InitializeCalls++;
+                return InitWaiter?.Task ?? Task.CompletedTask;
+            }
 
             public Task SignUpAsync(string username, string password)
             {
@@ -321,7 +452,11 @@ namespace FPS.Tests.PlayMode.Issue69
 
             public Task SignInAsync(string username, string password) =>
                 Task.CompletedTask;
-            public Task RestoreCachedSessionAsync() => Task.CompletedTask;
+            public Task RestoreCachedSessionAsync()
+            {
+                RestoreCachedSessionCalls++;
+                return Task.CompletedTask;
+            }
             public Task SignInAnonymouslyForDevelopmentAsync() =>
                 Task.CompletedTask;
 

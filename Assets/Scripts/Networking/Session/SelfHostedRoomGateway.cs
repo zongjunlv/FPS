@@ -227,6 +227,15 @@ namespace FPS.Networking.Session
             }
             catch (SelfHostedHttpException exception)
             {
+                if (exception.StatusCode == 401 || exception.StatusCode == 403)
+                {
+                    bool expired = await SelfHostedAuthenticationGateway
+                        .VerifyCurrentSessionAfterAuthorizationFailureAsync(
+                            token, settings);
+                    if (expired)
+                        throw new InvalidOperationException(
+                            "登录会话已失效，请重新登录。");
+                }
                 throw new InvalidOperationException(
                     string.IsNullOrWhiteSpace(exception.SafeMessage)
                         ? "房间服务暂时不可用，请稍后重试。"
